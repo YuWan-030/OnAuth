@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>授权确认</title>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+
+    background:
+        radial-gradient(circle at 20% 20%, rgba(34,197,94,0.20), transparent 40%),
+        radial-gradient(circle at 80% 80%, rgba(59,130,246,0.20), transparent 45%),
+        linear-gradient(135deg, #0b1220, #111827);
+}
+
+/* 背景网格 */
+body::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 64px 64px;
+    opacity: 0.2;
+    pointer-events: none;
+}
+
+.card {
+    width: 520px;
+    padding: 44px;
+    border-radius: 26px;
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(30px);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow:
+        0 40px 100px rgba(0,0,0,0.6),
+        inset 0 1px 0 rgba(255,255,255,0.05);
+    position: relative;
+    z-index: 1;
+}
+
+/* 安全图标 */
+.shield {
+    width: 82px;
+    height: 82px;
+    border-radius: 26px;
+    margin: 0 auto 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 34px;
+
+    background: linear-gradient(135deg, #22c55e, #3b82f6);
+    box-shadow: 0 15px 40px rgba(34,197,94,0.25);
+}
+
+h1 {
+    text-align: center;
+    font-size: 28px;
+    margin-bottom: 8px;
+}
+
+.sub {
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255,255,255,0.65);
+    margin-bottom: 22px;
+}
+
+/* 风险提示条（企业级关键元素） */
+.risk-bar {
+    padding: 10px 14px;
+    border-radius: 14px;
+    margin-bottom: 18px;
+    font-size: 12px;
+    color: #fbbf24;
+
+    background: rgba(251,191,36,0.08);
+    border: 1px solid rgba(251,191,36,0.25);
+}
+
+/* 信息卡 */
+.box {
+    padding: 16px;
+    border-radius: 18px;
+    margin-bottom: 14px;
+
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.07);
+}
+
+.title {
+    font-size: 12px;
+    color: rgba(255,255,255,0.55);
+    margin-bottom: 6px;
+}
+
+.value {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.scope {
+    color: #60a5fa;
+    word-break: break-all;
+}
+
+/* 权限标签 */
+.scope-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.tag {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(96,165,250,0.12);
+    border: 1px solid rgba(96,165,250,0.25);
+    color: #93c5fd;
+}
+
+/* 按钮区 */
+.buttons {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.btn {
+    flex: 1;
+    padding: 14px;
+    border-radius: 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    border: none;
+}
+
+/* 同意按钮 */
+.allow {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: white;
+    box-shadow: 0 14px 30px rgba(34,197,94,0.25);
+}
+
+.allow:hover {
+    transform: translateY(-2px);
+}
+
+/* 拒绝按钮 */
+.deny {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #f87171;
+}
+
+.deny:hover {
+    background: rgba(248,113,113,0.08);
+}
+
+.footer {
+    margin-top: 18px;
+    text-align: center;
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+    <div class="shield">🛡️</div>
+
+    <h1>授权访问确认</h1>
+    <div class="sub">安全中心正在请求你授权访问账户资源</div>
+
+    <div class="risk-bar">
+        ⚠️ 请确认你信任该应用，否则可能导致账户数据泄露
+    </div>
+
+    <div class="box">
+        <div class="title">当前登录账户</div>
+        <div class="value">{{ username }}</div>
+    </div>
+
+    <div class="box">
+        <div class="title">申请访问的应用</div>
+        <div class="value">{{ app_name }}</div>
+    </div>
+
+    <div class="box">
+        <div class="title">请求权限范围</div>
+        <div class="value scope">{{ scope }}</div>
+
+    </div>
+
+    <form action="/oauth/consent_submit" method="post">
+
+        <input type="hidden" name="session_id" value="{{ session_id }}">
+        <input type="hidden" name="client_id" value="{{ client_id }}">
+        <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+        <input type="hidden" name="scope" value="{{ scope }}">
+        <input type="hidden" name="state" value="{{ state }}">
+
+        <div class="buttons">
+            <button type="submit" name="action" value="allow" class="btn allow">
+                授权并继续
+            </button>
+
+            <button type="submit" name="action" value="deny" class="btn deny">
+                拒绝访问
+            </button>
+        </div>
+
+    </form>
+
+    <div class="footer">
+        OAuth2 Secure Consent Gateway · Enterprise IAM
+    </div>
+
+</div>
+
+</body>
+</html>

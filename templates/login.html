@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>统一认证中心</title>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    background:
+        radial-gradient(circle at 20% 20%, rgba(79,140,255,0.25), transparent 35%),
+        radial-gradient(circle at 80% 80%, rgba(123,97,255,0.25), transparent 40%),
+        linear-gradient(135deg, #0b1220, #0f172a);
+    overflow: hidden;
+}
+
+/* 背景网格 */
+body::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 60px 60px;
+    opacity: 0.25;
+    pointer-events: none;
+}
+
+.container {
+    width: 460px;
+    position: relative;
+    z-index: 1;
+}
+
+.card {
+    padding: 42px;
+    border-radius: 24px;
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(28px);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow:
+        0 30px 80px rgba(0,0,0,0.55),
+        inset 0 1px 0 rgba(255,255,255,0.05);
+    animation: floatIn 0.5s ease;
+}
+
+@keyframes floatIn {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.logo {
+    width: 72px;
+    height: 72px;
+    border-radius: 22px;
+    margin: 0 auto 18px;
+    background: linear-gradient(135deg, #4f8cff, #7b61ff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    box-shadow: 0 12px 30px rgba(79,140,255,0.35);
+}
+
+h1 {
+    text-align: center;
+    font-size: 26px;
+    margin-bottom: 8px;
+    font-weight: 700;
+}
+
+.subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255,255,255,0.65);
+    margin-bottom: 26px;
+}
+
+/* OAuth 应用卡片 */
+.app-box {
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 22px;
+}
+
+.app-box span {
+    font-size: 12px;
+    color: rgba(255,255,255,0.5);
+}
+
+.app-name {
+    margin-top: 6px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+}
+
+/* 精美的错误提示警示框样式 (默认隐藏，通过 JS 动态注入展示) */
+.error-alert {
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+    font-size: 13px;
+    margin-bottom: 20px;
+    display: none; /* 🧠 初始隐藏 */
+    align-items: center;
+    gap: 8px;
+}
+
+/* 触发抖动动画的类 */
+.shake-animation {
+    animation: shake 0.4s ease;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+}
+
+/* 输入组 */
+.input-group {
+    margin-bottom: 16px;
+}
+
+.label {
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 6px;
+    display: block;
+}
+
+.input {
+    width: 100%;
+    padding: 14px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.05);
+    color: white;
+    outline: none;
+    transition: 0.2s;
+}
+
+.input:focus {
+    border-color: #4f8cff;
+    box-shadow: 0 0 0 4px rgba(79,140,255,0.15);
+    background: rgba(255,255,255,0.07);
+}
+
+/* 登录按钮 */
+button {
+    width: 100%;
+    padding: 14px;
+    margin-top: 10px;
+    border: none;
+    border-radius: 14px;
+    font-weight: 600;
+    font-size: 15px;
+    color: white;
+    cursor: pointer;
+    background: linear-gradient(135deg, #4f8cff, #7b61ff);
+    box-shadow: 0 12px 30px rgba(79,140,255,0.25);
+    transition: 0.2s;
+}
+
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 40px rgba(79,140,255,0.35);
+}
+
+button:active {
+    transform: translateY(0px);
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* 底部 */
+.footer {
+    margin-top: 18px;
+    text-align: center;
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+<div class="card">
+
+    <div class="logo">🔐</div>
+
+    <h1>统一身份认证中心</h1>
+    <div class="subtitle">Enterprise IAM / OAuth2 Secure Gateway</div>
+
+    <div class="app-box">
+        <span>第三方应用请求访问</span>
+        <div class="app-name">{{ app_name }}</div>
+    </div>
+
+    <div id="errorBox" class="error-alert">
+        <span>⚠️</span>
+        <div id="errorText"></div>
+    </div>
+
+    <form id="loginForm">
+        <input type="hidden" name="client_id" value="{{ client_id }}">
+        <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+        <input type="hidden" name="scope" value="{{ scope }}">
+        <input type="hidden" name="state" value="{{ state }}">
+
+        <div class="input-group">
+            <label class="label">用户名</label>
+            <input class="input" type="text" name="username" placeholder="请输入账号" required>
+        </div>
+
+        <div class="input-group">
+            <label class="label">密码</label>
+            <input class="input" type="password" name="password" placeholder="请输入密码" required>
+        </div>
+
+        <button type="submit" id="submitBtn">安全登录</button>
+    </form>
+
+    <div class="footer">
+        Secure OAuth2 Identity Platform © 2026
+    </div>
+
+</div>
+</div>
+
+<script>
+document.getElementById("loginForm").addEventListener("submit", async function(e) {
+    e.preventDefault(); // 🛑 核心拦截点：阻止浏览器原生表单提交刷新页面
+
+    const form = e.target;
+    const submitBtn = document.getElementById("submitBtn");
+    const errorBox = document.getElementById("errorBox");
+    const errorText = document.getElementById("errorText");
+
+    // 按钮进入加载锁定状态
+    submitBtn.disabled = true;
+    submitBtn.innerText = "正在进行安全审计...";
+
+    // 隐藏上一次可能遗留的报错框
+    errorBox.style.display = "none";
+    errorBox.classList.remove("shake-animation");
+
+    // 封装标准 FormUrlEncoded 数据载荷
+    const formData = new URLSearchParams(new FormData(form));
+
+    try {
+        // 🚀 向后端发起异步 AJAX 审计
+        const response = await fetch("/oauth/login_submit", {
+            method: "POST",
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.redirect_url) {
+            // 🎉 情况 A：登录成功，平滑引导跳转到授权确认或回调页面
+            submitBtn.innerText = "身份验证通过，正在跳转...";
+            window.location.href = result.redirect_url;
+        } else {
+            // ❌ 情况 B：密码错误/账户查封（后端传回了错误 JSON）
+            submitBtn.disabled = false;
+            submitBtn.innerText = "安全登录";
+
+            // 流式灌入通知内容
+            errorText.innerText = result.detail || "认证网关发生未知异常";
+            errorBox.style.display = "flex";
+
+            // 强行触发 CSS 的抖动特效
+            void errorBox.offsetWidth; // 触发回流(Reflow)让动画可以重复执行
+            errorBox.classList.add("shake-animation");
+        }
+    } catch (err) {
+        // 💥 情况 C：网络崩溃或丢包
+        submitBtn.disabled = false;
+        submitBtn.innerText = "安全登录";
+        errorText.innerText = "无法连接至网关，请检查网络环境";
+        errorBox.style.display = "flex";
+        errorBox.classList.add("shake-animation");
+    }
+});
+</script>
+
+</body>
+</html>

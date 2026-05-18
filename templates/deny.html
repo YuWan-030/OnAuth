@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>授权已终止</title>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    background:
+        radial-gradient(circle at 20% 20%, rgba(239,68,68,0.15), transparent 35%),
+        radial-gradient(circle at 80% 80%, rgba(123,97,255,0.15), transparent 40%),
+        linear-gradient(135deg, #0b1220, #0f172a);
+    overflow: hidden;
+}
+
+body::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    opacity: 0.25;
+    pointer-events: none;
+}
+
+.container {
+    width: 440px;
+    position: relative;
+    z-index: 1;
+}
+
+.card {
+    padding: 42px;
+    border-radius: 24px;
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(28px);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    box-shadow:
+        0 30px 80px rgba(0,0,0,0.5),
+        inset 0 1px 0 rgba(255,255,255,0.05);
+    text-align: center;
+    animation: floatIn 0.5s ease;
+}
+
+@keyframes floatIn {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.icon {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    margin: 0 auto 24px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.1);
+}
+
+h1 {
+    font-size: 24px;
+    margin-bottom: 12px;
+    font-weight: 700;
+    color: #f87171;
+}
+
+.desc {
+    font-size: 14px;
+    color: rgba(255,255,255,0.65);
+    line-height: 1.6;
+    margin-bottom: 32px;
+}
+
+.info-box {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    font-size: 13px;
+    color: rgba(255,255,255,0.45);
+    margin-bottom: 24px;
+}
+
+.close-btn {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 14px;
+    font-weight: 600;
+    font-size: 15px;
+    color: white;
+    background: rgba(255,255,255,0.05);
+    cursor: pointer;
+    text-decoration: none;
+    transition: 0.2s;
+}
+
+.close-btn:hover {
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.25);
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+<div class="card">
+
+    <div class="icon">✕</div>
+
+    <h1>访问请求被拒绝</h1>
+    <div class="desc">
+        你拒绝了 <strong>{{ app_name }}</strong> 的授权申请。<br>
+        为了保护你的账户安全，本次 OAuth2.0 认证流已被平台主动熔断终止。
+    </div>
+
+    <div class="info-box">
+        安全审计标识：{{ session_id or '🔒 IAM-GATEWAY' }}
+    </div>
+
+    <div>您现在可以安全地<strong>关闭当前浏览器标签页</strong>。</div>
+
+</div>
+</div>
+
+</body>
+</html>
