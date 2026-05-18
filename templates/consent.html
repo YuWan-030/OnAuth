@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>授权确认</title>
+<title>授权确认 - {{ app_name }}</title>
 
 <style>
 * {
@@ -21,12 +21,11 @@ body {
     color: white;
 
     background:
-        radial-gradient(circle at 20% 20%, rgba(34,197,94,0.20), transparent 40%),
-        radial-gradient(circle at 80% 80%, rgba(59,130,246,0.20), transparent 45%),
+        radial-gradient(circle at 20% 20%, rgba(34,197,94,0.15), transparent 40%),
+        radial-gradient(circle at 80% 80%, rgba(59,130,246,0.15), transparent 45%),
         linear-gradient(135deg, #0b1220, #111827);
 }
 
-/* 背景网格 */
 body::before {
     content: "";
     position: absolute;
@@ -41,10 +40,11 @@ body::before {
 
 .card {
     width: 520px;
-    padding: 44px;
+    padding: 40px;
     border-radius: 26px;
     background: rgba(255,255,255,0.06);
     backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
     border: 1px solid rgba(255,255,255,0.08);
     box-shadow:
         0 40px 100px rgba(0,0,0,0.6),
@@ -53,65 +53,126 @@ body::before {
     z-index: 1;
 }
 
-/* 安全图标 */
-.shield {
-    width: 82px;
-    height: 82px;
-    border-radius: 26px;
-    margin: 0 auto 18px;
+/* 🏢 资产徽标沙箱（彻底修复叠加与堆栈变形） */
+.logo-container {
+    position: relative;
+    width: 88px;
+    height: 88px;
+    margin: 0 auto 24px;
+}
+
+/* 渐变几何方块，天然具备容错底色 */
+.app-avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 22px;
+    background: linear-gradient(135deg, #1e293b, #334155);
+    border: 2px solid rgba(255,255,255,0.15);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 34px;
+    overflow: hidden; /* 强行锁死内部组件，防止溢出变形 */
+}
 
+/* 默认兜底火箭符号（无图时呈现，有图时利用 css 的层级天然覆盖） */
+.default-rocket {
+    font-size: 36px;
+    user-select: none;
+}
+
+/* 真实应用图标展示层（全绝对定位，防坍塌死锁） */
+.real-logo {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 20px;
+}
+
+.shield-badge {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    width: 30px;
+    height: 30px;
     background: linear-gradient(135deg, #22c55e, #3b82f6);
-    box-shadow: 0 15px 40px rgba(34,197,94,0.25);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    border: 2px solid #111827;
+    box-shadow: 0 4px 10px rgba(34,197,94,0.3);
+    z-index: 2;
 }
 
 h1 {
     text-align: center;
-    font-size: 28px;
-    margin-bottom: 8px;
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    letter-spacing: -0.5px;
+}
+
+.group-highlight {
+    color: #a855f7;
+    font-weight: bold;
+}
+.app-highlight {
+    color: #22c55e;
+    font-weight: bold;
 }
 
 .sub {
     text-align: center;
     font-size: 13px;
-    color: rgba(255,255,255,0.65);
-    margin-bottom: 22px;
+    color: rgba(255,255,255,0.6);
+    margin-bottom: 24px;
 }
 
-/* 风险提示条（企业级关键元素） */
 .risk-bar {
-    padding: 10px 14px;
+    padding: 12px 14px;
     border-radius: 14px;
-    margin-bottom: 18px;
+    margin-bottom: 20px;
     font-size: 12px;
     color: #fbbf24;
-
+    line-height: 1.5;
     background: rgba(251,191,36,0.08);
     border: 1px solid rgba(251,191,36,0.25);
 }
 
-/* 信息卡 */
 .box {
     padding: 16px;
     border-radius: 18px;
     margin-bottom: 14px;
-
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: 0.2s;
+}
+.box:hover {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
 }
 
 .title {
     font-size: 12px;
-    color: rgba(255,255,255,0.55);
+    color: rgba(255,255,255,0.45);
     margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-.value {
-    font-size: 16px;
-    font-weight: 600;
+.value-hierarchy {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+}
+.arrow-separator {
+    color: rgba(255,255,255,0.3);
+    font-size: 12px;
 }
 
 .scope {
@@ -119,28 +180,10 @@ h1 {
     word-break: break-all;
 }
 
-/* 权限标签 */
-.scope-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 10px;
-}
-
-.tag {
-    font-size: 11px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: rgba(96,165,250,0.12);
-    border: 1px solid rgba(96,165,250,0.25);
-    color: #93c5fd;
-}
-
-/* 按钮区 */
 .buttons {
     display: flex;
     gap: 12px;
-    margin-top: 24px;
+    margin-top: 28px;
 }
 
 .btn {
@@ -150,37 +193,37 @@ h1 {
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    transition: 0.2s;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     border: none;
+    outline: none;
 }
 
-/* 同意按钮 */
 .allow {
     background: linear-gradient(135deg, #22c55e, #16a34a);
     color: white;
-    box-shadow: 0 14px 30px rgba(34,197,94,0.25);
+    box-shadow: 0 10px 25px rgba(34,197,94,0.25);
 }
-
 .allow:hover {
     transform: translateY(-2px);
+    box-shadow: 0 14px 30px rgba(34,197,94,0.4);
 }
 
-/* 拒绝按钮 */
 .deny {
     background: rgba(255,255,255,0.05);
     border: 1px solid rgba(255,255,255,0.1);
     color: #f87171;
 }
-
 .deny:hover {
-    background: rgba(248,113,113,0.08);
+    background: rgba(248,113,113,0.12);
+    border-color: rgba(248,113,113,0.3);
 }
 
 .footer {
-    margin-top: 18px;
+    margin-top: 22px;
     text-align: center;
     font-size: 11px;
-    color: rgba(255,255,255,0.35);
+    color: rgba(255,255,255,0.3);
+    letter-spacing: 0.5px;
 }
 </style>
 </head>
@@ -189,29 +232,39 @@ h1 {
 
 <div class="card">
 
-    <div class="shield">🛡️</div>
+    <div class="logo-container">
+        <div class="app-avatar">
+            <span class="default-rocket">🚀</span>
 
-    <h1>授权访问确认</h1>
-    <div class="sub">安全中心正在请求你授权访问账户资源</div>
+            <img src="{{ app_logo or '' }}" class="real-logo" onerror="this.style.display='none';" alt="">
+        </div>
+        <div class="shield-badge">🛡️</div>
+    </div>
+
+    <h1>应用授权确认</h1>
+    <div class="sub">中台安全网关正在确权您的资源边界</div>
 
     <div class="risk-bar">
-        ⚠️ 请确认你信任该应用，否则可能导致账户数据泄露
+        ⚠️ 敏感授权防线：请确认您完全信任该独立软件，授权后该应用将代表您访问对应的云端业务接口资产。
     </div>
 
     <div class="box">
         <div class="title">当前登录账户</div>
-        <div class="value">{{ username }}</div>
+        <div class="value" style="color: #e2e8f0;">{{ username }}</div>
     </div>
 
     <div class="box">
-        <div class="title">申请访问的应用</div>
-        <div class="value">{{ app_name }}</div>
+        <div class="title">申请访问的应用主体</div>
+        <div class="value-hierarchy">
+            <span class="group-highlight">{{ group_name }}</span>
+            <span class="arrow-separator">➔</span>
+            <span class="app-highlight">{{ app_name }}</span>
+        </div>
     </div>
 
     <div class="box">
-        <div class="title">请求权限范围</div>
+        <div class="title">请求权限范围 (Scope)</div>
         <div class="value scope">{{ scope }}</div>
-
     </div>
 
     <form action="/oauth/consent_submit" method="post">
@@ -224,7 +277,7 @@ h1 {
 
         <div class="buttons">
             <button type="submit" name="action" value="allow" class="btn allow">
-                授权并继续
+                同意并授权继续
             </button>
 
             <button type="submit" name="action" value="deny" class="btn deny">
@@ -235,7 +288,7 @@ h1 {
     </form>
 
     <div class="footer">
-        OAuth2 Secure Consent Gateway · Enterprise IAM
+        OnAuth Dual-Track Identity Gateway · Enterprise IAM Security
     </div>
 
 </div>

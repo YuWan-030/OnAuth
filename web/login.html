@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>中台身份凭证确认 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        body { background-color: #f1f2f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-container { width: 400px; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .login-title { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 25px; color: #333; }
+        .link-reg { text-align: right; margin-top: 10px; font-size: 13px; }
+    </style>
+</head>
+<body>
+
+<div class="login-container">
+    <div class="login-title">🔐 OnAuth 运营管理中台</div>
+    <form class="layui-form" lay-filter="loginForm">
+        <div class="layui-form-item">
+            <input type="text" name="username" lay-verify="required" placeholder="请输入账户" class="layui-input">
+        </div>
+        <div class="layui-form-item">
+            <input type="password" name="password" lay-verify="required" placeholder="请输入登录密码" class="layui-input">
+        </div>
+        <div class="layui-form-item">
+            <button class="layui-btn layui-btn-fluid layui-btn-normal" lay-submit lay-filter="doLogin">安全登录</button>
+        </div>
+        <div class="link-reg">
+            <a href="/register" style="color: #1e9fff;">还没有账号？申请注册 &raquo;</a>
+        </div>
+    </form>
+</div>
+
+<script>
+layui.use(['form', 'layer'], function(){
+    var form = layui.form, layer = layui.layer, $ = layui.$;
+
+    // 自动防嵌套外壳：如果登录页不幸在 iframe 子窗口中荡漾，强行流转至最顶层浏览器窗口
+    if (window !== window.top) {
+        window.top.location.href = window.location.href;
+    }
+
+    form.on('submit(doLogin)', function(data){
+        layer.load(2);
+        $.ajax({
+            url: '/admin/token', // 🎯 对齐规范：请求主入口或 auth_user 模块下的后台统一凭证签发接口
+            type: 'POST',
+            data: JSON.stringify(data.field),
+            contentType: 'application/json',
+            success: function(res){
+                layer.closeAll('loading');
+                layer.msg('登录认证成功，正在授信进入...', {icon: 1, time: 1000}, function(){
+                    // ✨ 此时浏览器已经在底层悄悄托管了后端下发的 HttpOnly Cookie
+                    // 直接执行顶层窗口刷入管理主页，后端的看门狗将会完美放行
+                    window.top.location.href = '/index';
+                });
+            },
+            error: function(err){
+                layer.closeAll('loading');
+                // 增加安全防空指针容错
+                var errMsg = err.responseJSON?.detail || '账户或密码不正确';
+                layer.msg(errMsg, {icon: 2});
+            }
+        });
+        return false;
+    });
+});
+</script>
+</body>
+</html>

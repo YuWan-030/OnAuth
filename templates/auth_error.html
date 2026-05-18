@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安全审查未通过 - 统一身份认证中心</title>
+    <style>
+        /* ==================== 🌑 Apple/Google Premium Dark Theme ==================== */
+        :root {
+            --bg-color: #000000;
+            --card-bg: rgba(18, 18, 18, 0.7);
+            --card-border: rgba(255, 255, 255, 0.04);
+            --text-primary: #f5f5f7;
+            --text-secondary: #86868b;
+            --apple-blue: #0071e3;
+            --apple-blue-hover: #147ce5;
+            --google-red: #ff3b30;
+            --glow-color: rgba(255, 59, 48, 0.25);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Roboto", sans-serif;
+            background-color: var(--bg-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            overflow: hidden;
+        }
+
+        /* ==================== ✨ 背景微光粒子（霓虹特效环境） ==================== */
+        body::before {
+            content: "";
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, var(--glow-color) 0%, transparent 70%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1;
+            pointer-events: none;
+            filter: blur(40px);
+            animation: pulseGlow 4s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulseGlow {
+            0% { opacity: 0.6; transform: translate(-50%, -50%) scale(0.9); }
+            100% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+        }
+
+        /* ==================== 🛡️ 悬浮流光卡片主体 ==================== */
+        .error-wrapper {
+            position: relative;
+            padding: 1px; /* 为流光边框预留空间 */
+            border-radius: 24px;
+            background: linear-gradient(135deg, rgba(255,59,48,0.3) 0%, rgba(255,255,255,0.05) 40%, rgba(255,59,48,0.1) 100%);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9);
+            z-index: 2;
+        }
+
+        .error-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(20px); /* 苹果标志性毛玻璃级高斯模糊 */
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 23px;
+            padding: 56px 48px;
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+        }
+
+        /* ==================== 🚨 特效：呼吸感内发光图标 ==================== */
+        .error-icon {
+            width: 72px;
+            height: 72px;
+            background: rgba(255, 59, 48, 0.08);
+            border: 1px solid rgba(255, 59, 48, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 32px;
+            box-shadow: 0 0 20px rgba(255, 59, 48, 0.15);
+            animation: iconBreathe 2.5s infinite alternate;
+        }
+
+        .error-icon svg {
+            width: 32px;
+            height: 32px;
+            color: var(--google-red);
+            filter: drop-shadow(0 0 8px var(--google-red));
+        }
+
+        @keyframes iconBreathe {
+            0% { box-shadow: 0 0 15px rgba(255, 59, 48, 0.1); transform: scale(1); }
+            100% { box-shadow: 0 0 30px rgba(255, 59, 48, 0.3); transform: scale(1.03); }
+        }
+
+        h1 {
+            font-size: 24px;
+            color: #ffffff;
+            margin-bottom: 16px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 40px;
+            font-weight: 400;
+            padding: 0 8px;
+        }
+
+        /* ==================== 🖱️ 按钮：液态微弹物理反馈 ==================== */
+        .btn-close {
+            display: inline-block;
+            background: var(--apple-blue);
+            color: #ffffff;
+            padding: 14px 42px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: -0.2px;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); /* 苹果专用的缓动曲线 */
+            box-shadow: 0 4px 12px rgba(0, 113, 227, 0.3);
+        }
+
+        .btn-close:hover {
+            background: var(--apple-blue-hover);
+            box-shadow: 0 6px 20px rgba(0, 113, 227, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .btn-close:active {
+            transform: translateY(1px) scale(0.97); /* 极度逼真的机械下压弹簧动效 */
+            box-shadow: 0 2px 6px rgba(0, 113, 227, 0.3);
+        }
+
+        /* ==================== 🏷️ 底部极简工业风脚注 ==================== */
+        .footer-tips {
+            margin-top: 40px;
+            font-size: 10px;
+            color: #3a3a3c;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+<div class="error-wrapper">
+    <div class="error-container">
+        <div class="error-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="7" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+        </div>
+        <h1>安全审计拦截</h1>
+        <p id="error-detail">{{ detail }}</p>
+
+        <a href="javascript:window.close();" class="btn-close">确认并关闭</a>
+
+        <div class="footer-tips">
+            SECURITY RISK GATEWAY &bull; OAUTH_REJECTED
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

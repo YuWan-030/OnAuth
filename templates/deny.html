@@ -134,7 +134,7 @@ h1 {
     </div>
 
     <div class="info-box">
-        安全审计标识：{{ session_id or '🔒 IAM-GATEWAY' }}
+    安全审计标识：{{ session_id[:40] + '...' if session_id and session_id|length > 40 else (session_id or '🔒 IAM-GATEWAY') }}
     </div>
 
     <div>您现在可以安全地<strong>关闭当前浏览器标签页</strong>。</div>

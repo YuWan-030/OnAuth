@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>实时监控看板 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        body { background-color: #f2f2f2; padding: 15px; }
+        .card-value { font-size: 30px; font-weight: bold; line-height: 40px; color: #333; padding-top: 10px; }
+        .card-desc { font-size: 12px; color: #999; margin-top: 5px; }
+        .layui-card { border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .icon-box { float: right; font-size: 40px; color: #e2e2e2; opacity: 0.7; }
+        .badge-danger-soft { background-color: #FF5722 !important; color: #fff; }
+    </style>
+</head>
+<body>
+
+<div class="layui-fluid">
+    <div class="layui-row layui-col-space15">
+
+        <div class="layui-col-md4">
+            <div class="layui-card">
+                <div class="layui-card-header" style="border-bottom: none;">👥 全局授信用户总数</div>
+                <div class="layui-card-body">
+                    <i class="layui-icon layui-icon-user icon-box"></i>
+                    <div class="card-value" id="stat-total-users">-</div>
+                    <div class="card-desc">当前中台全量合规注册的开发者与终端账号</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="layui-col-md4">
+            <div class="layui-card">
+                <div class="layui-card-header" style="border-bottom: none;">🚨 到期/熔断触发频次</div>
+                <div class="layui-card-body">
+                    <i class="layui-icon layui-icon-fire icon-box" style="color: #FF5722;"></i>
+                    <div class="card-value" id="stat-frozen-freq" style="color: #FF5722;">-</div>
+                    <div class="card-desc">因“商业过期”或“人工干预”处于熔断查封的凭证数</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="layui-col-md4">
+            <div class="layui-card">
+                <div class="layui-card-header" style="border-bottom: none;">⚡ 实时在线活跃设备</div>
+                <div class="layui-card-body">
+                    <i class="layui-icon layui-icon-cellphone icon-box" style="color: #16baaa;"></i>
+                    <div class="card-value" id="stat-active-devices" style="color: #16baaa;">-</div>
+                    <div class="card-desc">最近 15 分钟内向中台通信换取 Token 的活跃指纹</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="layui-row layui-col-space15" style="margin-top: 5px;">
+        <div class="layui-col-md12">
+            <div class="layui-card">
+                <div class="layui-card-header">📡 边缘设备通信热力趋势（最近 7 日授信走势）</div>
+                <div class="layui-card-body">
+                    <table class="layui-table" lay-skin="line">
+                        <thead>
+                            <tr>
+                                <th>监控时间轴</th>
+                                <th>设备连接热度指标</th>
+                                <th>安全防御状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trend-table-body">
+                            <tr><td colspan="3" align="center">正在接入 OnAuth 通信链路...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+layui.use(['layer', 'util'], function(){
+    var $ = layui.$;
+    var layer = layui.layer;
+
+    // 🛡️ 全局 Ajax 安全拦截
+    $.ajaxSetup({
+        complete: function(xhr, status) {
+            if (xhr.status === 401) { window.top.location.href = '/login'; }
+            if (xhr.status === 403) {
+                layer.msg('⚠️ 监控大屏越权：您所在的权限组无法读取实时监控数据！', {icon: 2});
+            }
+        }
+    });
+
+    // 🎯 异步轮询大屏核心指标引擎
+    function refreshDashboard() {
+        $.ajax({
+            url: '/admin/dashboard/stats',
+            type: 'GET',
+            success: function(res){
+                if(res.status === "success") {
+                    var data = res.data;
+
+                    // 1. 动态灌注数字魔方
+                    $('#stat-total-users').text(data.total_users + " 位");
+                    $('#stat-frozen-freq').text(data.frozen_frequency + " 次触发");
+                    $('#stat-active-devices').text(data.active_devices + " 台");
+
+                    // 2. 动态渲染简易趋势行
+                    var html = '';
+                    data.device_trend.forEach(function(item){
+                        html += '<tr>' +
+                            '<td><i class="layui-icon layui-icon-log" style="margin-right: 5px; color:#16b777;"></i>' + item.date + '</td>' +
+                            '<td>' +
+                            '  <div class="layui-progress" lay-percent="' + (item.count * 2) + '%" style="margin-top:5px;">' +
+                            '    <div class="layui-progress-bar layui-bg-blue" style="width: ' + Math.min(item.count * 2, 100) + '%;"></div>' +
+                            '  </div>' +
+                            '</td>' +
+                            '<td><span class="layui-badge layui-bg-green">安全合规</span></td>' +
+                            '</tr>';
+                    });
+                    $('#trend-table-body').html(html);
+                }
+            }
+        });
+    }
+
+    // 初始化加载
+    refreshDashboard();
+
+    // 🚀 每隔 30 秒自动化无感刷新大盘数据，维持监控实时性
+    setInterval(refreshDashboard, 30000);
+});
+</script>
+</body>
+</html>

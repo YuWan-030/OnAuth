@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>OnAuth - 多租户授权管理中台</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <style>
+        body { margin: 0; padding: 0; }
+        .header { height: 60px; line-height: 60px; background: #28343C; color: #fff; padding: 0 20px; font-size: 18px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; box-sizing: border-box; }
+        .side { position: fixed; top: 60px; bottom: 0; width: 200px; background: #2F4050; }
+        .main { position: fixed; left: 200px; top: 60px; right: 0; bottom: 0; background: #F3F3F4; }
+
+        /* 🎯 Tabs 容器微调，使其完美贴合 RuoYi 风格的主体区域 */
+        .layui-tab { margin: 0; height: 100%; display: flex; flex-direction: column; }
+        .layui-tab-title { background: #fff; border-bottom: 1px solid #dcdfe6; height: 40px; }
+        .layui-tab-content { flex: 1; padding: 0; position: relative; background: #F3F3F4; }
+        .admin-iframe { width: 100%; height: 100%; border: none; position: absolute; top: 0; left: 0; }
+
+        .user-info-area { font-size: 14px; font-weight: normal; }
+        .user-info-area .layui-nav { background: none; padding: 0; }
+        .user-info-area .layui-nav-item { line-height: 60px; }
+        .user-info-area .layui-nav-item a { color: #fff !important; padding: 0 10px; }
+        .user-info-area .layui-nav-child a { color: #333 !important; }
+        .logout-btn-icon { margin-right: 5px; color: #FF5722; }
+        .user-info-area .layui-nav-item > a { padding-right: 25px !important; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div>🛡️ OnAuth - 多租户微服务授权中台</div>
+    <div class="user-info-area">
+        <ul class="layui-nav" lay-filter="headerNav">
+            <li class="layui-nav-item">
+                <a href="javascript:;"><i class="layui-icon layui-icon-username" style="margin-right: 5px;"></i><span id="current-admin-name">正在主页鉴权...</span></a>
+                <dl class="layui-nav-child">
+                    <dd><a href="javascript:;" id="btn-logout"><i class="layui-icon layui-icon-logout logout-btn-icon"></i>安全退出</a></dd>
+                </dl>
+            </li>
+        </ul>
+    </div>
+</div>
+
+<div class="side">
+    <ul class="layui-nav layui-nav-tree" lay-filter="sideNav" style="background: #2F4050; width: 200px;">
+        <li class="layui-nav-item layui-this">
+            <a href="javascript:;" data-url="/dashboard" data-id="dashboard" data-title="首页大盘">首页大盘</a>
+        </li>
+        <li class="layui-nav-item layui-nav-itemed">
+            <a href="javascript:;">组织管理</a>
+            <dl class="layui-nav-child">
+                <dd><a href="javascript:;" data-url="/admin/groups" data-id="groups" data-title="工作室管理">工作室管理</a></dd>
+            </dl>
+        </li>
+        <li class="layui-nav-item layui-nav-itemed">
+            <a href="javascript:;">应用管理</a>
+            <dl class="layui-nav-child">
+                <dd><a href="javascript:;" data-url="/admin/apps" data-id="apps" data-title="应用列表">应用列表</a></dd>
+            </dl>
+        </li>
+        <li class="layui-nav-item layui-nav-itemed">
+            <a href="javascript:;">凭证管理</a>
+            <dl class="layui-nav-child">
+                <dd><a href="javascript:;" data-url="/admin/credentials" data-id="credentials" data-title="授权凭证">授权凭证</a></dd>
+            </dl>
+        </li>
+    </ul>
+</div>
+
+<div class="main">
+    <div class="layui-tab" lay-filter="mainTabs" lay-allowclose="true">
+        <ul class="layui-tab-title">
+            <li lay-id="dashboard" class="layui-this">首页大盘</li>
+        </ul>
+        <div class="layui-tab-content">
+            <div class="layui-tab-item layui-show">
+                <iframe class="admin-iframe" src="/dashboard"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
+<script>
+layui.use(['element', 'jquery', 'layer'], function(){
+    const $ = layui.$;
+    const element = layui.element;
+    const layer = layui.layer;
+
+    $.ajaxSetup({
+        complete: function(xhr, status) {
+            if (xhr.status === 401) { window.top.location.href = '/login'; }
+        }
+    });
+
+    function fetchAdminProfile() {
+        $.ajax({
+            url: '/admin/profile',
+            type: 'GET',
+            success: function(res){
+                if(res.status === "success") {
+                    var displayName = res.nickname ? res.nickname : res.username;
+                    $('#current-admin-name').text(displayName);
+                    element.render('nav', 'headerNav');
+                }
+            },
+            error: function() { $('#current-admin-name').text('未授信用户'); }
+        });
+    }
+    fetchAdminProfile();
+
+    // 🎯 核心多 Tabs 路由分配逻辑
+    $('[data-url]').click(function(){
+        const url = $(this).attr('data-url');
+        const id = $(this).attr('data-id');
+        const title = $(this).attr('data-title');
+
+        // 检查该 Tab 是否已经建立过
+        const isOpen = $(`.layui-tab-title li[lay-id="${id}"]`).length > 0;
+
+        if(!isOpen) {
+            // 如果没开过，动态新增一个隐藏的 iframe 沙箱，灌入子页面
+            element.tabAdd('mainTabs', {
+                title: title,
+                content: `<iframe class="admin-iframe" src="${url}"></iframe>`,
+                id: id
+            });
+        }
+        // 顺畅切换到对应 Tab
+        element.tabChange('mainTabs', id);
+    });
+
+    // 监听 Tabs 切换事件，反向让左侧树状菜单跟着高亮
+    element.on('tab(mainTabs)', function(data){
+        const layId = $(this).attr('lay-id');
+        $('.side .layui-nav-child dd, .side .layui-nav-item').removeClass('layui-this');
+        $(`.side [data-id="${layId}"]`).parent().addClass('layui-this');
+    });
+
+    // 安全退出
+    $('#btn-logout').click(function(e){
+        e.preventDefault();
+        layer.confirm('确定要安全退出 OnAuth 云管理中台系统吗？', {icon: 3, title: '提示'}, function(){
+            layer.load(2);
+            $.ajax({
+                url: '/auth/logout',
+                type: 'POST',
+                complete: function() {
+                    layer.closeAll('loading');
+                    document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+                    document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+                    layer.msg('会话安全退出！', {icon: 1, time: 1000}, function(){ window.location.href = '/login'; });
+                }
+            });
+        });
+    });
+});
+</script>
+</body>
+</html>

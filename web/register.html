@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>中台注册 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        body { background-color: #f1f2f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .reg-container { width: 400px; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .reg-title { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 25px; color: #2f3542; }
+    </style>
+</head>
+<body>
+
+<div class="reg-container">
+    <div class="reg-title">📝 申请注册中台席位</div>
+    <form class="layui-form">
+        <div class="layui-form-item">
+            <input type="text" name="username" lay-verify="required" placeholder="设定账户名" class="layui-input">
+        </div>
+        <div class="layui-form-item">
+            <input type="password" name="password" lay-verify="required" placeholder="设定登录密码" class="layui-input">
+        </div>
+        <div class="layui-form-item">
+            <button class="layui-btn layui-btn-fluid" lay-submit lay-filter="doRegister">立即注册</button>
+        </div>
+        <div style="text-align: center; font-size: 13px;">
+            <a href="/login" style="color: #57606f;">已有席位？返回登录</a>
+        </div>
+    </form>
+</div>
+
+<script>
+layui.use(['form', 'layer'], function(){
+    var form = layui.form, layer = layui.layer, $ = layui.$;
+
+    form.on('submit(doRegister)', function(data){
+        layer.load(2);
+        $.ajax({
+            url: '/auth/register',
+            type: 'POST',
+            data: JSON.stringify(data.field),
+            contentType: 'application/json',
+            success: function(res){
+                layer.closeAll('loading');
+                layer.msg('中台账号开辟成功！', {icon: 1, time: 1500}, function(){
+                    window.location.href = '/login';
+                });
+            },
+            error: function(err){
+                layer.closeAll('loading');
+                layer.msg(err.responseJSON.detail || '注册失败，账户可能已被占用', {icon: 2});
+            }
+        });
+        return false;
+    });
+});
+</script>
+</body>
+</html>

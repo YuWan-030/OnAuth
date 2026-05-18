@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>独立应用管理 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        body { background-color: #f2f2f2; padding: 20px; }
+        .layui-card-header { font-weight: bold; }
+        .logo-img { width: 30px; height: 30px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="layui-fluid">
+    <div class="layui-card">
+        <div class="layui-card-header">📱 OnAuth 多租户架构 - 独立应用管理大厅</div>
+        <div class="layui-card-body">
+            <div class="layui-btn-container">
+                <button class="layui-btn layui-btn-sm layui-btn-normal" id="btn-add-app">
+                    <i class="layui-icon layui-icon-add-1"></i> 新增独立应用
+                </button>
+            </div>
+            <table class="layui-hide" id="appTable" lay-filter="appTable"></table>
+        </div>
+    </div>
+</div>
+
+<script type="text/html" id="logoTpl">
+    {% raw %}
+    {{# if(d.app_logo){ }}
+        <img src="{{= d.app_logo }}" class="logo-img" alt="Logo">
+    {{# } else { }}
+        <i class="layui-icon layui-icon-app" style="font-size: 24px; color: #1e9fff;"></i>
+    {{# } }}
+    {% endraw %}
+</script>
+
+<script type="text/html" id="switchTpl">
+    {% raw %}
+    <input type="checkbox" name="is_active" value="{{= d.id }}" lay-skin="switch" lay-text="启用|下线" lay-filter="appActiveSwitch" {{= d.is_active ? 'checked' : '' }}>
+    {% endraw %}
+</script>
+
+<script type="text/html" id="barDemo">
+    {% raw %}
+    <a class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del">物理下线</a>
+    {% endraw %}
+</script>
+
+<div id="addAppModal" style="display: none; padding: 20px;">
+    <form class="layui-form" id="appForm" lay-filter="appForm">
+        <div class="layui-form-item">
+            <label class="layui-form-label">所属工作室</label>
+            <div class="layui-input-block">
+                <select name="group_id" id="groupSelect" lay-verify="required">
+                    <option value="">-- 请选择所属组织空间 --</option>
+                </select>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">应用名称</label>
+            <div class="layui-input-block">
+                <input type="text" name="app_name" lay-verify="required" placeholder="如：A.1程序" class="layui-input">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">Logo URL</label>
+            <div class="layui-input-block">
+                <input type="text" name="app_logo" placeholder="可选，输入图标绝对路径" class="layui-input">
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+layui.use(['table', 'form', 'layer'], function(){
+    var table = layui.table, form = layui.form, layer = layui.layer, $ = layui.$;
+
+    // 1. 初始化表格：请求平铺的应用数据列表
+    table.render({
+        elem: '#appTable',
+        url: '/admin/apps/flat_list',
+        // ❌ 彻底净化硬编码的静态 token headers，自动通过浏览器底层托管的 Cookie 传递管理员身份安全凭证
+        cols: [[
+            {field: 'id', title: '应用编号', width: 90, sort: true, align: 'center'},
+            {field: 'app_logo', title: '图标', width: 80, templet: '#logoTpl', align: 'center'},
+            {field: 'group_name', title: '归属工作室/组织', width: 200, style: 'color: #722ed1; font-weight: bold;'},
+            {field: 'app_name', title: '应用产品名称', width: 200},
+            {field: 'owner', title: '负责人', width: 120},
+            {field: 'created_at', title: '创建时间', width: 180},
+            {field: 'is_active', title: '中台熔断状态', width: 130, templet: '#switchTpl', align: 'center'},
+            {fixed: 'right', title: '资产操作', toolbar: '#barDemo', width: 120, align: 'center'}
+        ]],
+        parseData: function(res){ return { "code": 0, "msg": "", "count": res.length, "data": res }; },
+        // ✨ 前端安全守护神：检测到网格由于登录会话过期返回 HTTP 401 时，强行执行全局阻断与降级
+        error: function(res){
+            if(res.status === 401){
+                layer.msg('会话已失效或您尚未登录，请重新验证管理员身份！', {icon: 2, time: 1500}, function(){
+                    window.top.location.href = '/login';
+                });
+            }
+        }
+    });
+
+    // 2. 监听应用级熔断开关
+    form.on('switch(appActiveSwitch)', function(obj){
+        var appId = this.value;
+        var isActive = obj.elem.checked;
+        $.ajax({
+            url: '/admin/apps/' + appId + '/status',
+            type: 'PUT',
+            data: JSON.stringify({ is_active: isActive }),
+            contentType: 'application/json',
+            success: function(res){ layer.msg(res.msg || '应用防线已更新！', {icon: 1}); },
+            error: function(err){
+                obj.elem.checked = !isActive; // 失败时强行回滚开关状态
+                form.render('checkbox');
+                if(err.status === 401){
+                    layer.msg('鉴权阻断，请登录后重试！', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                } else {
+                    layer.msg('中台通信故障', {icon: 2});
+                }
+            }
+        });
+    });
+
+    // 3. 物理下线与粉碎应用
+    table.on('tool(appTable)', function(obj){
+        if(obj.event === 'del'){
+            layer.confirm('确定彻底物理粉碎该应用？名下所有开出的激活码、License 将瞬间失效灰飞烟灭！', {icon: 3, title: '物理下线安全审查'}, function(index){
+                $.ajax({
+                    url: '/admin/apps/' + obj.data.id,
+                    type: 'DELETE',
+                    success: function(res){
+                        layer.msg(res.msg || '物理下线成功', {icon: 1});
+                        obj.del();
+                        layer.close(index);
+                    },
+                    error: function(err) {
+                        if(err.status === 401){
+                            layer.msg('越权操作！请登录管理员账号', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                        } else {
+                            layer.msg('物理下线请求未通过鉴权', {icon: 2});
+                        }
+                    }
+                });
+            });
+        }
+    });
+
+    // 4. 核心交互：动态弹窗并拉取 Group 级联数据
+    $('#btn-add-app').on('click', function(){
+        // 先清空并初始化下拉菜单
+        $('#groupSelect').html('<option value="">-- 请选择所属组织空间 --</option>');
+
+        // 发起异步 Ajax，抓取上级工作室列表，组装成 Select Option
+        $.ajax({
+            url: '/admin/groups/list', // 对应后端对齐后的工作室平铺接口
+            type: 'GET',
+            success: function(res){
+                $.each(res, function(index, item){
+                    if(item.is_active) { // 只有处于正常激活状态的工作室才有资格创建应用
+                        $('#groupSelect').append(new Option(item.group_name, item.id));
+                    }
+                });
+                form.render('select'); // 强行让 Layui 重新渲染下拉框组件
+            },
+            error: function(err){
+                if(err.status === 401){
+                    layer.msg('未授权或会话过期，请先登录！', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                }
+            }
+        });
+
+        // 唤起 Layui 弹出层
+        layer.open({
+            type: 1,
+            title: '🚀 开通全新独立应用主体',
+            content: $('#addAppModal'),
+            area: ['500px', '350px'],
+            btn: ['立即开通', '取消'],
+            yes: function(index, layero){
+                var formData = form.val('appForm');
+                if(!formData.group_id || !formData.app_name) {
+                    layer.msg('请完整填写必填项');
+                    return false;
+                }
+
+                // 🛠️ 规范对齐：路由归入 /admin 统一中台管控
+                $.ajax({
+                    url: '/admin/apps',
+                    type: 'POST',
+                    data: JSON.stringify({
+                        group_id: parseInt(formData.group_id),
+                        app_name: formData.app_name,
+                        app_logo: formData.app_logo,
+                        owner: 'admin'
+                    }),
+                    contentType: 'application/json',
+                    success: function(res){
+                        layer.close(index);
+                        layer.msg('独立应用挂载成功！', {icon: 1});
+                        $('#appForm')[0].reset(); // 重置表单
+                        table.reload('appTable'); // 刷新网格
+                    },
+                    error: function(err){
+                        if(err.status === 401){
+                            layer.msg('操作已被拦截，请重新登录！', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                        } else {
+                            layer.msg(err.responseJSON?.detail || '开通失败', {icon: 2});
+                        }
+                    }
+                });
+            },
+            end: function(){
+                $('#addAppModal').hide(); // 弹窗关闭时将 DOM 重新隐藏
+            }
+        });
+    });
+});
+</script>
+</body>
+</html>
