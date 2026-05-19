@@ -20,7 +20,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 
 
-@router.get("/oauth/authorize", summary="【OAuth2标准流】授权入口（精简智能解密版）")
+@router.get("/oauth/authorize", summary="【OAuth2标准流】授权入口（纯净 Session 终极优化版）")
 def oauth_authorize(
         request: Request,
         client_id: str = Query(...),
@@ -29,8 +29,8 @@ def oauth_authorize(
         scope: str = Query("read"),
         state: str = Query(None),
 
-        # 🎯 保持纯净：只拦截你确定会写入和用到的两个核心 Cookie 键名
-        auth_token: str = Cookie(None),
+        # 🎯 纯净双轨：只拦截你中台登录时亲手种下的两个 Session Cookie 键名
+        auth_cookie: str = Cookie(None),
         sso_session_id: str = Cookie(None),
 
         session_id: str = Query(None),
@@ -40,8 +40,7 @@ def oauth_authorize(
         return templates.TemplateResponse(
             request=request,
             name="oauth_error.html",
-            context={"request": request,
-                     "detail": "目前仅支持 response_type='code' 标准授权码模式，请检查客户端请求参数。"}
+            context={"request": request, "detail": "目前仅支持 response_type='code' 标准授权码模式。"}
         )
 
     cred = db.query(AppCredential).filter(AppCredential.client_id == client_id).first()
@@ -49,20 +48,18 @@ def oauth_authorize(
         return templates.TemplateResponse(
             request=request,
             name="oauth_error.html",
-            context={"request": request, "detail": "非法的客户端申请：该 client_id 在中台系统中未注册或已被粉碎级移除。"}
+            context={"request": request, "detail": "非法的客户端申请：client_id 未注册。"}
         )
 
-    # 【三层架构穿透】
+    # 三层架构熔断合规审计
     current_app = cred.app
     current_group = current_app.group
-
-    # 【纵深防御】联动联动熔断审计
     if not cred.is_active:
         detail_msg = "安全合规性拒绝：该凭证授权通道已被手工关闭。"
     elif not current_app.is_active:
-        detail_msg = f"安全合规性拒绝：独立应用 [{current_app.app_name}] 已被中台强制下线熔断。"
+        detail_msg = f"安全合规性拒绝：独立应用 [{current_app.app_name}] 已被强制下线。"
     elif not current_group.is_active:
-        detail_msg = f"安全合规性拒绝：该应用所属的组织空间 [{current_group.group_name}] 已被中台运营方整体封禁查封！"
+        detail_msg = f"安全合规性拒绝：组织空间 [{current_group.group_name}] 已被整体封禁！"
     else:
         detail_msg = None
 
@@ -73,47 +70,21 @@ def oauth_authorize(
             context={"request": request, "detail": detail_msg}
         )
 
-    # 🚀 【三轨优先级清洗】
-    # 顺位：URL显式传参 > 你的新Web端凭证(auth_token) > 旧版/第三方规范(sso_session_id)
+    # 🚀 【双轨纯 Session 清洗流】
+    # 顺位：URL显式传参最高准则 > 旧版或第三方规范(sso_session_id)
+    effective_session_id = session_id or sso_session_id
 
-
-    effective_session_id = session_id or auth_token or sso_session_id
-
-    print("=" * 60)
-    print(
-        f"📡 [DEBUG 入口拦截] 当前捕获到的 effective_session_id: {effective_session_id[:30] if effective_session_id else 'None'}...")
-    print(
-        f"🍪 [DEBUG 原始 Cookie 盘点] auth_token: {auth_token[:20] if auth_token else 'None'}, sso_session_id: {sso_session_id[:20] if sso_session_id else 'None'}")
+    # ====== 🛠️ 极其干净的本地 Debug 盘点 ======
+    print("="*60)
+    print(f"📡 [中台看门狗] 最终采信的有效会话 ID: {effective_session_id}")
+    # ==========================================
 
     user_logged_in = None
-    if effective_session_id:
-
-        # 🎯 智能分流 1：如果当前捞出来的凭证内容是 JWT (以 eyJ 开头)
-        if effective_session_id.startswith("eyJ"):
-            try:
-                # 🔒 直接在本地内存中利用中台密钥解密验伪
-                payload = jwt.decode(
-                    effective_session_id,
-                    SECRET_KEY,
-                    algorithms=[ALGORITHM]
-                )
-                # 从 JWT 载荷中提取出在线用户名
-                user_logged_in = payload.get("sub") or payload.get("username")
-
-            except jwt.ExpiredSignatureError:
-                print("⚠️ [安全中心] 阻断：本地解密显示该 JWT 凭证已过期")
-                user_logged_in = None
-            except jwt.InvalidTokenError:
-                print("🚨 [安全中心] 严重阻断：本地解密显示该 JWT 签名遭到破坏或非法！")
-                user_logged_in = None
-
-        # 🎯 智能分流 2：如果不是 JWT，则判定为传统 Redis Session ID (以 sess_ 开头)
-        if not user_logged_in:
-            # ⚡ 瞬时打向 Redis 验证当前的会话令牌
-            raw_user = redis_client.get(effective_session_id)
-            if raw_user:
-                # 🛡️ 对 Redis 字节流进行强转字符串解码，防止 Jinja2 模板报错
-                user_logged_in = raw_user.decode('utf-8') if isinstance(raw_user, bytes) else raw_user
+    if effective_session_id and effective_session_id.startswith("sess_"):
+        # ⚡ 纯粹的分布式高速缓存撞击
+        raw_user = redis_client.get(effective_session_id)
+        if raw_user:
+            user_logged_in = raw_user.decode('utf-8') if isinstance(raw_user, bytes) else raw_user
 
     context = {
         "request": request,
@@ -126,7 +97,7 @@ def oauth_authorize(
         "app_logo": current_app.app_logo
     }
 
-    # 🚨 如果三种渠道都没能命中/解出有效的用户，判定未登录，扭送登录墙
+    # 🚨 如果没有任何渠道命中有效的 Redis 会话，踢回登录墙
     if not user_logged_in:
         return templates.TemplateResponse(
             request=request,
@@ -134,7 +105,7 @@ def oauth_authorize(
             context=context
         )
 
-    # 🚀 成功确立管理员身份，平滑降落到授权确认舱（Consent Page）
+    # 🚀 完美平滑降落到授权确认舱（Consent Page）
     context.update({
         "username": user_logged_in,
         "session_id": effective_session_id

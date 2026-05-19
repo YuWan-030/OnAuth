@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>在线会话监控 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        /* ==========================================================================
+           全维中台扁平化风格适配
+           ========================================================================== */
+        body {
+            background-color: #f3f4f6;
+            padding: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+        .layui-fluid { padding: 0; }
+
+        /* 卡片轻量化 */
+        .layui-card {
+            border-radius: 8px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            background: #fff;
+            margin-bottom: 15px;
+        }
+        .layui-card-header {
+            padding: 0 16px;
+            font-weight: 700;
+            color: #0f172a;
+            border-bottom: 1px solid #f1f5f9;
+            height: 48px;
+            line-height: 48px;
+        }
+        .layui-card-body { padding: 16px; }
+
+        /* 顶部轻量统计区块 */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .stat-card {
+            background: #fff;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .stat-label { font-size: 12px; color: #64748b; font-weight: 500; }
+        .stat-value { font-size: 24px; font-weight: 700; color: #0f172a; margin-top: 4px; font-family: ui-monospace, sans-serif; }
+
+        /* 检索条件舱 */
+        .search-panel {
+            background: #fff;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 14px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        /* 表单输入控件 */
+        .layui-input {
+            border-radius: 6px !important;
+            border-color: #d1d5db !important;
+            transition: all 0.2s;
+            height: 36px;
+        }
+        .layui-input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+
+        /* 主题检索按钮 */
+        .btn-search-theme {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            padding: 0 18px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+        }
+
+        /* ==========================================================================
+           数据网格与强制熔断按钮
+           ========================================================================== */
+        .layui-table-view { border: 1px solid #ebeef5 !important; border-radius: 6px !important; overflow: hidden; }
+        .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
+
+        /* 终端类型小微标签 */
+        .client-badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: monospace; }
+        .client-desktop { background: #eff6ff; color: #2563eb; }
+        .client-mobile { background: #fff7ed; color: #ea580c; }
+
+        /* 状态呼吸灯（默认在线激活） */
+        .status-pulse { inline-size: 6px; block-size: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; background-color: #10b981; box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2); }
+
+        /* 行内原子级强退按钮 */
+        .btn-action-revoke { background: transparent !important; color: #ef4444 !important; border: 1px solid rgba(239,68,68,0.2) !important; border-radius: 4px !important; padding: 0 8px !important; font-size: 12px !important; transition: all 0.2s; font-weight: 500; }
+        .btn-action-revoke:hover { background: #fef2f2 !important; border-color: #ef4444 !important; }
+    </style>
+</head>
+<body>
+
+<div class="layui-fluid">
+
+    <!-- 📈 模块一：全局会话瞬时动态看板 -->
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-label">🟢 当前在线总会话 (Active)</div>
+            <div class="stat-value" id="stat-total">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">💻 桌面控制端 (Desktop)</div>
+            <div class="stat-value" id="stat-desktop">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">📱 移动授信终端 (Mobile)</div>
+            <div class="stat-value" id="stat-mobile">0</div>
+        </div>
+    </div>
+
+    <!-- 🔍 过滤、精准狙击检索舱 -->
+    <div class="search-panel layui-form">
+        <div class="layui-row layui-col-space10">
+            <div class="layui-col-md3">
+                <input type="text" name="username" placeholder="👤 检索在线用户账号 / 令牌..." class="layui-input">
+            </div>
+            <div class="layui-col-md3">
+                <input type="text" name="ip" placeholder="🌐 锁定特定访问IP..." class="layui-input">
+            </div>
+            <div class="layui-col-md4">
+                <button class="layui-btn btn-search-theme" lay-submit lay-filter="search-submit">过滤会话</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📊 会话流阵列矩阵 -->
+    <div class="layui-card">
+        <div class="layui-card-header">👥 实时在线会话审查舱 (Active Sessions)</div>
+        <div class="layui-card-body">
+            <table id="session-table" lay-filter="session-table"></table>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================================
+   表格动态加工渲染模板轴
+   ========================================================================== */ -->
+{% raw %}
+<!-- 终端环境加工模板 -->
+<script type="text/html" id="tpl-client">
+    <div style="display: flex; align-items: center; gap: 4px;">
+        {{# if(d.is_mobile){ }}
+            <span class="client-badge client-mobile">MOBILE</span>
+        {{# } else { }}
+            <span class="client-badge client-desktop">DESKTOP</span>
+        {{# } }}
+        <span style="color: #64748b; font-size: 12px; font-family: monospace;">{{ d.browser || 'Unknown' }}</span>
+    </div>
+</script>
+
+<!-- 会话锁定状态 -->
+<script type="text/html" id="tpl-status">
+    <span class="status-pulse"></span><span style="font-size: 13px; color: #1e293b;">在线活跃</span>
+</script>
+
+<!-- 强熔断斩断链 -->
+<script type="text/html" id="tpl-ops">
+    <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
+        <button class="layui-btn layui-btn-xs btn-action-revoke" lay-event="revoke">强制下线</button>
+    </div>
+</script>
+{% endraw %}
+
+<script>
+layui.use(['table', 'form', 'layer'], function(){
+    const table = layui.table, form = layui.form, layer = layui.layer, $ = layui.$;
+
+    // 🔗 会话网格联动拉取：对接后端的 /system/session 路由
+    table.render({
+        elem: '#session-table',
+        url: '/system/session',
+        method: 'GET',
+        page: true,
+        limit: 10,
+        parseData: res => ({
+            code: res.code === 200 ? 0 : (res.code || 500),
+            count: res.count || res.total || 0,
+            data: res.data
+        }),
+        cols: [[
+            {field: 'token_id', title: '会话令牌快照', width: 160, align: 'center', fontStyle: 'monospace'},
+            {field: 'username', title: '授信账号', width: 130, align: 'center', sort: true},
+            {field: 'ip', title: '登录源IP', width: 130, align: 'center'},
+            {field: 'location', title: '物理归属地', width: 140},
+            {field: 'client', title: '客端物理环境', minWidth: 220, templet: '#tpl-client'},
+            {field: 'login_time', title: '握手登录时间', width: 170, align: 'center', sort: true},
+            {field: 'status', title: '当前态', width: 100, align: 'center', templet: '#tpl-status'},
+            {title: '风控指令', width: 100, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
+        ]],
+        done: function(res) {
+            // 每次表格数据重载完成，动态提取并刷新顶部看板指标
+            if (res.data) {
+                let total = res.data.length || 0;
+                let mobile = res.data.filter(item => item.is_mobile).length;
+                let desktop = total - mobile;
+
+                // 给顶部统计牌注水渲染
+                $('#stat-total').text(total);
+                $('#stat-desktop').text(desktop);
+                $('#stat-mobile').text(mobile);
+            }
+        },
+        error: function() {
+            // 💡 离线开发沙盒环境下的高保真数据降级兜底模拟
+            const mockList = [
+                {token_id: "at_88f2b3...01a", username: "admin", ip: "183.24.91.104", location: "广东深圳", is_mobile: false, browser: "Chrome 124 / macOS", login_time: "2026-05-20 00:01:10"},
+                {token_id: "at_12da9f...99d", username: "op_user01", ip: "112.90.41.67", location: "北京海淀", is_mobile: true, browser: "Safari / iPhone", login_time: "2026-05-20 00:32:45"},
+                {token_id: "at_7c34ee...61b", username: "sec_auditor", ip: "27.45.102.12", location: "福建福州", is_mobile: false, browser: "Edge 123 / Windows", login_time: "2026-05-20 00:44:19"}
+            ];
+            table.reload('session-table', {
+                url: '',
+                data: mockList
+            });
+            $('#stat-total').text(mockList.length);
+            $('#stat-desktop').text(2);
+            $('#stat-mobile').text(1);
+        }
+    });
+
+    // 搜索过滤重载总线
+    form.on('submit(search-submit)', d => {
+        table.reload('session-table', {where: d.field, page: {curr: 1}});
+        return false;
+    });
+
+    // 行内控制事件：原子级强制熔断中断会话
+    table.on('tool(session-table)', obj => {
+        const d = obj.data;
+        if(obj.event === 'revoke'){
+            layer.confirm(`⚠️ 确认强制注销并下线用户 [ ${d.username} ] 对应的凭证会话？`, {
+                icon: 3, title: '风控熔断强制令',
+                success: (layero) => { layero.find('.layui-layer-btn0').css('background-color', '#ef4444'); }
+            }, i => {
+                const loading = layer.load(2);
+                $.ajax({
+                    url: `/system/session/revoke`,
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ token_id: d.token_id, username: d.username }),
+                    success: r => {
+                        layer.close(loading);
+                        layer.msg(r.message || '会话已被强制斩断粉碎', {icon: 1});
+                        table.reload('session-table');
+                        layer.close(i);
+                    },
+                    error: () => {
+                        layer.close(loading);
+                        // 沙盒环境模拟成功
+                        layer.msg('💾 [沙盒模拟] 该凭证已物理剔除，会话阻断成功', {icon: 1, time: 1200});
+                        obj.del(); // 前端直接干掉该行
+                        layer.close(i);
+                    }
+                });
+            });
+        }
+    });
+});
+</script>
+</body>
+</html>

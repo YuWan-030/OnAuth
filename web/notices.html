@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>通知公告管理 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        /* ==========================================================================
+           全维中台扁平化风格适配
+           ========================================================================== */
+        body {
+            background-color: #f3f4f6;
+            padding: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+        .layui-fluid { padding: 0; }
+
+        /* 卡片轻量化 */
+        .layui-card {
+            border-radius: 8px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            background: #fff;
+        }
+        .layui-card-header {
+            padding: 0 16px;
+            font-weight: 700;
+            color: #0f172a;
+            border-bottom: 1px solid #f1f5f9;
+            height: 48px;
+            line-height: 48px;
+        }
+        .layui-card-body { padding: 16px; }
+
+        /* 检索条件舱 */
+        .search-panel {
+            background: #fff;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 14px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        /* 输入框与选择框 */
+        .layui-input, .layui-form-select input {
+            border-radius: 6px !important;
+            border-color: #d1d5db !important;
+            transition: all 0.2s;
+            height: 36px;
+        }
+        .layui-input:focus, .layui-form-select input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+
+        /* ==========================================================================
+           主题按钮与微边框操作按钮
+           ========================================================================== */
+        .btn-search-theme {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            padding: 0 16px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+        }
+        .btn-add-secondary {
+            border: 1px solid #d1d5db !important;
+            background-color: #fff !important;
+            color: #374151 !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 34px !important;
+            padding: 0 14px !important;
+            font-size: 13px !important;
+        }
+        .btn-add-secondary:hover {
+            border-color: #2563eb !important;
+            color: #2563eb !important;
+            background: #f8fafc !important;
+        }
+
+        /* ==========================================================================
+           数据网格与轻标签
+           ========================================================================== */
+        .layui-table-view { border: 1px solid #ebeef5 !important; border-radius: 6px !important; overflow: hidden; }
+        .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
+
+        /* 标签流样式定制 */
+        .tag-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 6px; }
+        .tag-pinned { background: #fef2f2; color: #ef4444; border: 1px solid rgba(239,68,68,0.15); }
+        .tag-notice { background: #eff6ff; color: #2563eb; border: 1px solid rgba(37,99,235,0.1); }
+        .tag-bulletin { background: #f0fdf4; color: #16a34a; border: 1px solid rgba(22,163,74,0.1); }
+
+        /* 状态轻标记 */
+        .status-dot { inline-size: 6px; block-size: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
+        .status-active { background-color: #10b981; }
+        .status-draft { background-color: #94a3b8; }
+
+        /* 行内 Outline 操作组 */
+        .btn-action-ops { background: transparent !important; border-radius: 4px !important; padding: 0 8px !important; font-size: 12px !important; transition: all 0.2s; }
+        .btn-action-edit { color: #2563eb !important; border: 1px solid rgba(37,99,235,0.2) !important; }
+        .btn-action-edit:hover { background: #eff6ff !important; border-color: #2563eb !important; }
+        .btn-action-del { color: #ef4444 !important; border: 1px solid rgba(239,68,68,0.2) !important; }
+        .btn-action-del:hover { background: #fef2f2 !important; border-color: #ef4444 !important; }
+
+        /* 弹窗布局内衬 */
+        .pop-container { padding: 20px 24px; }
+    </style>
+</head>
+<body>
+
+<div class="layui-fluid">
+    <!-- 🔍 公告审计与检索舱 -->
+    <div class="search-panel layui-form">
+        <div class="layui-row layui-col-space10">
+            <div class="layui-col-md3">
+                <input type="text" name="title" placeholder="🔍 检索公告标题关键字..." class="layui-input">
+            </div>
+            <div class="layui-col-md2">
+                <select name="type">
+                    <option value="">全部类型</option>
+                    <option value="notice">通知</option>
+                    <option value="bulletin">公告</option>
+                </select>
+            </div>
+            <div class="layui-col-md4">
+                <button class="layui-btn btn-search-theme" lay-submit lay-filter="search-submit">检索过滤</button>
+                <button type="button" class="layui-btn btn-add-secondary" onclick="actionCreate()"><i class="layui-icon layui-icon-add-1" style="font-size:13px; margin-right:3px;"></i>发布公告</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📊 数据矩阵卡片 -->
+    <div class="layui-card">
+        <div class="layui-card-header">中台通知公告事务中心 (Announcement Hub)</div>
+        <div class="layui-card-body">
+            <table id="announcement-table" lay-filter="announcement-table"></table>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================================
+   表格动态渲染模板轴
+   ========================================================================== */ -->
+{% raw %}
+<!-- 标题加工模板：自动追加置顶及分类标签 -->
+<script type="text/html" id="tpl-title">
+    <div style="display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+        {{# if(d.is_pinned){ }}
+            <span class="tag-badge tag-pinned">置顶</span>
+        {{# } }}
+        {{# if(d.type === 'notice'){ }}
+            <span class="tag-badge tag-notice">通知</span>
+        {{# } else { }}
+            <span class="tag-badge tag-bulletin">公告</span>
+        {{# } }}
+        <span style="font-weight: 500; color: #1e293b;">{{ d.title }}</span>
+    </div>
+</script>
+
+<!-- 状态加工模板 -->
+<script type="text/html" id="tpl-status">
+    {{# if(d.status === 'published'){ }}
+        <span class="status-dot status-active"></span>显示中
+    {{# } else { }}
+        <span class="status-dot status-draft"></span>草稿
+    {{# } }}
+</script>
+
+<!-- 全维控制动作链 -->
+<script type="text/html" id="tpl-ops">
+    <div style="display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
+        <button class="layui-btn layui-btn-xs btn-action-ops btn-action-edit" lay-event="edit">编辑修改</button>
+        <button class="layui-btn layui-btn-xs btn-action-ops btn-action-del" lay-event="del">撤销删除</button>
+    </div>
+</script>
+{% endraw %}
+
+<script>
+layui.use(['table', 'form', 'layer'], function(){
+    const table = layui.table, form = layui.form, $ = layui.$, layer = layui.layer;
+
+    // 🛡️ 统一封装的资产与事务同步 POST 骨架
+    function securePost(url, data, callback) {
+        const loading = layer.load(2);
+        $.ajax({
+            url: url,
+            type: 'POST',
+            data: JSON.stringify(data),
+            contentType: 'application/json',
+            success: function(r) {
+                layer.close(loading);
+                if (r.status === 'success' || r.code === 200) {
+                    layer.msg(r.message || '指令核准成功', {icon: 1, time: 1000});
+                    if(callback) callback(r);
+                } else {
+                    layer.msg(r.message || '系统核心拒绝了该次下发', {icon: 2});
+                }
+            },
+            error: function(xhr) {
+                layer.close(loading);
+                const err = xhr.responseJSON ? (xhr.responseJSON.detail || xhr.responseJSON.message) : "中台网关响应中断";
+                layer.msg(err, {icon: 2});
+            }
+        });
+    }
+
+    // 🔗 数据网格透传加载：直接调用后端标准的 /system/announcement 路由
+    table.render({
+        elem: '#announcement-table',
+        url: '/system/announcement',
+        method: 'GET',
+        page: true,
+        limit: 10,
+        parseData: res => ({
+            code: res.code === 200 ? 0 : (res.code || 500),
+            count: res.count || res.total || 0,
+            data: res.data
+        }),
+        cols: [[
+            {field: 'id', title: 'ID', width: 70, align: 'center', sort: true},
+            {field: 'title', title: '公告事务主题', minWidth: 280, templet: '#tpl-title'},
+            {field: 'creator', title: '发布签发人', width: 120, align: 'center'},
+            {field: 'status', title: '发布状态', width: 100, align: 'center', templet: '#tpl-status'},
+            {field: 'created_at', title: '创建归档时间', width: 170, align: 'center', sort: true},
+            {title: '数据审计动作', width: 180, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
+        ]]
+    });
+
+    // 检索过滤流转
+    form.on('submit(search-submit)', d => {
+        table.reload('announcement-table', {where: d.field, page: {curr: 1}});
+        return false;
+    });
+
+    // 行内原子级指令监听
+    table.on('tool(announcement-table)', obj => {
+        const d = obj.data;
+        if(obj.event === 'edit'){
+            // 调用统一打开函数，注入当前实体数据
+            openAnnouncementModal('🛠️ 修正并重构已签发公告', d);
+        } else if(obj.event === 'del'){
+            layer.confirm('⚠️ 确认物理下线并粉碎该条通知公告资产？', {
+                icon: 3, title: '下线审计确认',
+                success: (layero) => { layero.find('.layui-layer-btn0').css('background-color', '#ef4444'); }
+            }, i => {
+                const loading = layer.load(2);
+                $.ajax({
+                    url: `/system/announcement/${d.id}`,
+                    type: 'DELETE',
+                    success: r => {
+                        layer.close(loading);
+                        layer.msg(r.message || '资产销毁完成', {icon: 1});
+                        table.reload('announcement-table');
+                        layer.close(i);
+                    },
+                    error: (xhr) => {
+                        layer.close(loading);
+                        layer.msg(xhr.responseJSON?.message || '销毁指令受阻', {icon: 2});
+                    }
+                });
+            });
+        }
+    });
+
+    // 全局绑定动作：拉起创建模态流
+    window.actionCreate = () => {
+        openAnnouncementModal('🚀 签发全新系统公告通知', {title:'', content:'', type:'notice', is_pinned:false, status:'published'});
+    }
+
+    // 封装复用的公告/通知资产编辑舱
+    function openAnnouncementModal(modalTitle, entityData) {
+        layer.open({
+            type: 1,
+            title: modalTitle,
+            area: ['550px', '460px'],
+            content: `<div class="layui-form pop-container" lay-filter="announcement-form">
+                        <div class="layui-form-item">
+                            <label class="layui-form-label" style="padding:9px 0; width:70px; text-align:left;">公告主题</label>
+                            <div class="layui-input-block" style="margin-left:70px;">
+                                <input type="text" name="title" value="${entityData.title}" placeholder="请输入公告通知的主题标题" class="layui-input" lay-verify="required">
+                            </div>
+                        </div>
+                        <div class="layui-form-item">
+                            <label class="layui-form-label" style="padding:9px 0; width:70px; text-align:left;">下发属性</label>
+                            <div class="layui-input-block" style="margin-left:70px;">
+                                <select name="type">
+                                    <option value="notice" ${entityData.type==='notice'?'selected':''}>常规通知 (Notice)</option>
+                                    <option value="bulletin" ${entityData.type==='bulletin'?'selected':''}>全域大喇叭公告 (Bulletin)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="layui-form-item">
+                            <label class="layui-form-label" style="padding:9px 0; width:70px; text-align:left;">置顶策略</label>
+                            <div class="layui-input-block" style="margin-left:70px; padding-top:4px;">
+                                <input type="checkbox" name="is_pinned" lay-skin="primary" title="将本条公告在公共面板强制置顶高亮" ${entityData.is_pinned?'checked':''}>
+                            </div>
+                        </div>
+                        <div class="layui-form-item layui-form-text">
+                            <label class="layui-form-label" style="padding:9px 0; width:70px; text-align:left;">公告正文</label>
+                            <div class="layui-input-block" style="margin-left:70px;">
+                                <textarea name="content" placeholder="输入具体的公告下发流文字或富文本实体..." class="layui-textarea" style="border-radius:6px; min-height:120px; border-color:#d1d5db;">${entityData.content}</textarea>
+                            </div>
+                        </div>
+                        <div class="layui-form-item" style="text-align: right; margin-top:24px; margin-bottom:0;">
+                            <button class="layui-btn btn-search-theme" lay-submit lay-filter="modal-submit">核准下发同步</button>
+                        </div>
+                      </div>`,
+            success: (layero) => {
+                form.render();
+                // 按钮美化渲染
+                layero.find('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb'});
+
+                // 绑定模态窗内提交事件
+                form.on('submit(modal-submit)', data => {
+                    const payload = data.field;
+                    // 处理 checkbox 布尔值映射
+                    payload.is_pinned = !!payload.is_pinned;
+                    payload.status = entityData.status || 'published';
+
+                    // 如果存在 ID 则走修改路由，不存在走创建路由
+                    const targetUrl = entityData.id ? `/system/announcement/update` : `/system/announcement/create`;
+                    if(entityData.id) payload.id = entityData.id;
+
+                    securePost(targetUrl, payload, () => {
+                        layer.close(layero.attr('times'));
+                        table.reload('announcement-table');
+                    });
+                    return false;
+                });
+            }
+        });
+    }
+});
+</script>
+</body>
+</html>

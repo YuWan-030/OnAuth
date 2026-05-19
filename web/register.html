@@ -2,31 +2,139 @@
 <html lang="zh-CN">
 <head>
     <meta charset="utf-8">
-    <title>中台注册 - OnAuth</title>
+    <title>申请注册中台席位 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
     <style>
-        body { background-color: #f1f2f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .reg-container { width: 400px; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .reg-title { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 25px; color: #2f3542; }
+        /* ==========================================================================
+           全屏星空灰背景与垂直居中容器（与登录页严密对齐）
+           ========================================================================== */
+        body {
+            background: radial-gradient(circle at 50% 50%, #f8fafc, #e2e8f0);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 注册卡片：高级扁平化无边框，带高阶柔和阴影 */
+        .reg-container {
+            width: 360px;
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+            border: 1px solid #ebeef5;
+        }
+
+        /* 注册舱主标题 */
+        .reg-title {
+            font-size: 20px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 30px;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+        }
+
+        /* 表单单元间距微调 */
+        .layui-form-item { margin-bottom: 20px; position: relative; }
+
+        /* ==========================================================================
+           输入场与内置图标加工
+           ========================================================================== */
+        .layui-input {
+            border-radius: 6px !important;
+            border-color: #cbd5e1 !important;
+            height: 42px;
+            padding-left: 38px !important; /* 给前置图标预留空间 */
+            transition: all 0.2s ease-in-out;
+            font-size: 14px;
+        }
+        .layui-input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+
+        /* 输入框内衬前置微图标 */
+        .input-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 16px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* ==========================================================================
+           动作按钮与底部返回链路
+           ========================================================================== */
+        /* 中台主色：高级渐变蓝注册动作按钮 */
+        .btn-reg-theme {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 42px !important;
+            line-height: 42px !important;
+            font-size: 14px !important;
+            font-weight: 600;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-reg-theme:hover { opacity: 0.95; color: #fff !important; }
+        .btn-reg-theme:active { transform: scale(0.98); }
+
+        /* 底部流转区域 */
+        .link-back {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+        .link-back a {
+            color: #64748b;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+        .link-back a:hover {
+            color: #2563eb;
+        }
     </style>
 </head>
 <body>
 
 <div class="reg-container">
     <div class="reg-title">📝 申请注册中台席位</div>
+
     <form class="layui-form">
+        <!-- 设定账户域 -->
         <div class="layui-form-item">
-            <input type="text" name="username" lay-verify="required" placeholder="设定账户名" class="layui-input">
+            <i class="layui-icon layui-icon-username input-icon"></i>
+            <input type="text" name="username" lay-verify="required" lay-reqtext="请设定席位账户名" placeholder="设定账户名" class="layui-input" autocomplete="off">
         </div>
+
+        <!-- 设定密码域 -->
         <div class="layui-form-item">
-            <input type="password" name="password" lay-verify="required" placeholder="设定登录密码" class="layui-input">
+            <i class="layui-icon layui-icon-password input-icon"></i>
+            <input type="password" name="password" lay-verify="required" lay-reqtext="请设定登录凭证密码" placeholder="设定登录密码" class="layui-input" autocomplete="off">
         </div>
-        <div class="layui-form-item">
-            <button class="layui-btn layui-btn-fluid" lay-submit lay-filter="doRegister">立即注册</button>
+
+        <!-- 提交注册申请 -->
+        <div class="layui-form-item" style="margin-top: 26px; margin-bottom: 5px;">
+            <button class="layui-btn layui-btn-fluid btn-reg-theme" lay-submit lay-filter="doRegister">立即注册新席位</button>
         </div>
-        <div style="text-align: center; font-size: 13px;">
-            <a href="/login" style="color: #57606f;">已有席位？返回登录</a>
+
+        <!-- 返回登录流转 -->
+        <div class="link-back">
+            <a href="/login">已有授信席位？返回中台登录</a>
         </div>
     </form>
 </div>
@@ -35,22 +143,26 @@
 layui.use(['form', 'layer'], function(){
     var form = layui.form, layer = layui.layer, $ = layui.$;
 
+    // 监听网络凭证注册提交
     form.on('submit(doRegister)', function(data){
-        layer.load(2);
+        const loading = layer.load(2);
+
         $.ajax({
             url: '/auth/register',
             type: 'POST',
             data: JSON.stringify(data.field),
             contentType: 'application/json',
             success: function(res){
-                layer.closeAll('loading');
-                layer.msg('中台账号开辟成功！', {icon: 1, time: 1500}, function(){
+                layer.close(loading);
+                layer.msg('中台账号开辟成功！', {icon: 1, time: 1200}, function(){
                     window.location.href = '/login';
                 });
             },
             error: function(err){
-                layer.closeAll('loading');
-                layer.msg(err.responseJSON.detail || '注册失败，账户可能已被占用', {icon: 2});
+                layer.close(loading);
+                // 增加防御性容错，防止后端返回非标 JSON 导致前端报错
+                var errMsg = err.responseJSON?.detail || err.responseJSON?.message || '注册失败，账户可能已被占用或格式不合规';
+                layer.msg(errMsg, {icon: 2, shift: 6});
             }
         });
         return false;

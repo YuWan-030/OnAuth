@@ -7,23 +7,138 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
     <style>
-        body { background-color: #f2f2f2; padding: 20px; }
-        .layui-card-header { font-weight: bold; color: #333; }
-        /* 弹出层表单微调，防止样式挤压 */
-        .pop-form-box { padding: 20px 25px 10px 10px; }
+        /* ==========================================================================
+           嵌入式页面优化：去除外边距与独立标题，无缝融入主中台
+           ========================================================================== */
+        body {
+            background-color: #f3f4f6;
+            padding: 15px; /* 作为 iframe 嵌入时，15px 的内衬最合适，不会产生视觉压迫 */
+            font-family: "Microsoft YaHei", sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .layui-fluid { padding: 0; }
+
+        /* 卡片去除了原有的黑头，转为纯白扁平化底座 */
+        .layui-card {
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            border: 1px solid #ebeef5;
+            background: #fff;
+        }
+
+        /* 统一卡片内部间距 */
+        .layui-card-body { padding: 16px; }
+
+        /* ==========================================================================
+           组件与核心按钮重设
+           ========================================================================== */
+        /* 新增主体按钮 - 采用主中台渐变蓝 */
+        .btn-theme-gradient {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            padding: 0 16px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+            transition: all 0.2s ease;
+        }
+        .btn-theme-gradient:hover {
+            opacity: 0.9;
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+        }
+
+        /* 顶部按钮容器间距 */
+        .layui-btn-container { margin-bottom: 14px; }
+
+        /* ==========================================================================
+           表格高级化定制
+           ========================================================================= */
+        .layui-table-view {
+            border: 1px solid #ebeef5 !important;
+            border-radius: 6px !important;
+            overflow: hidden;
+        }
+        .layui-table th {
+            background-color: #f8fafc !important;
+            color: #475569 !important;
+            font-weight: 600;
+            height: 44px;
+        }
+        .layui-table td {
+            color: #334155;
+            height: 48px;
+        }
+
+        /* 覆盖 Layui 默认绿开关 -> 改为危险与正常的平滑过渡 */
+        .layui-form-switch { border-radius: 20px; }
+        .layui-form-onswitch {
+            border-color: #10b981 !important;
+            background-color: #10b981 !important;
+        }
+
+        /* 表格内微型操作按钮美化 */
+        .btn-table-edit {
+            color: #2563eb !important;
+            background: transparent !important;
+            border: 1px solid rgba(37, 99, 235, 0.2) !important;
+            border-radius: 4px !important;
+            padding: 0 10px !important;
+            transition: all 0.2s;
+        }
+        .btn-table-edit:hover {
+            background: #eff6ff !important;
+            border-color: #2563eb !important;
+        }
+
+        .btn-table-del {
+            color: #ef4444 !important;
+            background: transparent !important;
+            border: 1px solid rgba(239, 68, 68, 0.2) !important;
+            border-radius: 4px !important;
+            padding: 0 10px !important;
+            transition: all 0.2s;
+        }
+        .btn-table-del:hover {
+            background: #fef2f2 !important;
+            border-color: #ef4444 !important;
+        }
+
+        /* ==========================================================================
+           弹窗表单样式
+           ========================================================================== */
+        .pop-form-box { padding: 25px 30px 10px 10px; }
+        .layui-form-label {
+            color: #4b5563;
+            font-weight: 500;
+            width: 80px;
+        }
+        .layui-input-block { margin-left: 110px; }
+
+        .layui-input, .layui-textarea {
+            border-radius: 6px !important;
+            border-color: #d1d5db !important;
+            transition: all 0.2s;
+        }
+        .layui-input:focus, .layui-textarea:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
     </style>
 </head>
 <body>
 
 <div class="layui-fluid">
     <div class="layui-card">
-        <div class="layui-card-header">
-            🏢 OnAuth 多租户架构 - 顶级组织空间/工作室 management 大厅
-        </div>
+        <!-- 🛠️ 独立标题栏已在此永久下线，页面加载后完美和 index 的 Tab 对齐 -->
         <div class="layui-card-body">
 
             <div class="layui-btn-container">
-                <button class="layui-btn layui-btn-sm layui-btn-normal" id="btn-add-group" lay-on="addGroupSpace">
+                <button class="layui-btn btn-theme-gradient" id="btn-add-group" lay-on="addGroupSpace">
                     <i class="layui-icon layui-icon-add-1"></i> 新增工作室主体
                 </button>
             </div>
@@ -50,7 +165,6 @@
         </div>
     </div>
 </div>
-
 <script type="text/html" id="switchTpl">
     {% raw %}
     <input type="checkbox" name="is_active" value="{{= d.id }}" lay-skin="switch" lay-text="正常|封禁" lay-filter="groupActiveSwitch" {{= d.is_active ? 'checked' : '' }}>
@@ -59,8 +173,8 @@
 
 <script type="text/html" id="barDemo">
     {% raw %}
-    <a class="layui-btn layui-btn-xs" lay-event="edit">编辑</a>
-    <a class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del">物理移除</a>
+    <a class="layui-btn layui-btn-xs btn-table-edit" lay-event="edit">编辑</a>
+    <a class="layui-btn layui-btn-xs btn-table-del" lay-event="del">物理移除</a>
     {% endraw %}
 </script>
 
@@ -74,7 +188,7 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
 
     console.log("🚀 OnAuth 核心视图 JS 引擎已成功在浏览器内存中建立授信！");
 
-    // 🛡️ 全局 Ajax 安全卫士 (新增 403 越权拦截提示)
+    // 🛡️ 全局 Ajax 安全卫士
     $.ajaxSetup({
         complete: function(xhr, status) {
             var currentPath = window.location.pathname;
@@ -97,10 +211,10 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
         url: '/admin/groups/list',
         cols: [[
             {field: 'id', title: '组织编号', width: 100, sort: true, align: 'center'},
-            {field: 'group_name', title: '工作室/组织主体名称', width: 220, style: 'font-weight: bold; color: #009688;'},
-            {field: 'description', title: '运营说明/备注信息', minWidth: 200},
+            {field: 'group_name', title: '工作室/组织主体名称', width: 220, style: 'font-weight: bold; color: #2563eb;'},
+            {field: 'description', title: '运营说明/备注信息', minWidth: 150},
             {field: 'is_active', title: '中台实时安全状态', width: 150, templet: '#switchTpl', align: 'center'},
-            {fixed: 'right', title: '多维资产配置', toolbar: '#barDemo', width: 150, align: 'center'}
+            {fixed: 'right', title: '多维资产配置', toolbar: '#barDemo', width: 180, align: 'center'}
         ]],
         parseData: function(res){
             if (typeof res === 'string' || !Array.isArray(res)) {
@@ -113,7 +227,7 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
         }
     });
 
-    // 2. 🚨【全新重构】双输入框高级弹出层（创建时完美灌注备注信息）
+    // 2. 双输入框高级弹出层
     util.on('lay-on', {
         addGroupSpace: function(){
             console.log("🎯 检测到管理员触发了[新增工作室]指令，准备唤醒多维表单渲染引擎...");
@@ -121,11 +235,18 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
             layer.open({
                 type: 1,
                 title: '🏢 开通全新工作室组织空间',
-                area: ['460px', '320px'],
-                content: $('#addGroupTpl').html(), // 捕获上方的表单节点
+                area: ['480px', '320px'],
+                content: $('#addGroupTpl').html(),
                 btn: ['立即开通', '取消'],
+                success: function(layero, index){
+                    // 渐变蓝按钮皮肤同步到弹出层
+                    layero.find('.layui-layer-btn0').css({
+                        'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                        'border-color': '#2563eb'
+                    });
+                    form.val('formGroupData', { "group_name": "", "description": "" });
+                },
                 yes: function(index, layero){
-                    // 使用 Layui 的 val 机制瞬时提取表单快照
                     var formData = form.val('formGroupData');
 
                     if(!formData.group_name.trim()){
@@ -144,9 +265,9 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
                         contentType: 'application/json',
                         success: function(res){
                             layer.closeAll('loading');
-                            layer.close(index); // 关闭当前弹出层
+                            layer.close(index);
                             layer.msg(res.msg || '新工作室主体注册成功！', {icon: 1});
-                            table.reload('groupTable'); // 顺畅刷新网格看最新备注
+                            table.reload('groupTable');
                         },
                         error: function(err) {
                             layer.closeAll('loading');
@@ -157,16 +278,12 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
                             }
                         }
                     });
-                },
-                success: function(layero, index){
-                    // 弹出层展现成功后清空一下历史残余数据
-                    form.val('formGroupData', { "group_name": "", "description": "" });
                 }
             });
         }
     });
 
-    // 3. 监听前端“封禁开关”切换（承接 admin:update 权限）
+    // 3. 监听前端“封禁开关”切换
     form.on('switch(groupActiveSwitch)', function(obj){
         var groupId = this.value;
         var isActive = obj.elem.checked;
@@ -182,9 +299,8 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
             },
             error: function(err){
                 layer.closeAll('loading');
-                obj.elem.checked = !isActive; // 恢复原始开关状态
+                obj.elem.checked = !isActive;
                 form.render('checkbox');
-                // 如果是 403 已经在 ajaxSetup 处理了，非 403 在此弹窗
                 if(err.status !== 403){
                     layer.msg('操作失败，管理权限校验不匹配！', {icon: 2});
                 }
@@ -213,7 +329,6 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
                 });
             });
         } else if(obj.event === 'edit'){
-            // 🎯 【行内编辑修改备注】：完美承接你 admin.py 中的 @router.put("/groups/{group_id}/toggle")
             layer.prompt({
                 title: '修改工作室 ['+ data.group_name +'] 的备注说明',
                 value: data.description === '暂无说明' ? '' : data.description,
@@ -229,7 +344,7 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
                         layer.closeAll('loading');
                         layer.close(index);
                         layer.msg('备注信息更新成功！', {icon: 1});
-                        table.reload('groupTable'); // 顺畅刷新网格看最新修改后的备注
+                        table.reload('groupTable');
                     },
                     error: function(err){
                         layer.closeAll('loading');

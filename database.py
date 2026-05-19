@@ -26,6 +26,13 @@ role_permission_association = Table(
     Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
     Column("permission_id", Integer, ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True)
 )
+# 新增一个 User-Permission 关联表，用于存放“额外加权”或“独立权限”
+user_permission_association = Table(
+    "user_permission_association",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("permission_id", Integer, ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True)
+)
 
 
 # ==================== 🏢 核心高光追加：三层资产流体系模型 ====================
@@ -87,6 +94,7 @@ class AppCredential(Base):
 
     app = relationship("App", back_populates="credentials")
     devices = relationship("AppDevice", back_populates="credential", cascade="all, delete-orphan")
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
 
 
 # 4. 🔒 硬件设备指纹白名单表（维持原样）
@@ -134,6 +142,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.datetime.now)
 
     roles = relationship("Role", secondary=user_role_association)
+    extra_permissions = relationship("Permission", secondary=user_permission_association)
 
 
 def init_db():

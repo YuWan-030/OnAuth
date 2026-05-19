@@ -7,69 +7,246 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
     <style>
-        body { background-color: #f2f2f2; padding: 15px; }
-        .card-value { font-size: 30px; font-weight: bold; line-height: 40px; color: #333; padding-top: 10px; }
-        .card-desc { font-size: 12px; color: #999; margin-top: 5px; }
-        .layui-card { border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .icon-box { float: right; font-size: 40px; color: #e2e2e2; opacity: 0.7; }
-        .badge-danger-soft { background-color: #FF5722 !important; color: #fff; }
+        /* ==========================================================================
+           嵌入式布局基调：高度扁平、高级排版、像素级对齐
+           ========================================================================== */
+        body {
+            background-color: #f3f4f6;
+            padding: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .layui-fluid { padding: 0; }
+
+        /* 卡片重塑：圆角适中、微阴影、弱边框 */
+        .layui-card {
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            border: 1px solid #ebeef5;
+            background: #fff;
+        }
+        .layui-card-header {
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+            font-weight: 600;
+            font-size: 14px;
+            height: 42px;
+            line-height: 42px;
+        }
+
+        /* 顶部标题与状态复合栏 */
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+            padding: 0 4px;
+        }
+        .dashboard-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+        }
+        /* 去除了独立框线底色，回归纯粹、直观的扁平化时钟 */
+        .sync-box {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        /* ==========================================================================
+           硬件监控舱（面板级优化）
+           ========================================================================== */
+        .sys-monitor-panel {
+            background: #fafafa !important;
+            border: 1px solid #e2e8f0 !important;
+            padding: 8px 0;
+        }
+        .sys-card-title {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 6px;
+        }
+        .sys-card-num {
+            font-size: 26px;
+            font-weight: 700;
+            font-family: "Segoe UI", sans-serif;
+            color: #0f172a;
+            line-height: 32px;
+        }
+        .sys-card-num.warn { color: #f59e0b !important; }
+        .sys-card-num.crit { color: #ef4444 !important; }
+        .sys-tag { font-size: 12px; color: #64748b; font-weight: 500; }
+
+        /* ==========================================================================
+           核心资产四方块：左侧彩色边缘条取代大图标
+           ========================================================================== */
+        .asset-card { position: relative; overflow: hidden; }
+        .asset-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+        }
+        .card-blue::before { background: #2563eb; }
+        .card-purple::before { background: #7c3aed; }
+        .card-red::before { background: #ef4444; }
+        .card-green::before { background: #10b981; }
+
+        .card-value {
+            font-size: 28px;
+            font-weight: 700;
+            line-height: 36px;
+            color: #1e293b;
+            font-family: "Segoe UI", sans-serif;
+        }
+        .card-desc { font-size: 12px; color: #64748b; margin-top: 6px; }
+
+        /* ==========================================================================
+           表格与流式进度条美化
+           ========================================================================== */
+        .layui-table th {
+            background-color: #f8fafc !important;
+            color: #475569 !important;
+            font-weight: 600;
+        }
+        .layui-progress {
+            background-color: #f1f5f9 !important;
+            border-radius: 4px !important;
+            height: 6px !important;
+        }
+        .layui-progress-bar {
+            border-radius: 4px !important;
+            height: 6px !important;
+        }
+
+        /* 🚥 呼吸指示灯 */
+        .pulse-light { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+        .pulse-green { background: #10b981; box-shadow: 0 0 6px #10b981; animation: opacityPulse 2s infinite; }
+        .pulse-orange { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; animation: opacityPulse 1s infinite; }
+        .pulse-red { background: #ef4444; box-shadow: 0 0 6px #ef4444; animation: opacityPulse 0.5s infinite; }
+        @keyframes opacityPulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
     </style>
 </head>
 <body>
 
 <div class="layui-fluid">
-    <div class="layui-row layui-col-space15">
 
-        <div class="layui-col-md4">
-            <div class="layui-card">
-                <div class="layui-card-header" style="border-bottom: none;">👥 全局授信用户总数</div>
-                <div class="layui-card-body">
-                    <i class="layui-icon layui-icon-user icon-box"></i>
-                    <div class="card-value" id="stat-total-users">-</div>
-                    <div class="card-desc">当前中台全量合规注册的开发者与终端账号</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="layui-col-md4">
-            <div class="layui-card">
-                <div class="layui-card-header" style="border-bottom: none;">🚨 到期/熔断触发频次</div>
-                <div class="layui-card-body">
-                    <i class="layui-icon layui-icon-fire icon-box" style="color: #FF5722;"></i>
-                    <div class="card-value" id="stat-frozen-freq" style="color: #FF5722;">-</div>
-                    <div class="card-desc">因“商业过期”或“人工干预”处于熔断查封的凭证数</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="layui-col-md4">
-            <div class="layui-card">
-                <div class="layui-card-header" style="border-bottom: none;">⚡ 实时在线活跃设备</div>
-                <div class="layui-card-body">
-                    <i class="layui-icon layui-icon-cellphone icon-box" style="color: #16baaa;"></i>
-                    <div class="card-value" id="stat-active-devices" style="color: #16baaa;">-</div>
-                    <div class="card-desc">最近 15 分钟内向中台通信换取 Token 的活跃指纹</div>
-                </div>
-            </div>
-        </div>
-
+    <!-- 👑 复合头部：加回左侧大标题，右侧时间转为平滑文本 -->
+    <div class="dashboard-header">
+        <div class="dashboard-title">OnAuth 安全中台核心资产概览</div>
+        <div class="sync-box">⏱️ 监控同步时间：<b id="sync-time" style="color: #2563eb; font-family: monospace;">正在穿透链路...</b></div>
     </div>
 
+    <!-- 🎛️ 物理节点监控舱 -->
+    <div class="layui-row layui-col-space15" style="margin-bottom: 5px;">
+        <div class="layui-col-md12">
+            <div class="layui-card sys-monitor-panel">
+                <div class="layui-card-body">
+                    <div class="layui-row layui-col-space15" style="text-align: center;">
+
+                        <div class="layui-col-md3" style="border-right: 1px solid #e2e8f0; height: 60px; display: flex; flex-direction: column; justify-content: center;">
+                            <div class="sys-card-title">CLUSTER // 集集群体征</div>
+                            <div id="sys-health-badge" style="margin-top: 2px;">
+                                <span class="sys-tag"><i class="pulse-light pulse-green"></i>网关握手中...</span>
+                            </div>
+                        </div>
+
+                        <div class="layui-col-md3" style="border-right: 1px solid #e2e8f0; text-align: left; padding-left: 40px;">
+                            <div class="sys-card-title">CPU // 算力负载</div>
+                            <div class="sys-card-num" id="cpu-text">0.0%</div>
+                            <div style="margin-top: 2px;">
+                                <span class="sys-tag" id="cpu-cores" style="color: #94a3b8; font-size: 11px;">计算线程就绪</span>
+                            </div>
+                        </div>
+
+                        <div class="layui-col-md3" style="border-right: 1px solid #e2e8f0; text-align: left; padding-left: 40px;">
+                            <div class="sys-card-title">RAM // 内存分配</div>
+                            <div class="sys-card-num" id="mem-text">0.0%</div>
+                            <div style="margin-top: 2px;">
+                                <span class="sys-tag" id="mem-pool" style="color: #94a3b8; font-size: 11px;">动态高频页置换</span>
+                            </div>
+                        </div>
+
+                        <div class="layui-col-md3" style="text-align: left; padding-left: 40px;">
+                            <div class="sys-card-title">SECURITY // 防御引擎</div>
+                            <div class="sys-card-num" style="color: #2563eb;">ACTIVE</div>
+                            <div style="margin-top: 2px;">
+                                <span class="sys-tag" style="color: #10b981; font-size: 11px;"><i class="layui-icon layui-icon-shield" style="font-size: 12px; margin-right: 2px;"></i> 三层拦截器就绪</span>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📊 资产核心数据矩阵 -->
+    <div class="layui-row layui-col-space15">
+        <div class="layui-col-md3">
+            <div class="layui-card asset-card card-blue">
+                <div class="layui-card-header">👥 全局授信用户总数</div>
+                <div class="layui-card-body">
+                    <div class="card-value" id="stat-total-users">-</div>
+                    <div class="card-desc">全量注册的开发者与管理员席位</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="layui-col-md3">
+            <div class="layui-card asset-card card-purple">
+                <div class="layui-card-header">📦 接入应用总数</div>
+                <div class="layui-card-body">
+                    <div class="card-value" id="stat-total-apps" style="color: #7c3aed;">-</div>
+                    <div class="card-desc">当前中台托管的第三方独立应用生态</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="layui-col-md3">
+            <div class="layui-card asset-card card-red">
+                <div class="layui-card-header">🚨 到期/熔断触发频次</div>
+                <div class="layui-card-body">
+                    <div class="card-value" id="stat-frozen-freq" style="color: #ef4444;">-</div>
+                    <div class="card-desc">由于过期或合规风控被锁定的凭证</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="layui-col-md3">
+            <div class="layui-card asset-card card-green">
+                <div class="layui-card-header">📡 实时活跃在线会话</div>
+                <div class="layui-card-body">
+                    <div class="card-value" id="stat-active-sessions" style="color: #10b981;">-</div>
+                    <div class="card-desc">边缘心跳 + Redis 实时会话池总数</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📈 数据通信热度爆发走势（最近 7 日） -->
     <div class="layui-row layui-col-space15" style="margin-top: 5px;">
         <div class="layui-col-md12">
             <div class="layui-card">
-                <div class="layui-card-header">📡 边缘设备通信热力趋势（最近 7 日授信走势）</div>
+                <div class="layui-card-header">📊 资产通信热度爆发走势（最近 7 日授信合流审计）</div>
                 <div class="layui-card-body">
                     <table class="layui-table" lay-skin="line">
                         <thead>
                             <tr>
-                                <th>监控时间轴</th>
-                                <th>设备连接热度指标</th>
-                                <th>安全防御状态</th>
+                                <th style="width: 18%;">监控时间轴</th>
+                                <th style="width: 34%;">C端硬件设备激活走势 (License流)</th>
+                                <th style="width: 34%;">B端商业凭证签发走势 (OAuth2.0流)</th>
+                                <th style="width: 14%; text-align: center;">中台防御状态</th>
                             </tr>
                         </thead>
                         <tbody id="trend-table-body">
-                            <tr><td colspan="3" align="center">正在接入 OnAuth 通信链路...</td></tr>
+                            <tr><td colspan="4" align="center" style="color: #94a3b8;">正在穿透并网数据链路...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -79,57 +256,105 @@
 </div>
 
 <script>
-layui.use(['layer', 'util'], function(){
+layui.use(['layer', 'element'], function(){
     var $ = layui.$;
     var layer = layui.layer;
+    var element = layui.element;
 
-    // 🛡️ 全局 Ajax 安全拦截
+    // 🛡️ 全局授信拦截
     $.ajaxSetup({
         complete: function(xhr, status) {
             if (xhr.status === 401) { window.top.location.href = '/login'; }
             if (xhr.status === 403) {
-                layer.msg('⚠️ 监控大屏越权：您所在的权限组无法读取实时监控数据！', {icon: 2});
+                layer.msg('⚠️ 越权警报：您的权限组已被大盘风控熔断阻断！', {icon: 2});
             }
         }
     });
 
-    // 🎯 异步轮询大屏核心指标引擎
     function refreshDashboard() {
         $.ajax({
             url: '/admin/dashboard/stats',
             type: 'GET',
+            dataType: 'json',
             success: function(res){
                 if(res.status === "success") {
                     var data = res.data;
 
-                    // 1. 动态灌注数字魔方
-                    $('#stat-total-users').text(data.total_users + " 位");
-                    $('#stat-frozen-freq').text(data.frozen_frequency + " 次触发");
-                    $('#stat-active-devices').text(data.active_devices + " 台");
+                    // 🛠️ 1. 动态渲染系统硬件指标及预警色调转换
+                    if(data.system_status) {
+                        var sys = data.system_status;
 
-                    // 2. 动态渲染简易趋势行
+                        $('#cpu-text').text(sys.cpu.toFixed(1) + "%");
+                        $('#mem-text').text(sys.memory.toFixed(1) + "%");
+                        $('#cpu-text, #mem-text').removeClass('warn crit');
+
+                        var badgeHtml = '';
+                        if(sys.health === "HEALTHY") {
+                            badgeHtml = '<span style="color:#10b981; font-weight:600; font-size:13px;"><i class="pulse-light pulse-green"></i> NODE_RUNNING</span>';
+                            if(sys.cpu > 60) $('#cpu-text').addClass('warn');
+                            if(sys.memory > 70) $('#mem-text').addClass('warn');
+                        } else if(sys.health === "WARNING") {
+                            badgeHtml = '<span style="color:#f59e0b; font-weight:600; font-size:13px;"><i class="pulse-light pulse-orange"></i> HIGH_LOAD</span>';
+                            $('#cpu-text, #mem-text').addClass('warn');
+                        } else {
+                            badgeHtml = '<span style="color:#ef4444; font-weight:600; font-size:13px;"><i class="pulse-light pulse-red"></i> CRITICAL_OVERLOAD</span>';
+                            $('#cpu-text, #mem-text').addClass('crit');
+                        }
+                        $('#sys-health-badge').html(badgeHtml);
+                    }
+
+                    // 🛠️ 2. 刷新业务指标
+                    $('#sync-time').text(data.refresh_time);
+                    $('#stat-total-users').text(data.total_users + " 名");
+                    $('#stat-total-apps').text(data.total_apps + " 款");
+                    $('#stat-frozen-freq').text(data.frozen_frequency + " 组");
+
+                    var totalOnline = data.active_devices + data.active_oauth_sessions;
+                    $('#stat-active-sessions').text(totalOnline + " 个");
+
+                    // 🛠️ 3. 渲染下部趋势进度条拓扑
                     var html = '';
-                    data.device_trend.forEach(function(item){
-                        html += '<tr>' +
-                            '<td><i class="layui-icon layui-icon-log" style="margin-right: 5px; color:#16b777;"></i>' + item.date + '</td>' +
-                            '<td>' +
-                            '  <div class="layui-progress" lay-percent="' + (item.count * 2) + '%" style="margin-top:5px;">' +
-                            '    <div class="layui-progress-bar layui-bg-blue" style="width: ' + Math.min(item.count * 2, 100) + '%;"></div>' +
-                            '  </div>' +
-                            '</td>' +
-                            '<td><span class="layui-badge layui-bg-green">安全合规</span></td>' +
-                            '</tr>';
-                    });
+                    if (data.mixed_trend && data.mixed_trend.length > 0) {
+                        data.mixed_trend.forEach(function(item, index){
+                            var devicePercent = Math.min(item.device_count * 5, 100);
+                            var oauthPercent = Math.min(item.oauth_count * 5, 100);
+
+                            var pDevFilter = 'p-dev-' + index;
+                            var pOauthFilter = 'p-oauth-' + index;
+
+                            html += '<tr>' +
+                                '<td><i class="layui-icon layui-icon-log" style="margin-right: 6px; color:#2563eb; font-size: 13px;"></i>' + item.date + '</td>' +
+                                '<td>' +
+                                '  <span class="layui-badge-rim" style="background:#fff; border-color:#e2e8f0; color:#334155;">' + item.device_count + ' 台激活</span>' +
+                                '  <div class="layui-progress" lay-filter="' + pDevFilter + '" style="margin-top:6px;">' +
+                                '    <div class="layui-progress-bar layui-bg-blue" lay-percent="' + devicePercent + '%"></div>' +
+                                '  </div>' +
+                                '</td>' +
+                                '<td>' +
+                                '  <span class="layui-badge-rim" style="background:#fff; border-color:#e2e8f0; color:#7c3aed;">' + item.oauth_count + ' 组授信</span>' +
+                                '  <div class="layui-progress" lay-filter="' + pOauthFilter + '" style="margin-top:6px;">' +
+                                '    <div class="layui-progress-bar" style="background-color: #7c3aed;" lay-percent="' + oauthPercent + '%"></div>' +
+                                '  </div>' +
+                                '</td>' +
+                                '<td align="center"><span class="layui-badge" style="background-color: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2); box-shadow:none;"><i class="layui-icon layui-icon-ok-circle" style="font-size: 12px; margin-right:2px;"></i> 合规</span></td>' +
+                                '</tr>';
+                        });
+                    } else {
+                        html = '<tr><td colspan="4" align="center" style="color: #94a3b8;">当前时间轴内无资产通信上报数据</td></tr>';
+                    }
+
                     $('#trend-table-body').html(html);
+                    element.render('progress');
                 }
+            },
+            error: function() {
+                layer.msg('📡 边缘大屏通信链路断开，正在尝试重连...', {icon: 5});
+                $('#sys-health-badge').html('<span style="color:#ef4444;font-weight:600;font-size:13px;"><i class="pulse-light pulse-red"></i> DISCONNECTED</span>');
             }
         });
     }
 
-    // 初始化加载
     refreshDashboard();
-
-    // 🚀 每隔 30 秒自动化无感刷新大盘数据，维持监控实时性
     setInterval(refreshDashboard, 30000);
 });
 </script>

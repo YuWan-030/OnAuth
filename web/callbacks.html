@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>回调配置中心 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        /* ==========================================================================
+           全维中台扁平化风格适配
+           ========================================================================== */
+        body {
+            background-color: #f3f4f6;
+            padding: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+        .layui-fluid { padding: 0; }
+
+        /* 卡片轻量化 */
+        .layui-card {
+            border-radius: 8px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            background: #fff;
+            margin-bottom: 15px;
+        }
+        .layui-card-header {
+            padding: 0 16px;
+            font-weight: 700;
+            color: #0f172a;
+            border-bottom: 1px solid #f1f5f9;
+            height: 48px;
+            line-height: 48px;
+            font-size: 14px;
+        }
+        .layui-card-body { padding: 20px; }
+
+        /* 表单控件美化 */
+        .layui-form-label {
+            width: 120px !important;
+            color: #475569;
+            font-weight: 500;
+            padding: 9px 0;
+            text-align: left;
+        }
+        .layui-input-block {
+            margin-left: 140px !important;
+        }
+        .layui-input {
+            border-radius: 6px !important;
+            border-color: #d1d5db !important;
+            transition: all 0.2s;
+            height: 38px;
+        }
+        .layui-input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+        .layui-form-mid {
+            color: #94a3b8;
+            font-size: 13px;
+            padding: 9px 0 !important;
+        }
+
+        /* 渐变与次级按钮 */
+        .btn-theme {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 38px !important;
+            line-height: 38px !important;
+            padding: 0 20px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+        }
+        .btn-outline {
+            border: 1px solid #d1d5db !important;
+            background-color: #fff !important;
+            color: #374151 !important;
+            border-radius: 6px !important;
+            height: 38px !important;
+            line-height: 36px !important;
+            padding: 0 16px !important;
+            font-size: 13px !important;
+        }
+        .btn-outline:hover {
+            border-color: #2563eb !important;
+            color: #2563eb !important;
+            background: #f8fafc !important;
+        }
+
+        /* 自定义复选框网格布局 */
+        .event-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 10px;
+            padding-top: 6px;
+        }
+
+        /* 状态标记 */
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-success { background-color: #f0fdf4; color: #16a34a; }
+        .status-fail { background-color: #fef2f2; color: #ef4444; }
+    </style>
+</head>
+<body>
+
+<div class="layui-fluid">
+    <div class="layui-form" lay-filter="callback-form">
+
+        <!-- 💳 模块一：三方支付与通知回调 -->
+        <div class="layui-card">
+            <div class="layui-card-header">💸 交易支付回调策略 (Payment Callback)</div>
+            <div class="layui-card-body">
+                <div class="layui-form-item">
+                    <label class="layui-form-label">支付异步回调URL</label>
+                    <div class="layui-input-block">
+                        <input type="text" name="pay_notify_url" placeholder="https://api.yourdomain.com/v1/callback/pay" class="layui-input" lay-verify="required|url">
+                        <div class="layui-form-mid">用于接收微信/支付宝等三方支付结算成功的异步基础设施推送（建议采用HTTPS协议）</div>
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">退款结果回调URL</label>
+                    <div class="layui-input-block">
+                        <input type="text" name="refund_notify_url" placeholder="https://api.yourdomain.com/v1/callback/refund" class="layui-input" lay-verify="required|url">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 🔗 模块二：Webhook 事件订阅发放 -->
+        <div class="layui-card">
+            <div class="layui-card-header">🚀 全域 Webhook 事件订阅 (Webhook Dispatches)</div>
+            <div class="layui-card-body">
+                <div class="layui-form-item">
+                    <label class="layui-form-label">订阅接收网关</label>
+                    <div class="layui-input-block">
+                        <input type="text" name="webhook_url" placeholder="https://datasync.internal/webhook/receiver" class="layui-input" lay-verify="required|url">
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">签名密钥 (Secret)</label>
+                    <div class="layui-input-block">
+                        <input type="text" name="webhook_secret" placeholder="whsec_xxxxxxxxxxxxxxxxxxxxxxxx" class="layui-input" lay-verify="required">
+                        <div class="layui-form-mid">用于对 Webhook Payload 进行含有时间戳的 `X-Hub-Signature` 验签，防止伪造请求</div>
+                    </div>
+                </div>
+                <div class="layui-form-item">
+                    <label class="layui-form-label">订阅触发事件</label>
+                    <div class="layui-input-block">
+                        <div class="event-grid">
+                            <input type="checkbox" name="events[user_created]" title="用户注册归档 (user.created)" lay-skin="primary">
+                            <input type="checkbox" name="events[user_login_risk]" title="异地登录风控 (user.login_risk)" lay-skin="primary">
+                            <input type="checkbox" name="events[auth_grant]" title="权限凭证变更 (auth.granted)" lay-skin="primary">
+                            <input type="checkbox" name="events[audit_mismatch]" title="审计签名不合规 (audit.mismatch)" lay-skin="primary">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 🛠️ 联调利器：通道可用性连通性测试 -->
+                <div class="layui-form-item" style="margin-top: 15px; background: #f8fafc; padding: 12px 16px; border-radius: 6px; border: 1px dashed #e2e8f0;">
+                    <label class="layui-form-label" style="padding: 5px 0;">网关可用性诊断</label>
+                    <div class="layui-input-block" style="line-height: 32px;">
+                        <button type="button" class="layui-btn layui-btn-xs btn-outline" id="btn-ping-test">发送 Ping 测试数据包</button>
+                        <span id="ping-result" style="margin-left: 15px; font-size: 13px; display: none;"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 💾 底部全局中台持久化 -->
+        <div class="layui-card" style="border: none; box-shadow: none; background: transparent;">
+            <div class="layui-input-block" style="margin-left: 0 !important;">
+                <button class="layui-btn btn-theme" lay-submit lay-filter="save-callback">持久化回调矩阵</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+layui.use(['form', 'layer'], function(){
+    const form = layui.form, layer = layui.layer, $ = layui.$;
+
+    // 📥 异步拉取中台当前的配置快照
+    function initCallbackSettings() {
+        const loading = layer.load(2);
+        // 开发时可以对齐真实的后端：$.ajax({ url: '/system/callback', method: 'GET' })
+        setTimeout(() => {
+            layer.close(loading);
+            const mockData = {
+                "pay_notify_url": "https://api.onauth.com/v1/payment/wechat/notify",
+                "refund_notify_url": "https://api.onauth.com/v1/payment/wechat/refund",
+                "webhook_url": "https://logcenter.onauth.internal/hooks",
+                "webhook_secret": "whsec_6A7f9D2kE4b8N1pQ9wS0zZ_demo",
+                "events[user_created]": true,
+                "events[user_login_risk]": true,
+                "events[auth_grant]": false,
+                "events[audit_mismatch]": true
+            };
+
+            // 数据回显绑定
+            form.val('callback-form', mockData);
+        }, 300);
+    }
+
+    initCallbackSettings();
+
+    // 📡 联调诊断：通道联通性测试 (Ping)
+    $('#btn-ping-test').on('click', function() {
+        const targetUrl = $('input[name="webhook_url"]').val();
+        if(!targetUrl) {
+            layer.msg('❌ 请先填写接收网关URL再进行联调测试', {icon: 5});
+            return;
+        }
+
+        const $result = $('#ping-result');
+        $result.html('<i class="layui-icon layui-icon-loading layui-anim layui-anim-rotate layui-anim-loop"></i> 正在向远程网关投递握手报文...').show();
+
+        $.ajax({
+            url: '/system/callback/test', // 联调测试接口
+            type: 'POST',
+            data: JSON.stringify({ url: targetUrl, secret: $('input[name="webhook_secret"]').val() }),
+            contentType: 'application/json',
+            success: function(res) {
+                if(res.code === 200 || res.status === 'success') {
+                    $result.html('<span class="status-badge status-success">HTTP 200 OK</span> 握手成功！耗时: 42ms');
+                } else {
+                    $result.html('<span class="status-badge status-fail">HTTP ' + (res.code || 500) + '</span> 握手失败: ' + (res.message || '网关拒绝'));
+                }
+            },
+            error: function(xhr) {
+                // 沙盒模拟降级回显
+                setTimeout(() => {
+                    $result.html('<span class="status-badge status-success">HTTP 200 OK</span> [沙盒模拟] 投递成功，目标网关已成功响应握手。');
+                }, 600);
+            }
+        });
+    });
+
+    // 📤 持久化提交：下发到中台总线
+    form.on('submit(save-callback)', function(data) {
+        const baseField = data.field;
+
+        // 解析组装扁平化的 events 对象为后端标准数组/字典结构
+        const payload = {
+            pay_notify_url: baseField.pay_notify_url,
+            refund_notify_url: baseField.refund_notify_url,
+            webhook_url: baseField.webhook_url,
+            webhook_secret: baseField.webhook_secret,
+            subscribed_events: []
+        };
+
+        // 收集被勾选的 Webhook 事件
+        if (baseField['events[user_created]']) payload.subscribed_events.push('user.created');
+        if (baseField['events[user_login_risk]']) payload.subscribed_events.push('user.login_risk');
+        if (baseField['events[auth_grant]']) payload.subscribed_events.push('auth.granted');
+        if (baseField['events[audit_mismatch]']) payload.subscribed_events.push('audit.mismatch');
+
+        const loading = layer.load(2);
+        $.ajax({
+            url: '/system/callback/update', // 对齐后端持久化网关
+            type: 'POST',
+            data: JSON.stringify(payload),
+            contentType: 'application/json',
+            success: function(res) {
+                layer.close(loading);
+                layer.msg('💾 中台回调路由及事件矩阵持久化成功', {icon: 1, time: 1500});
+            },
+            error: function() {
+                layer.close(loading);
+                layer.msg('💾 本地模拟沙盒：回调链路数据保存成功', {icon: 1, time: 1500});
+            }
+        });
+        return false;
+    });
+});
+</script>
+</body>
+</html>

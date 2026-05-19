@@ -70,6 +70,7 @@ def verify_client_token(
         )
 
     # 提取载荷元数据
+    print(payload)
     client_id = payload.get("sub")
     token_type = payload.get("token_type", "license")
     current_time = datetime.datetime.now()

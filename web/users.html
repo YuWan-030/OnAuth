@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>企业级用户矩阵 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        /* ==========================================================================
+           嵌入式页面优化：去除外边距与独立大标题，无缝融入主中台
+           ========================================================================== */
+        body {
+            background-color: #f3f4f6;
+            padding: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+        .layui-fluid { padding: 0; }
+
+        /* 卡片扁平化设计，去除过大圆角 */
+        .layui-card {
+            border-radius: 8px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            background: #fff;
+        }
+        .layui-card-header {
+            padding: 0 16px;
+            font-weight: 700;
+            color: #0f172a;
+            border-bottom: 1px solid #f1f5f9;
+            height: 48px;
+            line-height: 48px;
+        }
+        .layui-card-body { padding: 16px; }
+
+        /* 顶部检索面板紧凑化 */
+        .search-panel {
+            background: #fff;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 14px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        /* 检索输入框美化 */
+        .layui-input {
+            border-radius: 6px !important;
+            border-color: #d1d5db !important;
+            transition: all 0.2s;
+            height: 36px;
+        }
+        .layui-input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+
+        /* ==========================================================================
+           按钮组件高级定制
+           ========================================================================== */
+        /* 核心检索按钮 - 中台渐变蓝 */
+        .btn-search-theme {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            padding: 0 16px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+        }
+        /* 浅色辅助按钮 */
+        .btn-add-secondary {
+            border: 1px solid #d1d5db !important;
+            background-color: #fff !important;
+            color: #374151 !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 34px !important;
+            padding: 0 14px !important;
+            font-size: 13px !important;
+            transition: all 0.2s;
+        }
+        .btn-add-secondary:hover {
+            border-color: #2563eb !important;
+            color: #2563eb !important;
+            background: #f8fafc !important;
+        }
+
+        /* ==========================================================================
+           表格内矩阵标签与细则美化
+           ========================================================================== */
+        .layui-table-view { border: 1px solid #ebeef5 !important; border-radius: 6px !important; overflow: hidden; }
+        .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
+        .layui-table td { height: 48px; }
+
+        /* 标签美化 */
+        .role-tag { background: #eff6ff; color: #2563eb; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 6px; border: 1px solid rgba(37, 99, 235, 0.1); }
+        .perm-tag { background: #ecfdf5; color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 6px; border: 1px solid rgba(16, 185, 129, 0.1); }
+
+        /* 状态开关覆盖过时绿 */
+        .layui-form-switch { border-radius: 20px; }
+        .layui-form-onswitch { border-color: #10b981 !important; background-color: #10b981 !important; }
+
+        /* ==========================================================================
+           多维行内操作按钮（Outline 极简扁平化）
+           ========================================================================== */
+        .btn-matrix-ops { background: transparent !important; border-radius: 4px !important; padding: 0 8px !important; transition: all 0.2s; font-size: 12px !important; }
+
+        .btn-matrix-edit { color: #4b5563 !important; border: 1px solid #d1d5db !important; }
+        .btn-matrix-edit:hover { background: #f3f4f6 !important; border-color: #9ca3af !important; }
+
+        .btn-matrix-role { color: #6366f1 !important; border: 1px solid rgba(99, 102, 241, 0.2) !important; }
+        .btn-matrix-role:hover { background: #e0e7ff !important; border-color: #6366f1 !important; }
+
+        .btn-matrix-perm { color: #0d9488 !important; border: 1px solid rgba(13, 148, 136, 0.2) !important; }
+        .btn-matrix-perm:hover { background: #ccfbf1 !important; border-color: #0d9488 !important; }
+
+        .btn-matrix-del { color: #ef4444 !important; border: 1px solid rgba(239, 68, 68, 0.2) !important; }
+        .btn-matrix-del:hover { background: #fef2f2 !important; border-color: #ef4444 !important; }
+
+        /* 弹窗层容器内衬调配 */
+        .pop-matrix-container { padding: 20px 24px; }
+        .pop-matrix-container .layui-form-select { margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+
+<div class="layui-fluid">
+    <!-- 🔍 条件审计舱 -->
+    <div class="search-panel layui-form">
+        <div class="layui-row layui-col-space10">
+            <div class="layui-col-md3">
+                <input type="text" name="username" placeholder="🔍 检索账户名..." class="layui-input">
+            </div>
+            <div class="layui-col-md4">
+                <button class="layui-btn btn-search-theme" lay-submit lay-filter="search-submit">检索审计</button>
+                <button type="button" class="layui-btn btn-add-secondary" onclick="actionCreate()"><i class="layui-icon layui-icon-add-1" style="font-size:13px; margin-right:3px;"></i>添加用户</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📊 数据矩阵卡片 -->
+    <div class="layui-card">
+        <div class="layui-card-header">用户资产矩阵 (User Matrix)</div>
+        <div class="layui-card-body">
+            <table id="user-table" lay-filter="user-table"></table>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================================
+   表格魔改核心模板轴
+   ========================================================================== */ -->
+{% raw %}
+<script type="text/html" id="tpl-ops">
+    <div style="display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-edit" lay-event="edit">昵称</button>
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-role" lay-event="roles">角色</button>
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-perm" lay-event="permissions">权限</button>
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-del" lay-event="del">删除</button>
+    </div>
+</script>
+
+<script type="text/html" id="tpl-status">
+    <input type="checkbox" name="is_active" value="{{ d.id }}" lay-skin="switch" lay-text="ON|OFF" lay-filter="status-switch" {{ d.is_active ? 'checked' : '' }} {{ d.username === 'admin' ? 'disabled' : '' }}>
+</script>
+{% endraw %}
+
+<script>
+layui.use(['table', 'form', 'layer'], function(){
+    const table = layui.table, form = layui.form, $ = layui.$, layer = layui.layer;
+
+    // 🛡️ 授信通信核心骨架函数
+    function securePost(url, data, callback) {
+        const loading = layer.load(2);
+        $.post(url, data, function(r) {
+            layer.close(loading);
+            if (r.status === 'success') {
+                layer.msg(r.message || '指令执行成功', {icon: 1, time: 1000});
+                if(callback) callback(r);
+            } else {
+                layer.msg(r.message || '资产执行链路中断', {icon: 2});
+            }
+        }).fail(function(xhr) {
+            layer.close(loading);
+            const err = xhr.responseJSON ? (xhr.responseJSON.detail || xhr.responseJSON.message) : "中台网关拦截异常";
+            layer.msg(err, {icon: 2});
+        });
+    }
+
+    // 表格网格穿透渲染
+    table.render({
+        elem: '#user-table',
+        url: '/admin/users/list',
+        page: true,
+        limit: 15,
+        parseData: res => ({code: 0, count: res.count, data: res.data}),
+        cols: [[
+            {field: 'id', title: 'UID', width: 80, align: 'center', sort: true},
+            {field: 'username', title: '账户名', width: 140, style: 'font-weight: 600; color: #1e293b;'},
+            {field: 'nickname', title: '用户昵称', width: 140},
+            {field: 'roles', title: '角色矩阵', minWidth: 160, templet: d => d.roles.map(r=>`<span class="role-tag">${r}</span>`).join('')},
+            {field: 'permissions', title: '权限细则', minWidth: 200, templet: d => d.permissions.map(p=>`<span class="perm-tag">${p}</span>`).join('')},
+            {field: 'is_active', title: '安全状态', width: 100, align: 'center', templet: '#tpl-status'},
+            {title: '全维资产审计', width: 240, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
+        ]]
+    });
+
+    // 搜索提交
+    form.on('submit(search-submit)', d => {
+        table.reload('user-table', {where: d.field, page: {curr: 1}});
+        return false;
+    });
+
+    // 联动拦截切换
+    form.on('switch(status-switch)', obj => {
+        securePost('/admin/users/toggle_status', {user_id: obj.value, is_active: obj.elem.checked});
+    });
+
+    // 多维网格指令分发
+    table.on('tool(user-table)', obj => {
+        const d = obj.data;
+        if(obj.event === 'edit'){
+            layer.prompt({
+                title: '变更目标昵称（当前：' + d.username + '）',
+                value: d.nickname,
+                success: function(layero) {
+                    layero.find('.layui-layer-input').addClass('layui-input');
+                    layero.find('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb'});
+                }
+            }, (v, i) => {
+                if(!v.trim()) { layer.msg('昵称不可为空值', {icon:5, shift:6}); return; }
+                securePost('/admin/users/update_nickname', {user_id: d.id, new_nickname: v}, () => { layer.close(i); table.reload('user-table'); });
+            });
+        } else if(obj.event === 'roles' || obj.event === 'permissions'){
+            const postKey = obj.event === 'roles' ? 'roles' : 'permissions';
+            layer.open({
+                type: 1,
+                title: obj.event === 'roles' ? '🛡️ 调整角色授信域' : '🔑 调配精细权限流',
+                area: ['400px', '260px'],
+                content: `<div class="layui-form pop-matrix-container">
+                            <div class="layui-form-item">
+                                <select id="l-act">
+                                    <option value="add">➕ 叠加资产属性 (ADD)</option>
+                                    <option value="remove">➖ 移除资产属性 (REMOVE)</option>
+                                </select>
+                            </div>
+                            <div class="layui-form-item" style="margin-top:14px;">
+                                <input id="l-name" class="layui-input" placeholder="输入节点标记值（例如：developer）">
+                            </div>
+                          </div>`,
+                btn: ['同步配置', '放弃'],
+                success: (layero) => {
+                    form.render();
+                    layero.find('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb'});
+                },
+                yes: (i) => {
+                    const tagVal = $('#l-name').val().trim();
+                    if(!tagVal) { layer.msg('标识属性不能为空', {icon:5, shift:6}); return; }
+                    const url = obj.event === 'roles' ? '/admin/users/update_roles' : '/admin/users/update_permissions';
+                    securePost(url, {user_id: d.id, [postKey]: tagVal, action: $('#l-act').val()}, () => { layer.close(i); table.reload('user-table'); });
+                }
+            });
+        } else if(obj.event === 'del'){
+            layer.confirm('⚠️ 警报：确认从集群中物理注销该用户账户资产？', {
+                icon: 3,
+                title: '粉碎性清退审计',
+                success: (layero) => {
+                    layero.find('.layui-layer-btn0').css('background-color', '#ef4444');
+                }
+            }, i => {
+                const loading = layer.load(2);
+                $.ajax({
+                    url: '/admin/users/' + d.id,
+                    type: 'DELETE',
+                    success: r => {
+                        layer.close(loading);
+                        layer.msg(r.message || '资产剔除完毕', {icon: 1});
+                        table.reload('user-table');
+                        layer.close(i);
+                    },
+                    error: (xhr) => {
+                        layer.close(loading);
+                        layer.msg(xhr.responseJSON?.message || '清退失败，请确认权限', {icon: 2});
+                    }
+                });
+            });
+        }
+    });
+
+    // 顶置创建模态窗口
+    window.actionCreate = () => {
+        layer.open({
+            type: 1,
+            title: '🚀 签发全新用户资产',
+            area: ['400px', '250px'],
+            content: `<div class="pop-matrix-container">
+                        <input id="u-name" class="layui-input" placeholder="账户名 (Username)" autocomplete="off">
+                        <input id="u-pass" type="password" class="layui-input" placeholder="安全凭证密码 (Password)" style="margin-top: 14px;" autocomplete="off">
+                      </div>`,
+            btn: ['核准签发', '取消'],
+            success: (layero) => {
+                layero.find('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb'});
+            },
+            yes: (i) => {
+                const uname = $('#u-name').val().trim();
+                const upass = $('#u-pass').val().trim();
+                if(!uname || !upass) { layer.msg('注册字段不可保留空值', {icon: 5, shift: 6}); return; }
+                securePost('/admin/users/create', {username: uname, password: upass, roles: 'standard_user'}, () => { layer.close(i); table.reload('user-table'); });
+            }
+        });
+    }
+});
+</script>
+</body>
+</html>

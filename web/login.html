@@ -2,32 +2,139 @@
 <html lang="zh-CN">
 <head>
     <meta charset="utf-8">
-    <title>中台身份凭证确认 - OnAuth</title>
+    <title>身份凭证确认 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
     <style>
-        body { background-color: #f1f2f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-container { width: 400px; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .login-title { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 25px; color: #333; }
-        .link-reg { text-align: right; margin-top: 10px; font-size: 13px; }
+        /* ==========================================================================
+           全屏星空灰背景与垂直居中容器
+           ========================================================================== */
+        body {
+            background: radial-gradient(circle at 50% 50%, #f8fafc, #e2e8f0);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 登录卡片美化：高级扁平化无边框，带微阴影 */
+        .login-container {
+            width: 360px;
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+            border: 1px solid #ebeef5;
+        }
+
+        /* 主标题排版 */
+        .login-title {
+            font-size: 20px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 30px;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+        }
+
+        /* 表单间距微调 */
+        .layui-form-item { margin-bottom: 20px; position: relative; }
+
+        /* ==========================================================================
+           输入框与图标精细化加工
+           ========================================================================== */
+        .layui-input {
+            border-radius: 6px !important;
+            border-color: #cbd5e1 !important;
+            height: 42px;
+            padding-left: 38px !important; /* 给图标预留空间 */
+            transition: all 0.2s ease-in-out;
+            font-size: 14px;
+        }
+        .layui-input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+
+        /* 内嵌式输入框前置图标 */
+        .input-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 16px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* ==========================================================================
+           安全提交按钮与注册流转链路
+           ========================================================================== */
+        /* 核心渐变蓝登录按钮 */
+        .btn-login-theme {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 42px !important;
+            line-height: 42px !important;
+            font-size: 14px !important;
+            font-weight: 600;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-login-theme:hover { opacity: 0.95; color: #fff !important; }
+        .btn-login-theme:active { transform: scale(0.98); }
+
+        /* 底部流转区域 */
+        .link-reg {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+        .link-reg a {
+            color: #64748b;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+        .link-reg a:hover {
+            color: #2563eb;
+        }
     </style>
 </head>
 <body>
 
 <div class="login-container">
     <div class="login-title">🔐 OnAuth 运营管理中台</div>
+
     <form class="layui-form" lay-filter="loginForm">
+        <!-- 账户输入域 -->
         <div class="layui-form-item">
-            <input type="text" name="username" lay-verify="required" placeholder="请输入账户" class="layui-input">
+            <i class="layui-icon layui-icon-username input-icon"></i>
+            <input type="text" name="username" lay-verify="required" lay-reqtext="请输入安全访问账户" placeholder="请输入账户" class="layui-input" autocomplete="off">
         </div>
+
+        <!-- 凭证输入域 -->
         <div class="layui-form-item">
-            <input type="password" name="password" lay-verify="required" placeholder="请输入登录密码" class="layui-input">
+            <i class="layui-icon layui-icon-password input-icon"></i>
+            <input type="password" name="password" lay-verify="required" lay-reqtext="请输入登录认证密码" placeholder="请输入登录密码" class="layui-input" autocomplete="off">
         </div>
-        <div class="layui-form-item">
-            <button class="layui-btn layui-btn-fluid layui-btn-normal" lay-submit lay-filter="doLogin">安全登录</button>
+
+        <!-- 授信登录动作 -->
+        <div class="layui-form-item" style="margin-top: 26px; margin-bottom: 5px;">
+            <button class="layui-btn layui-btn-fluid btn-login-theme" lay-submit lay-filter="doLogin">安全验证并登录</button>
         </div>
+
+        <!-- 属性下摆跳转 -->
         <div class="link-reg">
-            <a href="/register" style="color: #1e9fff;">还没有账号？申请注册 &raquo;</a>
+            <a href="/register">还没有中台账号？申请注册网络凭证 &raquo;</a>
         </div>
     </form>
 </div>
@@ -36,31 +143,32 @@
 layui.use(['form', 'layer'], function(){
     var form = layui.form, layer = layui.layer, $ = layui.$;
 
-    // 自动防嵌套外壳：如果登录页不幸在 iframe 子窗口中荡漾，强行流转至最顶层浏览器窗口
+    // 🛡️ 边界防御：防 Iframe 跨域嵌套与点击劫持
     if (window !== window.top) {
         window.top.location.href = window.location.href;
     }
 
+    // 监听授信提交
     form.on('submit(doLogin)', function(data){
-        layer.load(2);
+        const loading = layer.load(2);
+
         $.ajax({
-            url: '/admin/token', // 🎯 对齐规范：请求主入口或 auth_user 模块下的后台统一凭证签发接口
+            url: '/admin/token',
             type: 'POST',
             data: JSON.stringify(data.field),
             contentType: 'application/json',
             success: function(res){
-                layer.closeAll('loading');
-                layer.msg('登录认证成功，正在授信进入...', {icon: 1, time: 1000}, function(){
-                    // ✨ 此时浏览器已经在底层悄悄托管了后端下发的 HttpOnly Cookie
-                    // 直接执行顶层窗口刷入管理主页，后端的看门狗将会完美放行
+                layer.close(loading);
+                layer.msg('凭证授信成功，正在引导注入...', {icon: 1, time: 1000}, function(){
+                    // 核心 HttpOnly Cookie 已就绪，直接流转主舱顶层域
                     window.top.location.href = '/index';
                 });
             },
             error: function(err){
-                layer.closeAll('loading');
-                // 增加安全防空指针容错
-                var errMsg = err.responseJSON?.detail || '账户或密码不正确';
-                layer.msg(errMsg, {icon: 2});
+                layer.close(loading);
+                // 精细化读取拦截网格下发的详细错误
+                var errMsg = err.responseJSON?.detail || err.responseJSON?.message || '身份认证失败，凭证不正确';
+                layer.msg(errMsg, {icon: 2, shift: 6});
             }
         });
         return false;

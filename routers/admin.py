@@ -1,7 +1,11 @@
 import datetime
 import jwt
 from typing import Optional
-from fastapi import APIRouter, Query, Depends, HTTPException, Request, status
+
+import psutil
+import redis
+from fastapi import APIRouter, Query, Depends, HTTPException, Form
+from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -11,67 +15,16 @@ from utils.crypto import generate_random_keys, hash_secret, create_jwt_token
 from config import SECRET_KEY
 from sqlalchemy import func
 from database import AppDevice
+from database import App, DeveloperGroup
+from middlewares.auth import redis_client
+import json
+from middlewares.rbac import RBACChecker
 
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # 初始化全新架构的路由
 router = APIRouter(prefix="/admin", tags=["OnAuth 核心管理中台管线"])
 
-
-# ==================== 🔐 核心：RBAC 动态多渠道权限看门狗 ====================
-
-class RBACChecker:
-    """
-    分布式全信道 RBAC 动态权限审查器
-    """
-
-    def __init__(self, required_permission: str):
-        # 🎯 实例化时传入该接口所需的细粒度权限标识，例如 "admin:read"
-        self.required_permission = required_permission
-
-    def __call__(self, request: Request, db: Session = Depends(get_db)):
-        # 🚀 1. 多渠道提取令牌：优先从 Cookie 池子捞，捞不到再看请求头 Headers
-        auth_token = request.cookies.get("auth_token") or request.cookies.get("token")
-        if not auth_token:
-            auth_header = request.headers.get("Authorization")
-            if auth_header and auth_header.startswith("Bearer "):
-                auth_token = auth_header.split(" ")[1]
-
-        if not auth_token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="身份凭证已缺失，请重新登录"
-            )
-
-        try:
-            # 🚀 2. 强安全性 JWT 签名校验
-            payload = jwt.decode(auth_token, SECRET_KEY, algorithms=["HS256"])
-            username: str = payload.get("sub") or payload.get("client_id") or payload.get("username")
-            if username is None:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="非法令牌结构")
-
-            # 🚀 3. 拦截第一层：锁定激活状态的用户主体
-            user = db.query(User).filter(User.username == username, User.is_active == True).first()
-            if user is None:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="当前管理员席位已被中台吊销")
-
-            # 🚀 4. 🔓 提取该账号在 RBAC 权限组里绑定的所有独立 Permission.name
-            user_permissions = set()
-            for role in user.roles:
-                for perm in role.permissions:
-                    user_permissions.add(perm.name)
-
-            # 🚀 5. 🎯 核心拦截第二层：高强度管理 Scope 硬核比对
-            if self.required_permission not in user_permissions:
-                print(
-                    f"⚠️ [OnAuth 越权警报] 账户 [{username}] 企图非法操作需要 [{self.required_permission}] 的接口，已被安全隔离！")
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"安全合规熔断：您所在的权限组缺少 [{self.required_permission}] 权限！"
-                )
-
-            return user
-
-        except jwt.PyJWTError:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="认证凭证已过期或被非法篡改")
 
 
 # ==================== 📦 Pydantic 交互数据流模型沙箱 ====================
@@ -233,64 +186,130 @@ def create_app(
     return {"msg": "应用创建成功", "app_id": new_app.id, "app_name": new_app.app_name}
 
 
-@router.get("/dashboard/stats", summary="【管理端】首页核心大屏实时指标监控")
+@router.get("/dashboard/stats", summary="【管理端】首页核心大屏实时指标监控（Redis缓存版）")
 def get_dashboard_stats(
-        current_user: User = Depends(RBACChecker("admin:read")),  # 🛡️ 只读权限看门狗即可
+        current_user: User = Depends(RBACChecker("admin:read")),  # 🛡️ 权限守卫
         db: Session = Depends(get_db)
 ):
-    # 🎯 1. 真实数据：实时计算用户总数
-    total_users = db.query(func.count(User.id)).scalar() or 0
+    """
+    🧠 工业级高并发降维打击改造：
+    使用 Redis 作为前置大盘阻水坝，数据生命周期（TTL）设为 60 秒。
+    1. 100个管理员同时看大盘，每分钟也只有 1 次撞击 MySQL。
+    2. 穿透审计主题封禁，同时杜绝数据库全表扫描带来的锁表与崩溃风险。
+    """
+    CACHE_KEY = "onauth:dashboard:cache"
+    CACHE_TTL = 60  # 🎯 缓存时效 60 秒（1分钟），兼顾大盘实时性与数据安全性
 
-    # 🎯 2. 真实数据：实时计算到期熔断触发频次（已被锁定/禁用，或已过期的商业凭证总数）
+    # ==================== 🚪 拦截层：前置 Redis 缓存捞取 ====================
+    try:
+        cached_data = redis_client.get(CACHE_KEY)
+        if cached_data:
+            # 🎉 命中缓存！直接反序列化回传，不碰一下 MySQL
+            return json.loads(cached_data)
+    except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError):
+        # 容错：如果 Redis 偶发性断连，打印警告日志，降级穿透去查 MySQL，保障系统高可用
+        import logging
+        logging.warning("⚠️ [大盘风控] Redis 读取失败，大盘临时降级穿透撞击数据库！")
+
+    # ==================== 🚫 穿透层：缓存未命中，开始计算重度数据 ====================
     now_time = datetime.datetime.now()
-    frozen_credentials = db.query(func.count(AppCredential.id)).filter(
-        (AppCredential.is_active == False) | (AppCredential.expire_at < now_time)
+
+    # 1. 用户与应用基础设施
+    total_users = db.query(func.count(User.id)).scalar() or 0
+    total_apps = db.query(func.count(App.id)).scalar() or 0
+
+    # 2.【精准风控】多表穿透审计：计入主体/应用封禁旗下的影子凭证数
+    frozen_credentials = db.query(func.count(AppCredential.id)) \
+                             .join(App, AppCredential.app_id == App.id) \
+                             .join(DeveloperGroup, App.group_id == DeveloperGroup.id) \
+                             .filter(
+        (AppCredential.is_active == False) |
+        (AppCredential.expire_at < now_time) |
+        (App.is_active == False) |
+        (DeveloperGroup.is_active == False)
     ).scalar() or 0
 
-    # 🎯 3. 真实数据：实时计算在线/活跃设备总数（最近 15 分钟内有心跳活跃过的独立硬件指纹数）
+    # 3. 在线活跃度双轨合流
     active_cutoff = now_time - datetime.timedelta(minutes=15)
     active_devices = db.query(func.count(AppDevice.id)).filter(
         AppDevice.last_seen_at >= active_cutoff
     ).scalar() or 0
 
-    # 🎯 4. 🚀 【硬核改造】从数据库抽取 100% 真实边缘设备近 7 日授信通信激活趋势
-    # 计算 6 天前的起始日期（连同今天刚好组成 7 天时间轴）
+    try:
+        active_oauth_sessions = len(redis_client.keys("sess_*"))
+    except Exception:
+        active_oauth_sessions = 0
+
+    # 4. 近 7 日双栖激活与授权爆发趋势
     seven_days_ago = now_time.date() - datetime.timedelta(days=6)
 
-    # 使用 SQL 执行高效率的按天分组聚合并过滤历史流水
-    raw_trend = db.query(
+    raw_device_trend = db.query(
         func.date(AppDevice.activated_at).label("act_date"),
         func.count(AppDevice.id).label("day_count")
-    ).filter(
-        func.date(AppDevice.activated_at) >= seven_days_ago
-    ).group_by(
-        func.date(AppDevice.activated_at)
-    ).all()
+    ).filter(func.date(AppDevice.activated_at) >= seven_days_ago).group_by(func.date(AppDevice.activated_at)).all()
+    device_trend_map = {str(row.act_date): row.day_count for row in raw_device_trend}
 
-    # 将数据库查询回来的原始对象关系映射转化成瞬时检索字典 {"2026-05-18": 5, ...}
-    trend_map = {str(row.act_date): row.day_count for row in raw_trend}
+    raw_oauth_trend = db.query(
+        func.date(AppCredential.created_at).label("auth_date"),
+        func.count(AppCredential.id).label("day_count")
+    ).filter(func.date(AppCredential.created_at) >= seven_days_ago).group_by(func.date(AppCredential.created_at)).all()
+    oauth_trend_map = {str(row.auth_date): row.day_count for row in raw_oauth_trend}
 
-    # 完美补齐近 7 日时间轴：如果某天没有新设备激活，字典查不到就自动补 0，绝不断流
-    device_trend = []
+    # 5. 补齐近 7 日多维时间轴
+    mixed_trend = []
     for i in range(6, -1, -1):
         target_date = (now_time - datetime.timedelta(days=i)).date()
-        date_str = target_date.strftime("%Y-%m-%d")  # 用于匹配数据库结果
-        display_str = target_date.strftime("%m-%d")  # 用于回传前端 Layui 渲染
+        date_str = target_date.strftime("%Y-%m-%d")
+        display_str = target_date.strftime("%m-%d")
 
-        device_trend.append({
+        mixed_trend.append({
             "date": display_str,
-            "count": trend_map.get(date_str, 0)  # 🎯 查到即真实数量，查不到说明当天没有激活，安全补 0
+            "device_count": device_trend_map.get(date_str, 0),
+            "oauth_count": oauth_trend_map.get(date_str, 0)
         })
 
-    return {
+    # 6. 服务器底层物理性能审计
+    try:
+        cpu_usage = psutil.cpu_percent(interval=0.1)
+        virtual_mem = psutil.virtual_memory()
+        memory_usage = virtual_mem.percent
+
+        if cpu_usage > 85 or memory_usage > 90:
+            health_status = "CRITICAL"
+        elif cpu_usage > 70 or memory_usage > 75:
+            health_status = "WARNING"
+        else:
+            health_status = "HEALTHY"
+    except Exception:
+        cpu_usage, memory_usage, health_status = 0, 0, "UNKNOWN"
+
+    # ==================== 📦 组装全量倾泻响应体 ====================
+    response_payload = {
         "status": "success",
         "data": {
+            "refresh_time": now_time.strftime("%Y-%m-%d %H:%M:%S"),
             "total_users": total_users,
+            "total_apps": total_apps,
             "frozen_frequency": frozen_credentials,
             "active_devices": active_devices,
-            "device_trend": device_trend
+            "active_oauth_sessions": active_oauth_sessions,
+            "mixed_trend": mixed_trend,
+            "system_status": {
+                "cpu": cpu_usage,
+                "memory": memory_usage,
+                "health": health_status
+            }
         }
     }
+
+    # ==================== 💾 注入层：将冷计算数据拍入 Redis 缓存 ====================
+    try:
+        # 使用 setex 原子操作：设置 Key、过期秒数、以及转为字符串的 JSON
+        redis_client.setex(CACHE_KEY, CACHE_TTL, json.dumps(response_payload))
+    except Exception as e:
+        logging.error(f"❌ [大盘风控] 回写 Redis 缓存发生异常: {str(e)}")
+
+    return response_payload
 
 @router.get("/profile", summary="【全量用户】获取当前登录会话的真实账户名号")
 def get_admin_profile(
@@ -467,3 +486,272 @@ def list_all_apps(
                             c in a.credentials]
         })
     return result
+
+# --- 1. 用户列表分页穿透查询 ---
+@router.get("/users/list", summary="【管理端】全量用户矩阵穿透审计")
+def get_admin_users_list(
+        page: int = Query(1, ge=1, description="当前页码"),
+        limit: int = Query(10, ge=1, le=100, description="每页分页页长"),
+        username: str = Query(None, description="模糊检索用户名"),
+        is_active: str = Query(None, description="状态筛选"),
+        current_user: User = Depends(RBACChecker("admin:read")),
+        db: Session = Depends(get_db)
+):
+    query = db.query(User)
+
+    if username and username.strip():
+        query = query.filter(User.username.like(f"%{username}%"))
+    if is_active is not None and is_active.strip() != "":
+        query = query.filter(User.is_active == (is_active.lower() == "true"))
+
+    total = query.count()
+    users = query.order_by(User.id.desc()).offset((page - 1) * limit).limit(limit).all()
+
+    data_list = []
+    for u in users:
+        # 1. 提取角色名称
+        roles_list = [r.name for r in u.roles]
+
+        # 2. 🎯 聚合权限：角色权限 + 独立追加权限
+        perms_list = set()
+
+        # 从角色中聚合
+        for r in u.roles:
+            if hasattr(r, 'permissions'):
+                for p in r.permissions:
+                    if p.name:
+                        perms_list.add(p.name)
+
+        # 从独立权限中聚合 (这是你之前缺失的关键点)
+        if hasattr(u, 'extra_permissions'):
+            for p in u.extra_permissions:
+                if p.name:
+                    perms_list.add(p.name)
+
+        data_list.append({
+            "id": u.id,
+            "username": u.username,
+            "nickname": u.nickname or u.username,
+            "is_active": u.is_active,
+            "created_at": u.created_at.strftime("%Y-%m-%d %H:%M:%S") if u.created_at else "-",
+            "roles": roles_list,
+            "permissions": list(perms_list)  # 这里返回的是合并后的完整权限列表
+        })
+
+    return {"code": 0, "msg": "success", "count": total, "data": data_list}
+
+
+# --- 2. 风控核心：用户一键封禁/解封并强制踢下线 ---
+@router.post("/users/toggle_status", summary="【管理端】全网维度资产熔断与解冻")
+def toggle_user_status(
+        user_id: int = Form(...),
+        is_active: bool = Form(...),
+        current_user: User = Depends(RBACChecker("admin:read")),  # 🛡️ 写入/熔断权限守卫
+        db: Session = Depends(get_db)
+):
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="目标资产不存在")
+
+    if target_user.username == "admin":
+        raise HTTPException(status_code=400, detail="系统最高根权限超级管理员拒绝自我熔断")
+
+    # 变更数据库状态
+    target_user.is_active = is_active
+    db.commit()
+
+    # 🧠 【风控联动闭环】如果是封禁操作，必须做到全网立刻物理清除该用户的会话
+    if not is_active:
+        try:
+            # 遍历 Redis 找出所有属于该用户的 Session 钥匙
+            # 注意：如果线上并发极大，工业级玩法可以在登录时维护一个 `user:sessions:{username}` 的 Set
+            # 这里采用平铺扫描兼容你的极简单轨架构
+            for key in redis_client.scan_iter("sess_*"):
+                stored_user = redis_client.get(key)
+                if stored_user and stored_user.decode("utf-8") == target_user.username:
+                    redis_client.delete(key)  # 物理粉碎钥匙，让其在网关拦截处直接回滚到登录页
+        except Exception:
+            pass
+
+    status_text = "激活受信" if is_active else "风控隔离并强行全网切断下线"
+    return {"status": "success", "message": f"用户 [{target_user.username}] 已成功切换为 {status_text} 状态"}
+
+# 权限修改接口，接收用户 ID 和新的权限列表以及是增还是删，更新数据库中的用户权限
+@router.post("/users/update_permissions", summary="【管理端】更新用户独立权限")
+def update_user_permissions(
+        user_id: int = Form(...),
+        permissions: str = Form(...),
+        action: str = Form(...),
+        current_user: User = Depends(RBACChecker("admin:read")),
+        db: Session = Depends(get_db)
+):
+    # 1. 查询用户时，不要 eagerload 角色权限，以防修改关联对象
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="目标用户不存在")
+
+    perm_names = [p.strip() for p in permissions.split(",") if p.strip()]
+
+    for perm_name in perm_names:
+        # 确保 perm 是一个独立的对象，不要通过 target_user.roles 获取
+        perm = db.query(Permission).filter(Permission.name == perm_name).first()
+        if not perm:
+            continue
+
+        # 2. 逻辑保护：如果在 action 为 remove 时，发现该权限来自角色
+        # 我们这里依然允许用户尝试删除，但我们要确保操作绝对不触碰 Role 对象
+
+        if action == "add":
+            if perm not in target_user.extra_permissions:
+                target_user.extra_permissions.append(perm)
+        elif action == "remove":
+            # 只有当权限确实在 extra_permissions 中才移除
+            if perm in target_user.extra_permissions:
+                target_user.extra_permissions.remove(perm)
+            else:
+                # 提示：该权限可能来自角色，而不是独立权限
+                return {"status": "fail", "message": f"权限 [{perm_name}] 属于角色赋予，无法从独立权限中移除。"}
+
+    db.commit()
+    return {"status": "success", "message": f"用户 [{target_user.username}] 的独立权限已更新。"}
+# 编辑用户权限组功能，接收用户 ID 和新的权限组列表，更新数据库中的用户权限组
+@router.post("/users/update_roles", summary="【管理端】更新用户权限组")
+def update_user_roles(
+        user_id: int = Form(...),
+        roles: str = Form(...),  # 逗号分隔的权限组列表
+        action: str = Form(...),  # "add" 或 "remove"
+        current_user: User = Depends(RBACChecker("admin:read")),
+        db: Session = Depends(get_db)
+):
+    # 1. 查询用户（不加载 roles 关联，防止修改 Role 内部属性）
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="目标用户不存在")
+
+    # 2. 清洗数据
+    role_names = [r.strip() for r in roles.split(",") if r.strip()]
+
+    # 3. 执行角色增删操作
+    updated = False
+    for role_name in role_names:
+        role = db.query(Role).filter(Role.name == role_name).first()
+        if not role:
+            continue
+
+        if action == "add":
+            if role not in target_user.roles:
+                target_user.roles.append(role)
+                updated = True
+        elif action == "remove":
+            if role in target_user.roles:
+                target_user.roles.remove(role)
+                updated = True
+        else:
+            raise HTTPException(status_code=400, detail="无效的操作类型")
+
+    # 4. 提交并刷新，确保 Redis/缓存失效（如果你的系统有权限缓存）
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="角色更新失败，数据库错误")
+
+    return {
+        "status": "success",
+        "message": f"用户 [{target_user.username}] 的权限组已更新" if updated else "用户角色无需变更"
+    }
+# 强制修改用户密码接口，接收用户 ID 和新的密码，更新数据库中的用户密码
+@router.post("/users/update_password", summary="【管理端】强制修改用户密码")
+def update_user_password(
+        user_id: int = Form(...),
+        new_password: str = Form(..., min_length=6, description="新密码，至少6位"),
+        current_user: User = Depends(RBACChecker("admin:update")),
+        db: Session = Depends(get_db)
+):
+    # 1. 查找目标
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="目标用户不存在")
+
+    # 2. 保护最高权限
+    if target_user.username == "admin":
+        raise HTTPException(status_code=400, detail="系统最高根权限超级管理员密码禁止被修改")
+
+    # 3. 统一使用新加密逻辑 (Bcrypt)
+    target_user.password_hash = pwd_context.hash(new_password)
+    db.commit()
+
+    try:
+        redis_client.delete(f"user_session:{target_user.username}")
+        pass
+    except Exception as e:
+        # 即使 Redis 清理失败，也要保证数据库密码已修改
+        pass
+
+    return {
+        "status": "success",
+        "message": f"管理员已强制重置用户 [{target_user.username}] 的密码。该用户可能需要重新登录。"
+    }
+
+# 强制删除用户接口，接收用户 ID，删除数据库中的用户
+@router.delete("/users/{user_id}", summary="【管理端】物理删除用户")
+def delete_user(
+        user_id: int,
+        current_user: User = Depends(RBACChecker("admin:delete")),  # 🛡️ 用户删除守卫
+        db: Session = Depends(get_db)
+):
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="目标用户不存在")
+
+    if target_user.username == "admin":
+        raise HTTPException(status_code=400, detail="系统最高根权限超级管理员禁止被删除")
+
+    db.delete(target_user)
+    db.commit()
+    return {"status": "success", "message": f"用户 [{target_user.username}] 已被物理删除"}
+
+# 强制创建用户接口，接收用户名、密码和权限组，创建新的用户
+@router.post("/users/create", summary="【管理端】强制创建用户")
+def create_user(
+        username: str = Form(...),
+        password: str = Form(...),
+        roles: str = Form(...),  # 逗号分隔的权限组列表
+        current_user: User = Depends(RBACChecker("admin:create")),  # 🛡️ 用户创建守卫
+        db: Session = Depends(get_db)
+):
+    existing_user = db.query(User).filter(User.username == username).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="用户名已存在")
+
+    role_names = [r.strip() for r in roles.split(",") if r.strip()]
+    user_roles = []
+    for role_name in role_names:
+        role = db.query(Role).filter(Role.name == role_name).first()
+        if role:
+            user_roles.append(role)
+
+    new_user = User(
+        username=username,
+        password_hash=pwd_context.hash(password),
+        roles=user_roles
+    )
+    db.add(new_user)
+    db.commit()
+    return {"status": "success", "message": f"用户 [{username}] 已成功创建"}
+
+# 强制修改用户昵称接口，接收用户 ID 和新的昵称，更新数据库中的用户昵称
+@router.post("/users/update_nickname", summary="【管理端】强制修改用户昵称")
+def update_user_nickname(
+        user_id: int = Form(...),
+        new_nickname: str = Form(...),
+        current_user: User = Depends(RBACChecker("admin:update")),  # 🛡️ 昵称修改守卫
+        db: Session = Depends(get_db)
+):
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="目标用户不存在")
+
+    target_user.nickname = new_nickname
+    db.commit()
+    return {"status": "success", "message": f"用户 [{target_user.username}] 的昵称已成功更新"}

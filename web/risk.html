@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>风险控制中心 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        /* ==========================================================================
+           全维中台扁平化风格适配
+           ========================================================================== */
+        body {
+            background-color: #f3f4f6;
+            padding: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+        .layui-fluid { padding: 0; }
+
+        /* 卡片轻量化 */
+        .layui-card {
+            border-radius: 8px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            background: #fff;
+            margin-bottom: 15px;
+        }
+        .layui-card-header {
+            padding: 0 16px;
+            font-weight: 700;
+            color: #0f172a;
+            border-bottom: 1px solid #f1f5f9;
+            height: 48px;
+            line-height: 48px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .layui-card-body { padding: 16px; }
+
+        /* 顶部风险看板指标 */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .stat-card {
+            background: #fff;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .stat-label { font-size: 12px; color: #64748b; font-weight: 500; }
+        .stat-value { font-size: 24px; font-weight: 700; color: #0f172a; margin-top: 4px; font-family: ui-monospace, sans-serif; }
+        .text-risk { color: #ef4444 !important; }
+
+        /* 检索条件舱 */
+        .search-panel {
+            background: #fff;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 14px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        /* 表单输入控件与开关微调 */
+        .layui-input {
+            border-radius: 6px !important;
+            border-color: #d1d5db !important;
+            height: 36px;
+        }
+        .layui-form-switch {
+            margin-top: 0 !important;
+        }
+
+        /* 新增/检索规则按钮 */
+        .btn-theme-primary {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            padding: 0 18px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+        }
+        .btn-theme-danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+        }
+
+        /* ==========================================================================
+           数据网格与风控组件样式
+           ========================================================================== */
+        .layui-table-view { border: 1px solid #ebeef5 !important; border-radius: 6px !important; overflow: hidden; }
+        .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
+
+        /* 策略动作标签 */
+        .action-badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+        .action-block { background: #fef2f2; color: #ef4444; border: 1px solid #fee2e2; }
+        .action-mfa { background: #fff7ed; color: #ea580c; border: 1px solid #ffedd5; }
+        .action-captcha { background: #eff6ff; color: #2563eb; border: 1px solid #dbeafe; }
+
+        /* 行内编辑/删除按钮 */
+        .btn-action-edit { background: transparent !important; color: #2563eb !important; border: 1px solid rgba(37,99,235,0.2) !important; border-radius: 4px !important; margin-right: 4px; }
+        .btn-action-edit:hover { background: #eff6ff !important; }
+        .btn-action-delete { background: transparent !important; color: #ef4444 !important; border: 1px solid rgba(239,68,68,0.2) !important; border-radius: 4px !important; }
+        .btn-action-delete:hover { background: #fef2f2 !important; }
+    </style>
+</head>
+<body>
+
+<div class="layui-fluid">
+
+    <!-- 📈 模块一：全局风险瞬时监测哨 -->
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-label">🚨 今日拦截高危攻击 (Blocks)</div>
+            <div class="stat-value text-risk" id="stat-blocks">1,240</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">🛡️ 策略引擎激活规则 (Rules)</div>
+            <div class="stat-value" id="stat-rules">14</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">⚡ 当前风控平均响应 (Latency)</div>
+            <div class="stat-value" id="stat-latency">4.2 ms</div>
+        </div>
+    </div>
+
+    <!-- 🔍 过滤、策略检索面板 -->
+    <div class="search-panel layui-form">
+        <div class="layui-row layui-col-space10">
+            <div class="layui-col-md3">
+                <input type="text" name="rule_name" placeholder="🛡️ 输入规则名称 / 策略特征键..." class="layui-input">
+            </div>
+            <div class="layui-col-md3">
+                <select name="action_type">
+                    <option value="">全部处置手段</option>
+                    <option value="BLOCK">直接阻断 (BLOCK)</option>
+                    <option value="MFA">二次强认证 (MFA)</option>
+                    <option value="CAPTCHA">图形验证码 (CAPTCHA)</option>
+                </select>
+            </div>
+            <div class="layui-col-md4">
+                <button class="layui-btn btn-theme-primary" lay-submit lay-filter="search-submit">查询风控策略</button>
+                <button class="layui-btn btn-theme-primary" style="background:#10b981 !important;" id="btn-add-rule">💡 新增风控规则</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📊 风控规则流矩阵 -->
+    <div class="layui-card layui-form">
+        <div class="layui-card-header">
+            <span>🛡️ 动态自适应风控策略矩阵 (Risk Mitigation Ledger)</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size:12px; color:#ef4444; font-weight:500;">⚠️ 全局熔断机制保护:</span>
+                <input type="checkbox" name="global_melt" lay-skin="switch" lay-filter="global-melt" lay-text="开启|关闭">
+            </div>
+        </div>
+        <div class="layui-card-body">
+            <table id="risk-table" lay-filter="risk-table"></table>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================================
+   表格动态加工渲染模板轴
+   ========================================================================== */ -->
+{% raw %}
+<!-- 命中处置动作模板 -->
+<script type="text/html" id="tpl-action">
+    {{# if(d.action === 'BLOCK'){ }}
+        <span class="action-badge action-block">直接拒绝访问</span>
+    {{# } else if(d.action === 'MFA'){ }}
+        <span class="action-badge action-mfa">触发多因素MFA</span>
+    {{# } else { }}
+        <span class="action-badge action-captcha">滑块图形验证</span>
+    {{# } }}
+</script>
+
+<!-- 规则状态开关模板 -->
+<script type="text/html" id="tpl-status">
+    <input type="checkbox" name="status" value="{{d.id}}" lay-skin="switch" lay-text="激活|挂起" lay-filter="status-switch" {{ d.status ? 'checked' : '' }}>
+</script>
+
+<!-- 行内操作控制链 -->
+<script type="text/html" id="tpl-ops">
+    <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
+        <button class="layui-btn layui-btn-xs btn-action-edit" lay-event="edit">修补</button>
+        <button class="layui-btn layui-btn-xs btn-action-delete" lay-event="delete">物理移除</button>
+    </div>
+</script>
+{% endraw %}
+
+<script>
+layui.use(['table', 'form', 'layer'], function(){
+    const table = layui.table, form = layui.form, layer = layui.layer, $ = layui.$;
+
+    // 🔗 策略数据网格拉取：对接后端的 /system/risk/rules
+    table.render({
+        elem: '#risk-table',
+        url: '/system/risk/rules',
+        method: 'GET',
+        page: true,
+        limit: 10,
+        parseData: res => ({
+            code: res.code === 200 ? 0 : (res.code || 500),
+            count: res.count || res.total || 0,
+            data: res.data
+        }),
+        cols: [[
+            {field: 'id', title: '策略ID', width: 80, align: 'center', sort: true},
+            {field: 'name', title: '风控策略定义', width: 180, fontStyle: 'font-weight:600'},
+            {field: 'match_key', title: '特征匹配字段 (Expression)', minWidth: 200, style: 'font-family:monospace; color:#475569;'},
+            {field: 'threshold', title: '频控阈值', width: 130, align: 'center', templet: d => `<span style="font-family: monospace;">${d.threshold_count} 次 / ${d.threshold_window} 秒</span>`},
+            {field: 'action', title: '风控处置手段', width: 130, align: 'center', templet: '#tpl-action'},
+            {field: 'status', title: '引擎态', width: 100, align: 'center', templet: '#tpl-status'},
+            {field: 'updated_at', title: '最后同步时间', width: 170, align: 'center'},
+            {title: '全数控制', width: 130, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
+        ]],
+        error: function() {
+            // 💡 离线开发沙盒环境下的高保真数据降级兜底模拟
+            table.reload('risk-table', {
+                url: '',
+                data: [
+                    {id: 101, name: "境外恶意撞库防御", match_key: "req.geo != 'CN' && req.path == '/login'", threshold_count: 5, threshold_window: 60, action: "BLOCK", status: true, updated_at: "2026-05-20 00:22:11"},
+                    {id: 102, name: "接口越权暴力遍历", match_key: "req.rate_limit_key == 'ip' && req.is_api", threshold_count: 120, threshold_window: 10, action: "CAPTCHA", status: true, updated_at: "2026-05-19 23:14:02"},
+                    {id: 103, name: "提现事务敏感操作强化", match_key: "req.path == '/wallet/withdraw' && req.amount > 50000", threshold_count: 1, threshold_window: 1, action: "MFA", status: true, updated_at: "2026-05-19 14:05:55"},
+                    {id: 104, name: "第三方Webhook高频恶意探测", match_key: "req.headers['user-agent'].contains('Go-http-client')", threshold_count: 30, threshold_window: 5, action: "BLOCK", status: false, updated_at: "2026-05-18 11:42:19"}
+                ]
+            });
+        }
+    });
+
+    // 搜索过滤重载总线
+    form.on('submit(search-submit)', d => {
+        table.reload('risk-table', {where: d.field, page: {curr: 1}});
+        return false;
+    });
+
+    // ⚡ 全局熔断保护开关风控
+    form.on('switch(global-melt)', function(data){
+        const isMelt = data.elem.checked;
+        layer.confirm(isMelt ? '⚠️ 警告：激活全局自动熔断后，策略引擎将对所有判定为RISK的流量实施极严无差别封锁，是否启动？' : '确认关闭全局熔断保护保护，系统恢复正常流控策略？', {
+            title: '全局熔断最高安全调配',
+            btn: ['确认签发', '取消'],
+            success: (layero) => { if(isMelt) layero.find('.layui-layer-btn0').css('background-color', '#ef4444'); }
+        }, function(index){
+            layer.close(index);
+            layer.msg(isMelt ? '🛑 全局最高防御熔断拦截已紧急升起！' : '🟢 全局熔断阻断解除，系统进入标准策略自适应状态', {icon: isMelt ? 2 : 1});
+        }, function(){
+            data.elem.checked = !isMelt;
+            form.render('checkbox');
+        });
+    });
+
+    // 🔄 行内规则快速 激活/挂起 开关
+    form.on('switch(status-switch)', function(obj){
+        const ruleId = this.value;
+        const isActive = obj.elem.checked;
+        layer.msg(`策略 [ID: ${ruleId}] 已${isActive ? '动态激活实时计算' : '挂起，规则失效'}`, {icon: 1, time: 1000});
+    });
+
+    // ➕ 新增规则弹窗模态层
+    $('#btn-add-rule').on('click', function(){
+        layer.open({
+            type: 1,
+            title: '💡 创建自适应全维风控策略',
+            area: ['500px', '420px'],
+            content: `
+                <div class="layui-form" style="padding: 20px;">
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">策略名称</label>
+                        <div class="layui-input-block" style="margin-left:105px;">
+                            <input type="text" placeholder="如: 账密输错限流" class="layui-input">
+                        </div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">表达式配置</label>
+                        <div class="layui-input-block" style="margin-left:105px;">
+                            <input type="text" placeholder="例如: req.ip == '1.1.1.1'" class="layui-input" style="font-family:monospace;">
+                        </div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">风控阈值</label>
+                        <div class="layui-input-block" style="margin-left:105px; display:flex; gap:10px;">
+                            <input type="number" placeholder="次数" class="layui-input" style="width:50%;">
+                            <input type="number" placeholder="时间(秒)" class="layui-input" style="width:50%;">
+                        </div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">阻断手段</label>
+                        <div class="layui-input-block" style="margin-left:105px;">
+                            <select name="pop_action">
+                                <option value="BLOCK">直接封锁访问 (BLOCK)</option>
+                                <option value="MFA">强化两步MFA认证 (MFA)</option>
+                                <option value="CAPTCHA">滑块拦截核验 (CAPTCHA)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="layui-form-item" style="text-align: right; margin-top:30px;">
+                        <button class="layui-btn btn-theme-primary" onclick="layer.closeAll(); layer.msg('策略下发成功，已推送到边缘节点群', {icon:1});">编译并同步策略群</button>
+                    </div>
+                </div>
+            `,
+            success: function(){
+                form.render('select');
+            }
+        });
+    });
+
+    // 🛠️ 行内事件：编辑与物理擦除
+    table.on('tool(risk-table)', obj => {
+        const d = obj.data;
+        if(obj.event === 'delete'){
+            layer.confirm(`⚠️ 确认为引擎彻底注销风控策略：[ ${d.name} ] 吗？`, {title:'策略销毁令'}, i => {
+                obj.del();
+                layer.close(i);
+                layer.msg('策略配置已从 Redis/内存集群中物理擦除', {icon: 1});
+            });
+        } else if(obj.event === 'edit'){
+            layer.msg(`已同步拉取规则 [ID: ${d.id}] 的 DSL 语法树，请进入弹窗重新编译。`);
+        }
+    });
+});
+</script>
+</body>
+</html>

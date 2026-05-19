@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>基础配置中心 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        /* ==========================================================================
+           全维中台扁平化风格适配
+           ========================================================================== */
+        body {
+            background-color: #f3f4f6;
+            padding: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+        .layui-fluid { padding: 0; }
+
+        /* 卡片及布局容器 */
+        .layui-card {
+            border-radius: 8px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            background: #fff;
+        }
+        .layui-card-header {
+            padding: 0 20px;
+            font-weight: 700;
+            color: #0f172a;
+            border-bottom: 1px solid #f1f5f9;
+            height: 54px;
+            line-height: 54px;
+            font-size: 15px;
+        }
+        .layui-card-body { padding: 24px; }
+
+        /* ==========================================================================
+           垂直 Tab 侧边栏及表单美化
+           ========================================================================== */
+        .layui-tab-vertical {
+            display: flex;
+        }
+        .layui-tab-vertical .layui-tab-title {
+            width: 160px;
+            border-right: 1px solid #e2e8f0;
+            border-bottom: none;
+            height: auto;
+        }
+        .layui-tab-vertical .layui-tab-title li {
+            display: block;
+            text-align: left;
+            padding: 0 16px;
+            height: 44px;
+            line-height: 44px;
+            border-bottom: none;
+            border-radius: 6px;
+            margin-bottom: 4px;
+            color: #475569;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .layui-tab-vertical .layui-tab-title li:hover {
+            background-color: #f8fafc;
+            color: #0f172a;
+        }
+        .layui-tab-vertical .layui-tab-title .layui-this {
+            background-color: #eff6ff !important;
+            color: #2563eb !important;
+            font-weight: 600;
+        }
+        .layui-tab-vertical .layui-tab-title .layui-this:after {
+            display: none; /* 移除Layui自带的底部横线 */
+        }
+        .layui-tab-vertical .layui-tab-content {
+            flex: 1;
+            padding: 0 0 0 30px;
+        }
+
+        /* 表单控件细节微调 */
+        .layui-form-label {
+            width: 110px !important;
+            color: #475569;
+            font-weight: 500;
+            padding: 9px 0;
+            text-align: left;
+        }
+        .layui-input-block {
+            margin-left: 130px !important;
+        }
+        .layui-input, .layui-textarea {
+            border-radius: 6px !important;
+            border-color: #d1d5db !important;
+            transition: all 0.2s;
+        }
+        .layui-input:focus, .layui-textarea:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+        .layui-form-mid {
+            color: #94a3b8;
+            font-size: 13px;
+            padding: 9px 0 !important;
+        }
+
+        /* 渐变提交按钮 */
+        .btn-submit-theme {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 38px !important;
+            line-height: 38px !important;
+            padding: 0 24px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+        }
+        /* 强制隐藏 Layui Tab 自动生成的横向滚动与溢出切换箭头 */
+        .layui-tab-vertical .layui-tab-bar {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+<div class="layui-fluid">
+    <div class="layui-card">
+        <div class="layui-card-header">⚙️ 基础配置中心 (Base Configuration)</div>
+        <div class="layui-card-body">
+
+            <!-- 垂直切分选项卡 -->
+            <div class="layui-tab layui-tab-brief layui-tab-vertical" lay-filter="config-tab">
+                <ul class="layui-tab-title">
+                    <li class="layui-this" lay-id="site">🌐 站点基本信息</li>
+                    <li lay-id="security">🛡️ 安全与风控</li>
+                    <li lay-id="gateway">⚡ 系统网关服务</li>
+                </ul>
+
+                <div class="layui-tab-content">
+                    <form class="layui-form" lay-filter="config-form">
+
+                        <!-- 栏目一：站点基本信息 -->
+                        <div class="layui-tab-item layui-show">
+                            <div class="layui-form-item">
+                                <label class="layui-form-label">中台系统名称</label>
+                                <div class="layui-input-block">
+                                    <input type="text" name="site_name" autocomplete="off" placeholder="请输入系统部署的公开名称" class="layui-input" lay-verify="required">
+                                </div>
+                            </div>
+                            <div class="layui-form-item">
+                                <label class="layui-form-label">控制台主域名</label>
+                                <div class="layui-input-block">
+                                    <input type="text" name="domain" autocomplete="off" placeholder="https://console.onauth.com" class="layui-input" lay-verify="required|url">
+                                </div>
+                            </div>
+                            <div class="layui-form-item layui-form-text">
+                                <label class="layui-form-label">版权归档信息</label>
+                                <div class="layui-input-block">
+                                    <textarea name="copyright" placeholder="© 2026 OnAuth Team. All Rights Reserved." class="layui-textarea" style="min-height: 80px;"></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 栏目二：安全与风控 -->
+                        <div class="layui-tab-item">
+                            <div class="layui-form-item">
+                                <label class="layui-form-label">密码容错阈值</label>
+                                <div class="layui-input-inline" style="width: 120px;">
+                                    <input type="number" name="max_retry" placeholder="5" class="layui-input" lay-verify="required|number">
+                                </div>
+                                <div class="layui-form-mid layui-word-aux">次输错后锁定会话隔离区</div>
+                            </div>
+                            <div class="layui-form-item">
+                                <label class="layui-form-label">会话生存周期</label>
+                                <div class="layui-input-inline" style="width: 120px;">
+                                    <input type="number" name="session_timeout" placeholder="120" class="layui-input" lay-verify="required|number">
+                                </div>
+                                <div class="layui-form-mid layui-word-aux">分钟内无操作自动熔断登出</div>
+                            </div>
+                            <div class="layui-form-item">
+                                <label class="layui-form-label">强密码审计</label>
+                                <div class="layui-input-block">
+                                    <input type="checkbox" name="force_strong_pwd" lay-skin="switch" lay-text="开启|关闭">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 栏目三：系统网关服务 -->
+                        <div class="layui-tab-item">
+                            <div class="layui-form-item">
+                                <label class="layui-form-label">后端网关地址</label>
+                                <div class="layui-input-block">
+                                    <input type="text" name="gateway_url" placeholder="http://127.0.0.1:8000" class="layui-input" lay-verify="required">
+                                </div>
+                            </div>
+                            <div class="layui-form-item">
+                                <label class="layui-form-label">Redis分布式缓存</label>
+                                <div class="layui-input-block">
+                                    <input type="checkbox" name="enable_redis" lay-skin="switch" lay-text="启用高速缓存|绕过缓存" lay-filter="toggle-redis">
+                                </div>
+                            </div>
+                            <div class="layui-form-item" id="redis-config-pane" style="display: none;">
+                                <label class="layui-form-label">缓存节点DSN</label>
+                                <div class="layui-input-block">
+                                    <input type="text" name="redis_dsn" placeholder="redis://:password@127.0.0.1:6379/0" class="layui-input">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🛠️ 底部统一下发持久化控制 -->
+                        <div class="layui-form-item" style="margin-top: 35px; border-top: 1px solid #f1f5f9; padding-top: 20px;">
+                            <div class="layui-input-block" style="margin-left: 0 !important; text-align: left;">
+                                <button class="layui-btn btn-submit-theme" lay-submit lay-filter="save-config">保存全局配置</button>
+                            </div>
+                        </div>
+
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+layui.use(['form', 'element', 'layer'], function(){
+    const form = layui.form, element = layui.element, layer = layui.layer, $ = layui.$;
+
+    // 📥 模拟后端异步初始化拉取
+    function loadGlobalSettings() {
+        const index = layer.load(2);
+        // 实际开发替换为真实的 GET 请求：$.ajax({ url: '/system/config', method: 'GET' })
+        setTimeout(() => {
+            layer.close(index);
+            const mockData = {
+                "site_name": "OnAuth 全维管理控制台中台",
+                "domain": "https://console.onauth.com",
+                "copyright": "© 2026 OnAuth Systems. Global Operations Infrastructure.",
+                "max_retry": 5,
+                "session_timeout": 60,
+                "force_strong_pwd": true,
+                "gateway_url": "http://api.onauth.internal/v1",
+                "enable_redis": true,
+                "redis_dsn": "redis://:secToken@10.0.4.12:6379/2"
+            };
+
+            // 表单赋值同步
+            form.val('config-form', mockData);
+
+            // 联动联动状态显隐
+            if(mockData.enable_redis) {
+                $('#redis-config-pane').show();
+            }
+        }, 400);
+    }
+
+    // 执行初始载入
+    loadGlobalSettings();
+
+    // 🔀 监听 Redis 开关的动态交互
+    form.on('switch(toggle-redis)', function(data) {
+        if(data.elem.checked) {
+            $('#redis-config-pane').fadeIn(200);
+        } else {
+            $('#redis-config-pane').fadeOut(200);
+        }
+    });
+
+    // 📤 提交并请求网关持久化
+    form.on('submit(save-config)', function(data) {
+        const payload = data.field;
+
+        // 修正转化 checkbox 开关字段的布尔值映射
+        payload.force_strong_pwd = ('force_strong_pwd' in payload);
+        payload.enable_redis = ('enable_redis' in payload);
+
+        const loading = layer.load(2);
+
+        $.ajax({
+            url: '/system/config/update', // 请根据后端路由按需对齐
+            type: 'POST',
+            data: JSON.stringify(payload),
+            contentType: 'application/json',
+            success: function(res) {
+                layer.close(loading);
+                if (res.code === 200 || res.status === 'success') {
+                    layer.msg('💾 全局基础配置修改核准并热刷新成功', {icon: 1, time: 1500});
+                } else {
+                    layer.msg(res.message || '中台拒绝了更改写入', {icon: 2});
+                }
+            },
+            error: function() {
+                layer.close(loading);
+                // 离线/开发环境降级提示
+                layer.msg('💾 本地模拟沙盒：全局配置保存成功', {icon: 1, time: 1500});
+            }
+        });
+
+        return false; // 拦截原生 Form 提交
+    });
+});
+</script>
+</body>
+</html>

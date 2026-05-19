@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>🚨 安全审计熔断 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        /* ==========================================================================
+           全屏极客暗黑系背景
+           ========================================================================== */
+        body {
+            background: radial-gradient(circle at 50% 50%, #1e293b, #0f172a);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 熔断卡片：科技感半透明悬浮面板 */
+        .error-container {
+            background: #ffffff;
+            padding: 45px 40px;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 420px;
+            width: 85%;
+            border-top: 5px solid #ef4444; /* 核心警示红线 */
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 顶部微渐变流线反光（氛围灯效果） */
+        .error-container::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #ef4444, #f97316);
+        }
+
+        /* 图标动效 */
+        .shield-icon {
+            font-size: 56px;
+            margin-bottom: 16px;
+            animation: pulse 2s infinite ease-in-out;
+        }
+
+        /* 标题排版 */
+        h1 {
+            color: #0f172a;
+            font-size: 22px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            letter-spacing: -0.5px;
+        }
+
+        /* ==========================================================================
+           熔断元数据与状态码美化
+           ========================================================================== */
+        /* 状态码标签 */
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: #fef2f2;
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 6px;
+            font-size: 11px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-weight: 700;
+            margin: 12px 0 20px 0;
+            letter-spacing: 0.5px;
+        }
+
+        /* 异常原因详情框 */
+        .reason-box {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 14px 16px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        .reason-box p {
+            margin: 0;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #475569;
+            word-break: break-all;
+        }
+
+        /* 提示说明 */
+        .notice-text {
+            font-size: 12px;
+            color: #94a3b8;
+            line-height: 1.6;
+            margin-bottom: 28px;
+        }
+
+        /* ==========================================================================
+           安全流转控制动作
+           ========================================================================== */
+        .btn-return {
+            display: block;
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            color: #ffffff;
+            padding: 11px 24px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+        }
+        .btn-return:hover {
+            opacity: 0.95;
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.25);
+            transform: translateY(-1px);
+        }
+        .btn-return:active {
+            transform: translateY(0);
+        }
+
+        /* 心跳脉冲动画，增强视觉警示效果 */
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 0.9; }
+            50% { transform: scale(1.06); opacity: 1; }
+            100% { transform: scale(1); opacity: 0.9; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="error-container">
+        <!-- 💡 警示图标 -->
+        <div class="shield-icon">🛡️</div>
+
+        <h1>中台安全熔断拦截</h1>
+
+        <!-- 🎯 状态元数据 -->
+        <div class="badge">EXCEPTION CODE: {{ status_code }}</div>
+
+        <!-- 📝 核心风控详情 -->
+        <div class="reason-box">
+            <p><strong>审计原因：</strong>{{ detail }}</p>
+        </div>
+
+        <p class="notice-text">当前会话的资产授信流已被安全看门狗强制阻断。如确认属于合规越权或系统误判，请联系最高根管理员解除风控隔离。</p>
+
+        <!-- 🚀 退出隔离区 -->
+        <a href="/login" class="btn-return">返回安全授信中心</a>
+    </div>
+
+</body>
+</html>
