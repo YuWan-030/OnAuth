@@ -30,9 +30,7 @@ def oauth_authorize(
         state: str = Query(None),
 
         # 🎯 纯净双轨：只拦截你中台登录时亲手种下的两个 Session Cookie 键名
-        auth_cookie: str = Cookie(None),
         sso_session_id: str = Cookie(None),
-
         session_id: str = Query(None),
         db: Session = Depends(get_db)
 ):
@@ -136,44 +134,22 @@ def login_submit(
     if not user.is_active:
         raise HTTPException(status_code=403, detail="合规性安全阻断：当前用户账户已被系统永久冻结或查封")
 
-    # ==================== 🛡️ 核心合规升级：动态捞取真实权限 ====================
-    # 利用 Python 集合（Set）进行天然去重，防止用户通过多个角色拿到重复权限
-    user_real_scopes = set()
-
-    # 穿透 RBAC 多对多关系链：User -> Roles -> Permissions
-    for role in user.roles:
-        # 确保角色处于激活状态（如果你的 Role 表有 is_active 字段的话）
-        for perm in role.permissions:
-            if perm.name:  # 或者是 perm.code，根据你 SQLAlchemy 模型里的字段名对齐
-                user_real_scopes.add(perm.name)
-
-    # 将去重后的权限集合，用英文逗号拼接成长字符串（如 "user:read,user:write,admin:stats"）
-    # 如果该用户没有任何角色或权限，则给一个基础兜底权限 "read"
-    final_jwt_scope = ",".join(user_real_scopes) if user_real_scopes else "read"
-    # =====================================================================
 
     # 2. ⚡ 生成传统的 Redis 会话（供 OAuth 授权大厅撞库）
     new_session_id = "sess_" + secrets.token_hex(12)
-    redis_client.setex(new_session_id, 86400, username)
+    redis_client.setex(new_session_id, 86400, str(user.id))
+    # 🌟 顺手做个反向索引：把这个 session_id 扔进该用户的活跃会话集合里
+    user_set_key = f"user:active_sessions:{user.id}"
+    redis_client.sadd(user_set_key, new_session_id)
+    redis_client.expire(user_set_key, 86400)  # 保持过期时间一致
 
-    # 3. 🛡️ 计算绝对过期时间（1天）
-    token_expire = datetime.datetime.now() + datetime.timedelta(days=1)
 
-    # 4. 🔑 【完美合规签发】将数据库捞出的真实权限，死死绑入 JWT
-    # 严格按照你底层的无关键字形参顺序传参：(client_id_or_sub, scope, expire_at, token_type)
-    management_jwt_token = create_jwt_token(
-        username,  # 对应 client_id_or_sub
-        final_jwt_scope,  # 🎯 注入刚刚从数据库现场剥离出来的【真实权限集】！
-        token_expire,  # 对应 expire_at
-        "user_auth"  # 对应 token_type
-    )
-
-    # 5. 🎯 组装目标重定向 URL
+    # 3. 🎯 组装目标重定向 URL
     target_url = f"/oauth/authorize?client_id={client_id}&response_type=code&redirect_uri={redirect_uri}&scope={scope}&session_id={new_session_id}"
     if state:
         target_url += f"&state={state}"
 
-    # 6. 🚀 【下发 SSO 凭证】
+    # 4. 🚀 【下发 SSO 凭证】
     response.set_cookie(
         key="sso_session_id",
         value=new_session_id,
@@ -183,22 +159,11 @@ def login_submit(
         samesite="lax"
     )
 
-    # 7. 🚀 【下发管理端合规前端凭证】
-    response.set_cookie(
-        key="auth_token",
-        value=management_jwt_token,  # 带有真实现场权限的硬核 JWT
-        httponly=True,
-        path="/",
-        secure=False,  # 本地调试设为 False
-        samesite="lax"
-    )
-
     return {
         "status": "success",
-        "message": "身份核验通过，真实角色权限已打包加签！",
+        "message": "身份核验通过，SSO会话已建立！",
         "redirect_url": target_url
     }
-
 @router.post("/oauth/consent_submit", summary="内部路由：处理用户授权结果")
 def consent_submit(
         request: Request,  # 🌟 修复：显式注入标准的 Request 实例

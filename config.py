@@ -1,5 +1,3 @@
-import os
-
 # ================= 数据库配置开关 =================
 # 可选值: "sqlite" 或 "mysql"
 DB_TYPE = "sqlite"

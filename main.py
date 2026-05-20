@@ -16,7 +16,7 @@ from config import SECRET_KEY
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 # 🚀 引入解耦后的各个核心业务/管理模块路由
-from routers import oauth, business, admin, auth_user
+from routers import oauth, business, admin, auth_user, permission
 from utils.ssl_gen import ensure_ssl_certificates
 from database import init_db, get_db, User
 from utils.response import unified_response  # 🌟 统一 JSON 响应函数
@@ -64,7 +64,7 @@ app.include_router(oauth.router)
 app.include_router(business.router)
 app.include_router(admin.router)
 app.include_router(auth_user.router)
-app.include_router(admin.router)
+app.include_router(permission.router)
 
 # ==================== 🛡️ 全局异常拦截硬核防线 ====================
 async def handle_error_response(request: Request, status_code: int, detail: str):

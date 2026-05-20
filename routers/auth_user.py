@@ -1,5 +1,4 @@
-import datetime
-import jwt
+
 from fastapi import APIRouter, Depends, HTTPException, status, Header, Form, Response, Cookie
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -8,10 +7,8 @@ import secrets
 
 # 🌟 引入数据库实体与核心依赖项
 from database import get_db, User, Role
-from utils.crypto import create_jwt_token
 # 🌟 引入 Redis 客户端（保持原功能连通）
 from middlewares.auth import redis_client
-from config import SECRET_KEY, ALGORITHM
 
 # 🎯 路由配置对齐：将前缀设为全局共用，内部支持平铺管理端与业务端
 router = APIRouter(tags=["中台统一账户与动态会话鉴权中心"])
@@ -94,7 +91,11 @@ def login_user(payload: UserLoginSchema, response: Response, db: Session = Depen
     new_session_id = "sess_" + secrets.token_hex(12)
 
     # 2. 🗄️ 将状态托管至 Redis 中控（有效期 1 天 = 86400 秒）
-    redis_client.setex(new_session_id, 86400, user.username)
+    redis_client.setex(new_session_id, 86400, str(user.id))
+    # 🌟 顺手做个反向索引：把这个 session_id 扔进该用户的活跃会话集合里
+    user_set_key = f"user:active_sessions:{user.id}"
+    redis_client.sadd(user_set_key, new_session_id)
+    redis_client.expire(user_set_key, 86400)  # 保持过期时间一致
 
     # 3. 🔑 穿透 RBAC 模型，提取真实的多维权限集合
     user_scopes = []

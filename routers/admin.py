@@ -1,24 +1,23 @@
 import datetime
-import jwt
-from typing import Optional
 
 import psutil
 import redis
 from fastapi import APIRouter, Query, Depends, HTTPException, Form
 from passlib.context import CryptContext
-from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 # 导入你的底层数据库实体与依赖
 from database import get_db, App, AppCredential, DeveloperGroup, User, Role, Permission
+from schemas.PermissionUpdateSchema import UserPermissionUpdateSchema, UserRoleUpdateSchema
 from utils.crypto import generate_random_keys, hash_secret, create_jwt_token
-from config import SECRET_KEY
 from sqlalchemy import func
 from database import AppDevice
 from database import App, DeveloperGroup
 from middlewares.auth import redis_client
 import json
 from middlewares.rbac import RBACChecker
+from schemas.admin_schema import GroupCreateInput, GroupToggleInput, AppCreateInput, AppStatusInput, CredentialStatusInput
+from schemas.admin_schema import UserCreateInput, UserNicknameUpdateInput,UserPasswordUpdateInput,UserToggleStatusInput
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -29,30 +28,30 @@ router = APIRouter(prefix="/admin", tags=["OnAuth 核心管理中台管线"])
 
 # ==================== 📦 Pydantic 交互数据流模型沙箱 ====================
 
-class AppCreateInput(BaseModel):
-    group_id: int = Field(..., description="所属工作室ID")
-    app_name: str = Field(..., min_length=1, max_length=64, description="应用名称")
-    app_logo: Optional[str] = Field(None, description="应用 Logo URL")
-    owner: Optional[str] = Field("admin", description="所有人")
 
 
-class AppStatusInput(BaseModel):
-    is_active: bool
 
+def revoke_user_redis_sessions(user_id: int):
+    """
+    高性能熔断：通过反向索引 Set 集合，瞬间秒杀该用户的所有在线端
+    """
+    try:
+        user_set_key = f"user:active_sessions:{user_id}"
 
-class GroupCreateInput(BaseModel):
-    group_name: str = Field(..., min_length=1, max_length=64)
-    description: Optional[str] = None
+        # 1. 一口气把该用户在所有设备（手机、网页等）上的 session_id 全部取出来
+        active_sessions = redis_client.smembers(user_set_key)
 
+        if active_sessions:
+            # 2. 批量将这些会话全部从 Redis 里彻底抹去
+            # *active_sessions 利用 Python 拆包特性，一次网络 I/O 就能批量删除
+            redis_client.delete(*active_sessions)
 
-class GroupToggleInput(BaseModel):
-    is_active: bool
-    description: Optional[str] = None
+        # 3. 顺便把这个索引 Key 自己也删掉
+        redis_client.delete(user_set_key)
+        print(f"[高性能熔断] 用户 [{user_id}] 的所有终端已成功强制下线")
 
-
-class CredentialStatusInput(BaseModel):
-    is_active: bool
-
+    except Exception as e:
+        print(f"[安全熔断失败] {str(e)}")
 
 # ==================== 🏢 模块一：工作室组织空间资产管控 ====================
 
@@ -544,117 +543,113 @@ def get_admin_users_list(
 # --- 2. 风控核心：用户一键封禁/解封并强制踢下线 ---
 @router.post("/users/toggle_status", summary="【管理端】全网维度资产熔断与解冻")
 def toggle_user_status(
-        user_id: int = Form(...),
-        is_active: bool = Form(...),
-        current_user: User = Depends(RBACChecker("admin:read")),  # 🛡️ 写入/熔断权限守卫
+        payload: UserToggleStatusInput,  # 🌟 由 Form 改为 Pydantic 接收
+        current_user: User = Depends(RBACChecker("admin:read")),
         db: Session = Depends(get_db)
 ):
-    target_user = db.query(User).filter(User.id == user_id).first()
+    target_user = db.query(User).filter(User.id == payload.user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="目标资产不存在")
 
     if target_user.username == "admin":
         raise HTTPException(status_code=400, detail="系统最高根权限超级管理员拒绝自我熔断")
 
-    # 变更数据库状态
-    target_user.is_active = is_active
+    target_user.is_active = payload.is_active
     db.commit()
 
-    # 🧠 【风控联动闭环】如果是封禁操作，必须做到全网立刻物理清除该用户的会话
-    if not is_active:
+    if not payload.is_active:
         try:
-            # 遍历 Redis 找出所有属于该用户的 Session 钥匙
-            # 注意：如果线上并发极大，工业级玩法可以在登录时维护一个 `user:sessions:{username}` 的 Set
-            # 这里采用平铺扫描兼容你的极简单轨架构
             for key in redis_client.scan_iter("sess_*"):
                 stored_user = redis_client.get(key)
                 if stored_user and stored_user.decode("utf-8") == target_user.username:
-                    redis_client.delete(key)  # 物理粉碎钥匙，让其在网关拦截处直接回滚到登录页
+                    redis_client.delete(key)
         except Exception:
             pass
 
-    status_text = "激活受信" if is_active else "风控隔离并强行全网切断下线"
+    status_text = "激活受信" if payload.is_active else "风控隔离并强行全网切断下线"
     return {"status": "success", "message": f"用户 [{target_user.username}] 已成功切换为 {status_text} 状态"}
 
 # 权限修改接口，接收用户 ID 和新的权限列表以及是增还是删，更新数据库中的用户权限
 @router.post("/users/update_permissions", summary="【管理端】更新用户独立权限")
 def update_user_permissions(
-        user_id: int = Form(...),
-        permissions: str = Form(...),
-        action: str = Form(...),
-        current_user: User = Depends(RBACChecker("admin:read")),
+        payload: UserPermissionUpdateSchema,
+        # 🌟 1. 修正 RBACChecker 传参，升级拦截权限为写权限
+        current_user: User = Depends(RBACChecker("admin:write", "admin:update")),
         db: Session = Depends(get_db)
 ):
-    # 1. 查询用户时，不要 eagerload 角色权限，以防修改关联对象
-    target_user = db.query(User).filter(User.id == user_id).first()
+    # 🌟 2. 改用 Schema 获取 user_id
+    target_user = db.query(User).filter(User.id == payload.user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="目标用户不存在")
 
-    perm_names = [p.strip() for p in permissions.split(",") if p.strip()]
-
-    for perm_name in perm_names:
-        # 确保 perm 是一个独立的对象，不要通过 target_user.roles 获取
+    # 🌟 3. 不再需要繁琐的字符串 split 过滤，直接用列表
+    updated = False
+    for perm_name in payload.permissions:
         perm = db.query(Permission).filter(Permission.name == perm_name).first()
         if not perm:
             continue
 
-        # 2. 逻辑保护：如果在 action 为 remove 时，发现该权限来自角色
-        # 我们这里依然允许用户尝试删除，但我们要确保操作绝对不触碰 Role 对象
-
-        if action == "add":
+        if payload.action == "add":
             if perm not in target_user.extra_permissions:
                 target_user.extra_permissions.append(perm)
-        elif action == "remove":
-            # 只有当权限确实在 extra_permissions 中才移除
+                updated = True
+        elif payload.action == "remove":
             if perm in target_user.extra_permissions:
                 target_user.extra_permissions.remove(perm)
+                updated = True
             else:
-                # 提示：该权限可能来自角色，而不是独立权限
-                return {"status": "fail", "message": f"权限 [{perm_name}] 属于角色赋予，无法从独立权限中移除。"}
+                return {
+                    "status": "fail",
+                    "message": f"权限 [{perm_name}] 属于角色赋予，无法从独立权限中移除。"
+                }
+        else:
+            raise HTTPException(status_code=400, detail="无效的操作类型，必须为 add 或 remove")
 
-    db.commit()
+    if updated:
+        db.commit()
+        # 🌟 4. 权限变更，立刻清理该用户的会话缓存，安全合规熔断
+        revoke_user_redis_sessions(target_user.id)
+
     return {"status": "success", "message": f"用户 [{target_user.username}] 的独立权限已更新。"}
-# 编辑用户权限组功能，接收用户 ID 和新的权限组列表，更新数据库中的用户权限组
+
+
 @router.post("/users/update_roles", summary="【管理端】更新用户权限组")
 def update_user_roles(
-        user_id: int = Form(...),
-        roles: str = Form(...),  # 逗号分隔的权限组列表
-        action: str = Form(...),  # "add" 或 "remove"
-        current_user: User = Depends(RBACChecker("admin:read")),
+        payload: UserRoleUpdateSchema,
+        # 🌟 1. 修正并收紧权限
+        current_user: User = Depends(RBACChecker("admin:write", "admin:update")),
         db: Session = Depends(get_db)
 ):
-    # 1. 查询用户（不加载 roles 关联，防止修改 Role 内部属性）
-    target_user = db.query(User).filter(User.id == user_id).first()
+    target_user = db.query(User).filter(User.id == payload.user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="目标用户不存在")
 
-    # 2. 清洗数据
-    role_names = [r.strip() for r in roles.split(",") if r.strip()]
-
-    # 3. 执行角色增删操作
     updated = False
-    for role_name in role_names:
+    # 🌟 2. 干净的循环遍历
+    for role_name in payload.roles:
         role = db.query(Role).filter(Role.name == role_name).first()
         if not role:
             continue
 
-        if action == "add":
+        if payload.action == "add":
             if role not in target_user.roles:
                 target_user.roles.append(role)
                 updated = True
-        elif action == "remove":
+        elif payload.action == "remove":
             if role in target_user.roles:
                 target_user.roles.remove(role)
                 updated = True
         else:
-            raise HTTPException(status_code=400, detail="无效的操作类型")
+            raise HTTPException(status_code=400, detail="无效的操作类型，必须为 add 或 remove")
 
-    # 4. 提交并刷新，确保 Redis/缓存失效（如果你的系统有权限缓存）
-    try:
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail="角色更新失败，数据库错误")
+    if updated:
+        try:
+            db.commit()
+            # 🌟 3. 角色变更意味着权限大洗牌，必须强刷缓存
+            revoke_user_redis_sessions(target_user.id)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail="角色更新失败，数据库错误")
 
     return {
         "status": "success",
@@ -663,29 +658,23 @@ def update_user_roles(
 # 强制修改用户密码接口，接收用户 ID 和新的密码，更新数据库中的用户密码
 @router.post("/users/update_password", summary="【管理端】强制修改用户密码")
 def update_user_password(
-        user_id: int = Form(...),
-        new_password: str = Form(..., min_length=6, description="新密码，至少6位"),
+        payload: UserPasswordUpdateInput,  # 🌟 统一格式
         current_user: User = Depends(RBACChecker("admin:update")),
         db: Session = Depends(get_db)
 ):
-    # 1. 查找目标
-    target_user = db.query(User).filter(User.id == user_id).first()
+    target_user = db.query(User).filter(User.id == payload.user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="目标用户不存在")
 
-    # 2. 保护最高权限
     if target_user.username == "admin":
         raise HTTPException(status_code=400, detail="系统最高根权限超级管理员密码禁止被修改")
 
-    # 3. 统一使用新加密逻辑 (Bcrypt)
-    target_user.password_hash = pwd_context.hash(new_password)
+    target_user.password_hash = pwd_context.hash(payload.new_password)
     db.commit()
 
     try:
         redis_client.delete(f"user_session:{target_user.username}")
-        pass
-    except Exception as e:
-        # 即使 Redis 清理失败，也要保证数据库密码已修改
+    except Exception:
         pass
 
     return {
@@ -714,44 +703,41 @@ def delete_user(
 # 强制创建用户接口，接收用户名、密码和权限组，创建新的用户
 @router.post("/users/create", summary="【管理端】强制创建用户")
 def create_user(
-        username: str = Form(...),
-        password: str = Form(...),
-        roles: str = Form(...),  # 逗号分隔的权限组列表
-        current_user: User = Depends(RBACChecker("admin:create")),  # 🛡️ 用户创建守卫
+        payload: UserCreateInput,  # 🌟 全面拥抱 JSON
+        current_user: User = Depends(RBACChecker("admin:create")),
         db: Session = Depends(get_db)
 ):
-    existing_user = db.query(User).filter(User.username == username).first()
+    existing_user = db.query(User).filter(User.username == payload.username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="用户名已存在")
 
-    role_names = [r.strip() for r in roles.split(",") if r.strip()]
+    # 🌟 前端可以直接传干净的数组，不需要再用传统的逗号切分字符串了
     user_roles = []
-    for role_name in role_names:
-        role = db.query(Role).filter(Role.name == role_name).first()
+    for role_name in payload.roles:
+        role = db.query(Role).filter(Role.name == role_name.strip()).first()
         if role:
             user_roles.append(role)
 
     new_user = User(
-        username=username,
-        password_hash=pwd_context.hash(password),
+        username=payload.username,
+        password_hash=pwd_context.hash(payload.password),
         roles=user_roles
     )
     db.add(new_user)
     db.commit()
-    return {"status": "success", "message": f"用户 [{username}] 已成功创建"}
+    return {"status": "success", "message": f"用户 [{payload.username}] 已成功创建"}
 
 # 强制修改用户昵称接口，接收用户 ID 和新的昵称，更新数据库中的用户昵称
 @router.post("/users/update_nickname", summary="【管理端】强制修改用户昵称")
 def update_user_nickname(
-        user_id: int = Form(...),
-        new_nickname: str = Form(...),
-        current_user: User = Depends(RBACChecker("admin:update")),  # 🛡️ 昵称修改守卫
+        payload: UserNicknameUpdateInput,  # 🌟 统一格式
+        current_user: User = Depends(RBACChecker("admin:update")),
         db: Session = Depends(get_db)
 ):
-    target_user = db.query(User).filter(User.id == user_id).first()
+    target_user = db.query(User).filter(User.id == payload.user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="目标用户不存在")
 
-    target_user.nickname = new_nickname
+    target_user.nickname = payload.new_nickname
     db.commit()
     return {"status": "success", "message": f"用户 [{target_user.username}] 的昵称已成功更新"}

@@ -61,7 +61,6 @@
         /* ==========================================================================
            按钮组件高级定制
            ========================================================================== */
-        /* 核心检索按钮 - 中台渐变蓝 */
         .btn-search-theme {
             background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
             color: #fff !important;
@@ -74,7 +73,6 @@
             font-weight: 500;
             box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
         }
-        /* 浅色辅助按钮 */
         .btn-add-secondary {
             border: 1px solid #d1d5db !important;
             background-color: #fff !important;
@@ -99,11 +97,9 @@
         .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
         .layui-table td { height: 48px; }
 
-        /* 标签美化 */
         .role-tag { background: #eff6ff; color: #2563eb; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 6px; border: 1px solid rgba(37, 99, 235, 0.1); }
         .perm-tag { background: #ecfdf5; color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 6px; border: 1px solid rgba(16, 185, 129, 0.1); }
 
-        /* 状态开关覆盖过时绿 */
         .layui-form-switch { border-radius: 20px; }
         .layui-form-onswitch { border-color: #10b981 !important; background-color: #10b981 !important; }
 
@@ -115,6 +111,9 @@
         .btn-matrix-edit { color: #4b5563 !important; border: 1px solid #d1d5db !important; }
         .btn-matrix-edit:hover { background: #f3f4f6 !important; border-color: #9ca3af !important; }
 
+        .btn-matrix-pwd { color: #f59e0b !important; border: 1px solid rgba(245, 158, 11, 0.2) !important; }
+        .btn-matrix-pwd:hover { background: #fffbeb !important; border-color: #f59e0b !important; }
+
         .btn-matrix-role { color: #6366f1 !important; border: 1px solid rgba(99, 102, 241, 0.2) !important; }
         .btn-matrix-role:hover { background: #e0e7ff !important; border-color: #6366f1 !important; }
 
@@ -124,7 +123,6 @@
         .btn-matrix-del { color: #ef4444 !important; border: 1px solid rgba(239, 68, 68, 0.2) !important; }
         .btn-matrix-del:hover { background: #fef2f2 !important; border-color: #ef4444 !important; }
 
-        /* 弹窗层容器内衬调配 */
         .pop-matrix-container { padding: 20px 24px; }
         .pop-matrix-container .layui-form-select { margin-bottom: 12px; }
     </style>
@@ -161,6 +159,7 @@
 <script type="text/html" id="tpl-ops">
     <div style="display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
         <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-edit" lay-event="edit">昵称</button>
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-pwd" lay-event="password">密码</button>
         <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-role" lay-event="roles">角色</button>
         <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-perm" lay-event="permissions">权限</button>
         <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-del" lay-event="del">删除</button>
@@ -179,18 +178,36 @@ layui.use(['table', 'form', 'layer'], function(){
     // 🛡️ 授信通信核心骨架函数
     function securePost(url, data, callback) {
         const loading = layer.load(2);
-        $.post(url, data, function(r) {
-            layer.close(loading);
-            if (r.status === 'success') {
-                layer.msg(r.message || '指令执行成功', {icon: 1, time: 1000});
-                if(callback) callback(r);
-            } else {
-                layer.msg(r.message || '资产执行链路中断', {icon: 2});
+
+        $.ajax({
+            url: url,
+            type: 'POST',
+            contentType: 'application/json; charset=utf-8',
+            data: JSON.stringify(data),
+            dataType: 'json',
+            success: function(r) {
+                layer.close(loading);
+                if (r.status === 'success') {
+                    layer.msg(r.message || '指令执行成功', {icon: 1, time: 1000});
+                    if(callback) callback(r);
+                } else {
+                    layer.msg(r.message || '资产执行链路中断', {icon: 2});
+                }
+            },
+            // 🌟 核心改进：修复 jQuery 属性名为 error，并智能穿透捕获 FastAPI 的 Pydantic 422 详细报错
+            error: function(xhr) {
+                layer.close(loading);
+                let errMsg = "中台网关拦截异常";
+                if (xhr.responseJSON) {
+                    // 如果存在 Pydantic 422 自动校验错误
+                    if (Array.isArray(xhr.responseJSON.detail)) {
+                        errMsg = xhr.responseJSON.detail.map(err => `${err.loc[1] || '参数'}: ${err.msg}`).join(' | ');
+                    } else {
+                        errMsg = xhr.responseJSON.message || xhr.responseJSON.detail || errMsg;
+                    }
+                }
+                layer.msg(errMsg, {icon: 2, time: 3000});
             }
-        }).fail(function(xhr) {
-            layer.close(loading);
-            const err = xhr.responseJSON ? (xhr.responseJSON.detail || xhr.responseJSON.message) : "中台网关拦截异常";
-            layer.msg(err, {icon: 2});
         });
     }
 
@@ -208,7 +225,7 @@ layui.use(['table', 'form', 'layer'], function(){
             {field: 'roles', title: '角色矩阵', minWidth: 160, templet: d => d.roles.map(r=>`<span class="role-tag">${r}</span>`).join('')},
             {field: 'permissions', title: '权限细则', minWidth: 200, templet: d => d.permissions.map(p=>`<span class="perm-tag">${p}</span>`).join('')},
             {field: 'is_active', title: '安全状态', width: 100, align: 'center', templet: '#tpl-status'},
-            {title: '全维资产审计', width: 240, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
+            {title: '全维资产审计', width: 280, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
         ]]
     });
 
@@ -220,7 +237,7 @@ layui.use(['table', 'form', 'layer'], function(){
 
     // 联动拦截切换
     form.on('switch(status-switch)', obj => {
-        securePost('/admin/users/toggle_status', {user_id: obj.value, is_active: obj.elem.checked});
+        securePost('/admin/users/toggle_status', {user_id: parseInt(obj.value), is_active: obj.elem.checked});
     });
 
     // 多维网格指令分发
@@ -237,6 +254,19 @@ layui.use(['table', 'form', 'layer'], function(){
             }, (v, i) => {
                 if(!v.trim()) { layer.msg('昵称不可为空值', {icon:5, shift:6}); return; }
                 securePost('/admin/users/update_nickname', {user_id: d.id, new_nickname: v}, () => { layer.close(i); table.reload('user-table'); });
+            });
+        } else if(obj.event === 'password'){
+            // 🌟 新增：重置密码专属高定弹窗
+            layer.prompt({
+                title: '强制修改密码（当前账户：' + d.username + '）',
+                formType: 1, // 密码输入框
+                success: function(layero) {
+                    layero.find('.layui-layer-input').addClass('layui-input').attr('placeholder', '请输入至少6位新密码');
+                    layero.find('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb'});
+                }
+            }, (v, i) => {
+                if(v.trim().length < 6) { layer.msg('安全警报：新密码长度必须至少为6位', {icon:5, shift:6}); return; }
+                securePost('/admin/users/update_password', {user_id: d.id, new_password: v}, () => { layer.close(i); });
             });
         } else if(obj.event === 'roles' || obj.event === 'permissions'){
             const postKey = obj.event === 'roles' ? 'roles' : 'permissions';
@@ -263,8 +293,18 @@ layui.use(['table', 'form', 'layer'], function(){
                 yes: (i) => {
                     const tagVal = $('#l-name').val().trim();
                     if(!tagVal) { layer.msg('标识属性不能为空', {icon:5, shift:6}); return; }
+
                     const url = obj.event === 'roles' ? '/admin/users/update_roles' : '/admin/users/update_permissions';
-                    securePost(url, {user_id: d.id, [postKey]: tagVal, action: $('#l-act').val()}, () => { layer.close(i); table.reload('user-table'); });
+                    const payload = {
+                        user_id: d.id,
+                        [postKey]: [tagVal],
+                        action: $('#l-act').val()
+                    };
+
+                    securePost(url, payload, () => {
+                        layer.close(i);
+                        table.reload('user-table');
+                    });
                 }
             });
         } else if(obj.event === 'del'){
@@ -302,7 +342,7 @@ layui.use(['table', 'form', 'layer'], function(){
             area: ['400px', '250px'],
             content: `<div class="pop-matrix-container">
                         <input id="u-name" class="layui-input" placeholder="账户名 (Username)" autocomplete="off">
-                        <input id="u-pass" type="password" class="layui-input" placeholder="安全凭证密码 (Password)" style="margin-top: 14px;" autocomplete="off">
+                        <input id="u-pass" type="password" class="layui-input" placeholder="安全凭证密码 (⚠️ 至少6位)" style="margin-top: 14px;" autocomplete="off">
                       </div>`,
             btn: ['核准签发', '取消'],
             success: (layero) => {
@@ -312,7 +352,19 @@ layui.use(['table', 'form', 'layer'], function(){
                 const uname = $('#u-name').val().trim();
                 const upass = $('#u-pass').val().trim();
                 if(!uname || !upass) { layer.msg('注册字段不可保留空值', {icon: 5, shift: 6}); return; }
-                securePost('/admin/users/create', {username: uname, password: upass, roles: 'standard_user'}, () => { layer.close(i); table.reload('user-table'); });
+
+                // 🌟 前端预拦截：少于6位不发请求
+                if(upass.length < 6) { layer.msg('密码长度不合规，至少需要6位！', {icon: 5, shift: 6}); return; }
+
+                // 🌟 核心修正：roles 改写为符合后端模型的数组形式 ["standard_user"]
+                securePost('/admin/users/create', {
+                    username: uname,
+                    password: upass,
+                    roles: ["standard_user"]
+                }, () => {
+                    layer.close(i);
+                    table.reload('user-table');
+                });
             }
         });
     }
