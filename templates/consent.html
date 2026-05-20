@@ -1,242 +1,292 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>授权确认 - {{ app_name }}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安全授权确认 - {{ app_name | default('未知应用') }}</title>
+    <style>
+        /* ==========================================================================
+           OnAuth 统一现代暗黑科技设计系统
+           ========================================================================== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-<style>
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
+        body {
+            font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #f1f5f9;
+            background:
+                radial-gradient(circle at 15% 15%, rgba(34, 197, 94, 0.12), transparent 35%),
+                radial-gradient(circle at 85% 85%, rgba(59, 130, 246, 0.12), transparent 40%),
+                linear-gradient(135deg, #090d16, #111827);
+            overflow-x: hidden;
+            padding: 20px;
+        }
 
-body {
-    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
+        /* 矩阵背景网格线 */
+        body::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 48px 48px;
+            pointer-events: none;
+            z-index: 0;
+        }
 
-    background:
-        radial-gradient(circle at 20% 20%, rgba(34,197,94,0.15), transparent 40%),
-        radial-gradient(circle at 80% 80%, rgba(59,130,246,0.15), transparent 45%),
-        linear-gradient(135deg, #0b1220, #111827);
-}
+        /* 磨砂玻璃确权卡片 */
+        .card {
+            width: 100%;
+            max-width: 500px;
+            padding: 36px;
+            border-radius: 24px;
+            background: rgba(30, 41, 59, 0.4);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow:
+                0 30px 60px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            position: relative;
+            z-index: 1;
+        }
 
-body::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image:
-        linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-    background-size: 64px 64px;
-    opacity: 0.2;
-    pointer-events: none;
-}
+        /* 🏢 资产徽标沙箱（解决多态图像层叠冲突） */
+        .logo-container {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+        }
 
-.card {
-    width: 520px;
-    padding: 40px;
-    border-radius: 26px;
-    background: rgba(255,255,255,0.06);
-    backdrop-filter: blur(30px);
-    -webkit-backdrop-filter: blur(30px);
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow:
-        0 40px 100px rgba(0,0,0,0.6),
-        inset 0 1px 0 rgba(255,255,255,0.05);
-    position: relative;
-    z-index: 1;
-}
+        .app-avatar {
+            width: 100%;
+            height: 100%;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #1e293b, #334155);
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
 
-/* 🏢 资产徽标沙箱（彻底修复叠加与堆栈变形） */
-.logo-container {
-    position: relative;
-    width: 88px;
-    height: 88px;
-    margin: 0 auto 24px;
-}
+        .default-rocket {
+            font-size: 32px;
+            user-select: none;
+        }
 
-/* 渐变几何方块，天然具备容错底色 */
-.app-avatar {
-    width: 100%;
-    height: 100%;
-    border-radius: 22px;
-    background: linear-gradient(135deg, #1e293b, #334155);
-    border: 2px solid rgba(255,255,255,0.15);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden; /* 强行锁死内部组件，防止溢出变形 */
-}
+        .real-logo {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 18px;
+        }
 
-/* 默认兜底火箭符号（无图时呈现，有图时利用 css 的层级天然覆盖） */
-.default-rocket {
-    font-size: 36px;
-    user-select: none;
-}
+        .shield-badge {
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 26px;
+            height: 26px;
+            background: linear-gradient(135deg, #22c55e, #3b82f6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            border: 2px solid #0f172a;
+            box-shadow: 0 4px 8px rgba(34, 197, 94, 0.3);
+            z-index: 2;
+        }
 
-/* 真实应用图标展示层（全绝对定位，防坍塌死锁） */
-.real-logo {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 20px;
-}
+        /* 标题层级 */
+        h1 {
+            text-align: center;
+            font-size: 22px;
+            font-weight: 600;
+            color: #ffffff;
+            margin-bottom: 4px;
+        }
 
-.shield-badge {
-    position: absolute;
-    bottom: -4px;
-    right: -4px;
-    width: 30px;
-    height: 30px;
-    background: linear-gradient(135deg, #22c55e, #3b82f6);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    border: 2px solid #111827;
-    box-shadow: 0 4px 10px rgba(34,197,94,0.3);
-    z-index: 2;
-}
+        .sub {
+            text-align: center;
+            font-size: 13px;
+            color: #94a3b8;
+            margin-bottom: 24px;
+        }
 
-h1 {
-    text-align: center;
-    font-size: 24px;
-    font-weight: 600;
-    margin-bottom: 6px;
-    letter-spacing: -0.5px;
-}
+        /* 警告防御条 */
+        .risk-bar {
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            color: #f59e0b;
+            line-height: 1.6;
+            background: rgba(245, 158, 11, 0.08);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
 
-.group-highlight {
-    color: #a855f7;
-    font-weight: bold;
-}
-.app-highlight {
-    color: #22c55e;
-    font-weight: bold;
-}
+        /* 数据明细舱 */
+        .box {
+            padding: 14px 16px;
+            border-radius: 14px;
+            margin-bottom: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.2s ease;
+        }
+        
+        .box:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.09);
+        }
 
-.sub {
-    text-align: center;
-    font-size: 13px;
-    color: rgba(255,255,255,0.6);
-    margin-bottom: 24px;
-}
+        .title {
+            font-size: 11px;
+            color: #64748b;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+        }
 
-.risk-bar {
-    padding: 12px 14px;
-    border-radius: 14px;
-    margin-bottom: 20px;
-    font-size: 12px;
-    color: #fbbf24;
-    line-height: 1.5;
-    background: rgba(251,191,36,0.08);
-    border: 1px solid rgba(251,191,36,0.25);
-}
+        .value {
+            font-size: 14px;
+            color: #cbd5e1;
+        }
 
-.box {
-    padding: 16px;
-    border-radius: 18px;
-    margin-bottom: 14px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.06);
-    transition: 0.2s;
-}
-.box:hover {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-}
+        /* 关系拓扑流 */
+        .value-hierarchy {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+        
+        .group-highlight {
+            color: #c084fc;
+            font-weight: 600;
+        }
+        
+        .arrow-separator {
+            color: #475569;
+            font-size: 11px;
+        }
+        
+        .app-highlight {
+            color: #4ade80;
+            font-weight: 600;
+        }
 
-.title {
-    font-size: 12px;
-    color: rgba(255,255,255,0.45);
-    margin-bottom: 6px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
+        .scope {
+            color: #60a5fa;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            word-break: break-all;
+            background: rgba(96, 165, 251, 0.06);
+            padding: 6px 10px;
+            border-radius: 8px;
+            margin-top: 4px;
+            display: inline-block;
+            font-size: 13px;
+        }
 
-.value-hierarchy {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 15px;
-}
-.arrow-separator {
-    color: rgba(255,255,255,0.3);
-    font-size: 12px;
-}
+        /* 交互控制链路 */
+        .buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
 
-.scope {
-    color: #60a5fa;
-    word-break: break-all;
-}
+        .btn {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            outline: none;
+            text-align: center;
+        }
 
-.buttons {
-    display: flex;
-    gap: 12px;
-    margin-top: 28px;
-}
+        .allow {
+            background: linear-gradient(135deg, #22c55e, #15803d);
+            color: #ffffff;
+            box-shadow: 0 4px 14px rgba(34, 197, 94, 0.2);
+        }
+        
+        .allow:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(34, 197, 94, 0.35);
+        }
+        
+        .allow:active {
+            transform: translateY(0);
+        }
 
-.btn {
-    flex: 1;
-    padding: 14px;
-    border-radius: 16px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    border: none;
-    outline: none;
-}
+        .deny {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #f87171;
+        }
+        
+        .deny:hover {
+            background: rgba(248, 113, 113, 0.1);
+            border-color: rgba(248, 113, 113, 0.25);
+        }
 
-.allow {
-    background: linear-gradient(135deg, #22c55e, #16a34a);
-    color: white;
-    box-shadow: 0 10px 25px rgba(34,197,94,0.25);
-}
-.allow:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 14px 30px rgba(34,197,94,0.4);
-}
+        /* 脚注防护说明 */
+        .footer {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 11px;
+            color: #475569;
+            letter-spacing: 0.02em;
+        }
 
-.deny {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: #f87171;
-}
-.deny:hover {
-    background: rgba(248,113,113,0.12);
-    border-color: rgba(248,113,113,0.3);
-}
-
-.footer {
-    margin-top: 22px;
-    text-align: center;
-    font-size: 11px;
-    color: rgba(255,255,255,0.3);
-    letter-spacing: 0.5px;
-}
-</style>
+        /* ==========================================================================
+           移动端自适应平滑适配
+           ========================================================================== */
+        @media (max-width: 480px) {
+            body {
+                padding: 0;
+                align-items: flex-end; /* 移动端采用主流的底部抽屉拉起感，或直接撑满 */
+            }
+            .card {
+                border-radius: 24px 24px 0 0;
+                border-bottom: none;
+                border-left: none;
+                border-right: none;
+                padding: 28px 20px;
+                box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.3);
+            }
+        }
+    </style>
 </head>
 
 <body>
 
 <div class="card">
-
+    <!-- 🏢 资产徽标沙箱 -->
     <div class="logo-container">
         <div class="app-avatar">
             <span class="default-rocket">🚀</span>
-
-            <img src="{{ app_logo or '' }}" class="real-logo" onerror="this.style.display='none';" alt="">
+            <!-- 增加了干净的后端动态参数清洗，空值或缺失时直接触发隐藏机制 -->
+            <img src="{{ app_logo if app_logo else '' }}" class="real-logo" onerror="this.style.display='none';" alt="">
         </div>
         <div class="shield-badge">🛡️</div>
     </div>
@@ -245,30 +295,34 @@ h1 {
     <div class="sub">中台安全网关正在确权您的资源边界</div>
 
     <div class="risk-bar">
-        ⚠️ 敏感授权防线：请确认您完全信任该独立软件，授权后该应用将代表您访问对应的云端业务接口资产。
+        ⚠️ 敏感授权防线：请确认您完全信任该独立软件。授权后，该应用将代表您访问对应的云端业务接口资产。
     </div>
 
+    <!-- 用户身份舱 -->
     <div class="box">
         <div class="title">当前登录账户</div>
-        <div class="value" style="color: #e2e8f0;">{{ username }}</div>
+        <div class="value" style="font-weight: 500;">{{ username | default('未知用户') }}</div>
     </div>
 
+    <!-- 主体关系舱 -->
     <div class="box">
         <div class="title">申请访问的应用主体</div>
         <div class="value-hierarchy">
-            <span class="group-highlight">{{ group_name }}</span>
+            <span class="group-highlight">{{ group_name | default('独立开发者') }}</span>
             <span class="arrow-separator">➔</span>
-            <span class="app-highlight">{{ app_name }}</span>
+            <span class="app-highlight">{{ app_name | default('未命名资产') }}</span>
         </div>
     </div>
 
+    <!-- 权限域舱 -->
     <div class="box">
         <div class="title">请求权限范围 (Scope)</div>
-        <div class="value scope">{{ scope }}</div>
+        <div class="scope">{{ scope | default('default') }}</div>
     </div>
 
+    <!-- 确权表单提交总线 -->
     <form action="/oauth/consent_submit" method="post">
-
+        <!-- 隐式鉴权令牌栈 -->
         <input type="hidden" name="session_id" value="{{ session_id }}">
         <input type="hidden" name="client_id" value="{{ client_id }}">
         <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
@@ -279,18 +333,15 @@ h1 {
             <button type="submit" name="action" value="allow" class="btn allow">
                 同意并授权继续
             </button>
-
             <button type="submit" name="action" value="deny" class="btn deny">
                 拒绝访问
             </button>
         </div>
-
     </form>
 
     <div class="footer">
         OnAuth Dual-Track Identity Gateway · Enterprise IAM Security
     </div>
-
 </div>
 
 </body>
