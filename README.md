@@ -1,4 +1,4 @@
-# 🛡️ OnAuth 企业级统一身份认证与访问控制系统
+# 🛡️ OnAuth 多租户统一身份认证与访问控制系统
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
