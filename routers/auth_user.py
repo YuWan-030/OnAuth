@@ -1,14 +1,16 @@
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Form, Response, Cookie
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Form, Response, Cookie, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 import secrets
+import time
 
 # 🌟 引入数据库实体与核心依赖项
 from database import get_db, User, Role
 # 🌟 引入 Redis 客户端（保持原功能连通）
 from middlewares.auth import redis_client
+from routers.webhook import dispatch_webhook_event
 
 # 🎯 路由配置对齐：将前缀设为全局共用，内部支持平铺管理端与业务端
 router = APIRouter(tags=["中台统一账户与动态会话鉴权中心"])
@@ -54,6 +56,16 @@ def register_user(payload: UserRegisterSchema, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    dispatch_webhook_event(
+        event_type="user.create",
+        payload={
+            "user_id": new_user.id,
+            "username": new_user.username,
+            "email": new_user.email,
+            "created_at": str(new_user.created_at)
+        },
+        db=db
+    )
 
     return {
         "status": "success",
@@ -65,9 +77,15 @@ def register_user(payload: UserRegisterSchema, db: Session = Depends(get_db)):
 
 
 # --- 2. 管理中台核心：用户/管理员登录接口 (精简版单轨 Session 架构) ---
+# 支持多路由别名绑定，共享同一个底层业务闭环
 @router.post("/admin/token", summary="【核心】管理员/用户登录并灌注统一会话Cookie")
 @router.post("/auth/login", summary="【兼容】用户登录标准接口")
-def login_user(payload: UserLoginSchema, response: Response, db: Session = Depends(get_db)):
+def login_user(
+        payload: UserLoginSchema,
+        request: Request,  # 🌟 核心修正：用于安全抓取真实的客户端公网 IP
+        response: Response,  # 🌟 用于下发单轨 HttpOnly Cookie
+        db: Session = Depends(get_db)
+):
     """
     🔒 极简单轨 Session 架构：
     核验用户名密码成功后，向 Redis 灌入随机 Session 令牌。
@@ -92,6 +110,7 @@ def login_user(payload: UserLoginSchema, response: Response, db: Session = Depen
 
     # 2. 🗄️ 将状态托管至 Redis 中控（有效期 1 天 = 86400 秒）
     redis_client.setex(new_session_id, 86400, str(user.id))
+
     # 🌟 顺手做个反向索引：把这个 session_id 扔进该用户的活跃会话集合里
     user_set_key = f"user:active_sessions:{user.id}"
     redis_client.sadd(user_set_key, new_session_id)
@@ -108,27 +127,38 @@ def login_user(payload: UserLoginSchema, response: Response, db: Session = Depen
     final_scopes_list = list(set(user_scopes)) if user_scopes else ["read"]
 
     # 4. 🚀 【大一统核心】向浏览器强推全网唯一的 sso_session_id Cookie
-    # 路径设为 "/"，确保管理后台（/admin）与授权大厅（/oauth）在同一个浏览器下完美共享
     response.set_cookie(
         key="sso_session_id",
         value=new_session_id,
         httponly=True,  # 🔒 严格防范 XSS 脚本劫持
         path="/",  # 🌍 跨路由全域共享的生命线
-        secure=False,  # 🎯 本地纯 HTTP 调试环境设为 False，避免现代浏览器内核将其拦截隐形
-        samesite="lax"  # 🎯 设为 lax，保障 Flet 客户端拉起跨域重定向时可以安全携带
+        secure=False,  # 🎯 本地纯 HTTP 调试环境设为 False
+        samesite="lax"  # 🎯 保障 Flet 客户端拉起跨域重定向时可以安全携带
     )
 
-    # 5. 🏁 【全量闭环】返回精简后的 JSON 响应体
+    # 5. ⚡ 并网异步下发 Webhook 事件（在安全状态落盘后触发）
+    # 防范 Nginx / CDN 代理导致 IP 变成 127.0.0.1，优先解析代理链路中的真实公网 IP
+    client_ip = request.headers.get("X-Forwarded-For", request.client.host).split(",")[0].strip()
+
+    dispatch_webhook_event(
+        event_type="auth.login",
+        payload={
+            "user_id": user.id,
+            "username": user.username,
+            "ip_address": client_ip,  # 👈 穿透代理后的真实 IP，提高事件审计含金量
+            "login_at": int(time.time()),
+            "entry_point": request.url.path  # 💡 额外增补：告诉订阅方是通过 /admin/token 还是 /auth/login 登入的
+        },
+        db=db
+    )
+
+    # 6. 🏁 【全量闭环】返回精简后的 JSON 响应体
     return {
         "status": "success",
         "message": "中台身份核验通过，单轨分布式 Session 会话已成功建立！",
-
-        # 🛡️ 兼容垫片：依旧保持 access_token 字段的输出，
-        # 这样即使管理后台前端的 Axios/Fetch 拦截器以前习惯了读 access_token，也完全不需要重构前端代码！
-        "access_token": new_session_id,
+        "access_token": new_session_id,  # 🛡️ 兼容老代码的垫片
         "token_type": "bearer",
-
-        "sso_session_id": new_session_id,  # 明确返回单轨 ID
+        "sso_session_id": new_session_id,
         "username": user.username,
         "scopes": final_scopes_list
     }
@@ -231,6 +261,14 @@ def delete_account(
     # 🚀 5. 斩草除根：物理抹除与分布式会话粉碎
     db.delete(user)
     db.commit()
+    dispatch_webhook_event(
+        event_type="user.delete",
+        payload={
+            "user_id": user.id,
+            "status": "terminated"
+        },
+        db=db
+    )
 
     # 抹除该用户当前的这根 Session 导火索
     redis_client.delete(target_session_id)

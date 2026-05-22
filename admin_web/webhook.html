@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Webhook 事件回调集成中心 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <style>
+        body {
+            padding: 15px;
+            background-color: #f3f4f6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+        .card-wrapper {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.05);
+            border: 1px solid #ebeef5;
+            margin-bottom: 15px;
+        }
+        .action-bar { margin-bottom: 15px; }
+
+        .btn-theme-blue {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            padding: 0 16px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+        }
+
+        .layui-table-view { border: 1px solid #ebeef5 !important; border-radius: 6px !important; overflow: hidden; }
+        .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
+        .layui-table td { height: 48px; }
+
+        .btn-matrix-ops { background: transparent !important; border-radius: 4px !important; padding: 0 8px !important; transition: all 0.2s; font-size: 12px !important; }
+        .btn-matrix-del { color: #ef4444 !important; border: 1px solid rgba(239, 68, 68, 0.2) !important; cursor: pointer; }
+        .btn-matrix-del:hover { background: #fef2f2 !important; border-color: #ef4444 !important; }
+
+        .pop-matrix-container { padding: 25px 30px 20px 20px; }
+        .layui-form-label { color: #4b5563; font-weight: 500; width: 100px; }
+        .layui-input-block { margin-left: 130px; }
+
+        .layui-input { height: 36px; border-radius: 6px !important; border-color: #d1d5db !important; }
+        .layui-input:focus { border-color: #2563eb !important; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important; }
+
+        .event-checkbox-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding-top: 6px; }
+        .badge-event { background-color: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-family: monospace; border: 1px solid #e2e8f0; margin-right: 4px; display: inline-block; }
+    </style>
+</head>
+<body>
+
+<div class="card-wrapper">
+    <div class="action-bar">
+        <button class="layui-btn btn-theme-blue" id="btn-add-webhook">
+            <i class="layui-icon layui-icon-add-1" style="font-size:13px; margin-right:3px;"></i> 配置全新 Webhook 订阅端点
+        </button>
+    </div>
+
+    <table id="webhook-table" lay-filter="webhookTable"></table>
+</div>
+
+<script type="text/html" id="table-bar">
+    {% raw %}
+    <div style="display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-del" lay-event="del">断开端点</button>
+    </div>
+    {% endraw %}
+</script>
+
+<script type="text/html" id="status-tpl">
+    {% raw %}
+    <input type="checkbox" name="is_active" value="{{d.id}}" lay-skin="switch" lay-text="活动|挂起" lay-filter="statusSwitch" {{ d.is_active ? 'checked' : '' }}>
+    {% endraw %}
+</script>
+
+<script type="text/html" id="events-tpl">
+    {% raw %}
+    <div>
+        {{# layui.each(d.events, function(index, item){ }}
+            <span class="badge-event">{{ item }}</span>
+        {{# }); }}
+    </div>
+    {% endraw %}
+</script>
+
+<div id="webhook-dialog" style="display: none;">
+    <form class="layui-form pop-matrix-container" id="actual-webhook-form" lay-filter="webhookForm">
+        <div class="layui-form-item">
+            <label class="layui-form-label"><span style="color:#ef4444">*</span> 订阅名称</label>
+            <div class="layui-input-block">
+                <input type="text" name="name" required lay-verify="required" placeholder="如：生产环境商户同步" class="layui-input" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="layui-form-item">
+            <label class="layui-form-label"><span style="color:#ef4444">*</span> 回调 URL</label>
+            <div class="layui-input-block">
+                <input type="url" name="url" required lay-verify="required|url" placeholder="接收 POST 请求的完整 HTTPS 终点路径" class="layui-input" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="layui-form-item">
+            <label class="layui-form-label">验签密钥 (Secret)</label>
+            <div class="layui-input-block">
+                <input type="text" name="secret" placeholder="可选：用于生成 X-OnAuth-Signature 的 HmacSHA256 密钥" class="layui-input" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="layui-form-item">
+            <label class="layui-form-label"><span style="color:#ef4444">*</span> 订阅事件</label>
+            <div class="layui-input-block event-checkbox-grid">
+                <input type="checkbox" name="events[user.create]" title="用户创建" value="user.create" lay-skin="primary" checked>
+                <input type="checkbox" name="events[user.delete]" title="用户移除" value="user.delete" lay-skin="primary">
+                <input type="checkbox" name="events[role.update]" title="权限修调" value="role.update" lay-skin="primary">
+                <input type="checkbox" name="events[auth.login]" title="授信登录" value="auth.login" lay-skin="primary">
+            </div>
+        </div>
+    </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
+<script>
+layui.use(['table', 'form', 'layer'], function(){
+    const table = layui.table;
+    const form = layui.form;
+    const layer = layui.layer;
+    const $ = layui.$;
+
+    // 1. 数据网格渲染
+    table.render({
+        elem: '#webhook-table',
+        url: '/api/v1/webhook/config.list',
+        parseData: function(res) {
+            return { "code": res.status === "success" ? 0 : 500, "msg": res.message || "", "data": res.data || [] };
+        },
+        page: false,
+        escape: true,
+        cols: [[
+            {field: 'id', title: '配置 ID', width: 80, sort: true, align: 'center'},
+            {field: 'name', title: '订阅端点名称', width: 180, style: 'font-weight: 600; color: #1e293b;'},
+            {field: 'url', title: '物理接收网关 URL (POST)', width: 280, style: 'font-family: monospace; color: #2563eb;'},
+            {field: 'events', title: '订阅的原子事件域', width: 260, templet: '#events-tpl', escape: false},
+            {field: 'creator_id', title: '所有权归属 (Creator)', width: 130, align: 'center', style: 'color: #64748b; font-family: monospace;'},
+            {field: 'is_active', title: '服务状态', width: 110, templet: '#status-tpl', align: 'center', escape: false},
+            {title: '操作', width: 120, toolbar: '#table-bar', align: 'center', fixed: 'right', escape: false}
+        ]]
+    });
+
+    // 2. 统一安全的 HTTP 交互请求流 (修正了误写为 def 的语法错误)
+    function executeAjax(url, method, data, contentType = 'application/x-www-form-urlencoded', callback) {
+        const loading = layer.load(2);
+        $.ajax({
+            url: url,
+            type: method,
+            data: data,
+            contentType: contentType,
+            dataType: 'json',
+            success: function(res) {
+                layer.close(loading);
+                if(res.status === 'success') {
+                    layer.msg(res.message || '操作同步成功', {icon: 1, time: 1200});
+                    if(callback) callback(res);
+                } else {
+                    layer.msg(res.message || '执行链路被阻断', {icon: 2});
+                }
+            },
+            error: function(xhr) {
+                layer.close(loading);
+                layer.msg(xhr.responseJSON?.detail || '网关通信异常，拒绝响应', {icon: 2, time: 3000});
+                table.reload('webhook-table');
+            }
+        });
+    }
+
+    // 3. 注册新端点
+    $('#btn-add-webhook').click(function(){
+        layer.open({
+            type: 1,
+            title: '🔌 注册全新 Webhook 异步分发端点',
+            area: ['520px', '420px'],
+            content: $('#webhook-dialog').html(),
+            btn: ['核准接入', '熔断放弃'],
+            success: function(layero){
+                form.render();
+                layero.find('.layui-layer-btn0').css({
+                    'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                    'border-color': '#2563eb'
+                });
+            },
+            yes: function(layerIndex, layero) {
+                const name = layero.find('input[name="name"]').val().trim();
+                const url = layero.find('input[name="url"]').val().trim();
+                const secret = layero.find('input[name="secret"]').val().trim();
+
+                let selectedEvents = [];
+                layero.find('.event-checkbox-grid input[type="checkbox"]:checked').each(function(){
+                    selectedEvents.push($(this).val());
+                });
+
+                if(!name || !url) {
+                    layer.msg('关键指标字段不可为空', {icon: 5, shift: 6});
+                    return false;
+                }
+                if(selectedEvents.length === 0) {
+                    layer.msg('请至少订阅一个核心原子事件域', {icon: 5, shift: 6});
+                    return false;
+                }
+
+                const payload = {
+                    name: name,
+                    url: url,
+                    secret: secret ? secret : null,
+                    events: selectedEvents,
+                    is_active: true
+                };
+
+                executeAjax('/api/v1/webhook/config.create', 'POST', JSON.stringify(payload), 'application/json', function(){
+                    layer.close(layerIndex);
+                    table.reload('webhook-table');
+                });
+            }
+        });
+    });
+
+    // 4. 开关切换
+    form.on('switch(statusSwitch)', function(data){
+        const id = data.value;
+        const is_active = data.elem.checked;
+
+        const payload = {
+            id: parseInt(id, 10),
+            is_active: is_active
+        };
+
+        executeAjax('/api/v1/webhook/config.update', 'POST', JSON.stringify(payload), 'application/json');
+    });
+
+    // 5. 行内清退注销
+    table.on('tool(webhookTable)', function(obj){
+        const data = obj.data;
+        if(obj.event === 'del') {
+            layer.confirm(`⚠️ 安全警告：确认物理注销并断开订阅端点 [${data.name}] 吗？`, {
+                icon: 3,
+                title: 'Webhook 资产审计清退',
+                success: (layero) => {
+                    layero.find('.layui-layer-btn0').css('background-color', '#ef4444');
+                }
+            }, function(index){
+                executeAjax(`/api/v1/webhook/config.delete?id=${data.id}`, 'DELETE', {}, 'application/x-www-form-urlencoded', function(){
+                    layer.close(index);
+                    table.reload('webhook-table');
+                });
+            });
+        }
+    });
+});
+</script>
+</body>
+</html>

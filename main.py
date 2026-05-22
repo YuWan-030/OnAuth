@@ -5,7 +5,7 @@ import logging
 import jwt
 
 import uvicorn
-from fastapi import FastAPI, Request, status, Cookie,Depends
+from fastapi import FastAPI, Request, status, Cookie, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -16,7 +16,7 @@ from config import SECRET_KEY
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 # 🚀 引入解耦后的各个核心业务/管理模块路由
-from routers import oauth, business, admin, auth_user, permission
+from routers import oauth, business, admin, auth_user, permission,webhook
 from utils.ssl_gen import ensure_ssl_certificates
 from database import init_db, get_db, User
 from utils.response import unified_response  # 🌟 统一 JSON 响应函数
@@ -32,7 +32,7 @@ app = FastAPI(title="企业级标准 OAuth2.0 & License 双轨制融合鉴权平
 # ==================== 🎯 核心修复：注入并锚定 HTML 模板引擎 ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 template_dirs = [
-    os.path.join(BASE_DIR, "web"),
+    os.path.join(BASE_DIR, "admin_web"),
     os.path.join(BASE_DIR, "templates")
 ]
 # 2. 手动创建一个 Jinja2 环境，绑定多路径加载器
@@ -65,6 +65,7 @@ app.include_router(business.router)
 app.include_router(admin.router)
 app.include_router(auth_user.router)
 app.include_router(permission.router)
+app.include_router(webhook.router)
 
 # ==================== 🛡️ 全局异常拦截硬核防线 ====================
 async def handle_error_response(request: Request, status_code: int, detail: str):
@@ -123,8 +124,6 @@ async def global_generic_exception_handler(request: Request, exc: Exception):
     return await handle_error_response(request, 500, "中台系统执行遭遇阻断，请联系管理员核查日志！")
 
 
-
-
 # ==================== 🛡️ 视图层专属：Cookie 会话前置看门狗 ====================
 
 
@@ -142,6 +141,56 @@ def verify_view_admin_session(auth_token: str) -> bool:
 
 
 # ==================== 🎨 Layui 管理端 Web 视图路由（全面升级安全拦截） ====================
+@app.get("/admin/permissions", response_class=HTMLResponse, summary="【视图】进入权限节点管理页面")
+def permissions_page_view(
+        request: Request,
+        sso_session_id: str = Cookie(None)
+):
+    user_logged_in = None
+    if sso_session_id and sso_session_id.startswith("sess_"):
+        raw_user = redis_client.get(sso_session_id)
+        if raw_user:
+            user_logged_in = raw_user.decode('utf-8') if isinstance(raw_user, bytes) else raw_user
+
+    # 🚨 漏洞堵死：没登录一律踢回登录墙
+    if not user_logged_in:
+        return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="permissions.html",
+        context={
+            "request": request,
+            "username": user_logged_in
+        }
+    )
+
+
+@app.get("/admin/roles", response_class=HTMLResponse, summary="【视图】进入权限组管理页面")
+def roles_page_view(
+        request: Request,
+        sso_session_id: str = Cookie(None)
+):
+    user_logged_in = None
+    if sso_session_id and sso_session_id.startswith("sess_"):
+        raw_user = redis_client.get(sso_session_id)
+        if raw_user:
+            user_logged_in = raw_user.decode('utf-8') if isinstance(raw_user, bytes) else raw_user
+
+    # 🚨 漏洞堵死：没登录一律踢回登录墙
+    if not user_logged_in:
+        return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="roles.html",
+        context={
+            "request": request,
+            "username": user_logged_in
+        }
+    )
+
+
 @app.get("/system/notices", response_class=HTMLResponse, summary="【视图】进入系统公告与消息中心")
 def announcements_page_view(
         request: Request,
@@ -171,6 +220,8 @@ def announcements_page_view(
             "username": user_logged_in
         }
     )
+
+
 @app.get("/system/settings", response_class=HTMLResponse, summary="【视图】进入系统配置中心")
 def settings_page_view(
         request: Request,
@@ -201,6 +252,7 @@ def settings_page_view(
         }
     )
 
+
 @app.get("/system/callbacks", response_class=HTMLResponse, summary="【视图】进入回调地址管理中心")
 def callbacks_page_view(
         request: Request,
@@ -224,12 +276,13 @@ def callbacks_page_view(
     # 🎉 完美通行，携带当前在线用户名投喂给模板
     return templates.TemplateResponse(
         request=request,
-        name="callbacks.html",
+        name="webhook.html",
         context={
             "request": request,
             "username": user_logged_in
         }
     )
+
 
 @app.get("/system/audit", response_class=HTMLResponse, summary="【视图】进入审计日志中心")
 def audit_page_view(
@@ -261,6 +314,7 @@ def audit_page_view(
         }
     )
 
+
 @app.get("/system/sessions", response_class=HTMLResponse, summary="【视图】进入在线会话监控中心")
 def sessions_page_view(
         request: Request,
@@ -290,6 +344,7 @@ def sessions_page_view(
             "username": user_logged_in
         }
     )
+
 
 @app.get("/system/risk", response_class=HTMLResponse, summary="【视图】进入风险事件与安全中心")
 def risk_page_view(
@@ -322,7 +377,7 @@ def risk_page_view(
     )
 
 
-@app.get("/admin/users",response_class=HTMLResponse, include_in_schema=False)
+@app.get("/admin/users", response_class=HTMLResponse, include_in_schema=False)
 def users_page_view(
         request: Request,
         sso_session_id: str = Cookie(None)
@@ -351,6 +406,7 @@ def users_page_view(
             "username": user_logged_in
         }
     )
+
 
 @app.get("/admin/groups", response_class=HTMLResponse, summary="【视图】进入顶级组织空间管理大厅")
 def admin_groups_page(
@@ -459,6 +515,7 @@ def admin_credentials_page(
             "username": user_logged_in
         }
     )
+
 
 @app.get("/login", response_class=HTMLResponse, summary="【视图】进入中台统一认证登录终端")
 def login_page(
@@ -606,7 +663,6 @@ def dashboard_page_view(
             "username": user_logged_in
         }
     )
-
 
 
 # =========================================================================

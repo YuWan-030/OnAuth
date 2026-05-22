@@ -1,7 +1,8 @@
 import datetime
-from sqlalchemy import create_engine, Column, String, Integer, Boolean, DateTime, ForeignKey, Table
+from sqlalchemy import create_engine, Table
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
 
 import config
 
@@ -40,6 +41,34 @@ user_permission_association = Table(
 
 
 # ==================== 🏢 三层资产流体系模型 ====================
+
+class WebhookConfig(Base):
+    __tablename__ = "webhook_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    url = Column(String(500), nullable=False)
+    secret = Column(String(255), nullable=True)
+    events = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True)
+
+    # 🌟 必须添加这一行，并保存文件
+    creator_id = Column(Integer, nullable=False, index=True)
+
+    created_at = Column(DateTime, default=datetime.datetime.now)
+
+class WebhookLog(Base):
+    __tablename__ = "webhook_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    webhook_id = Column(Integer, ForeignKey("webhook_configs.id", ondelete="CASCADE"))
+    event_type = Column(String(100))                             # 触发事件类型
+    payload = Column(Text)                                       # 发送报文
+    response_body = Column(Text)                                 # 响应内容
+    status_code = Column(Integer)                                # HTTP 状态码
+    is_success = Column(Boolean)                                 # 是否投递成功
+    duration = Column(Integer)                                   # 耗时 (ms)
+    creator_id = Column(Integer, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.datetime.now)
 
 class DeveloperGroup(Base):
     """1. 【顶级容器】开发者组织/工作室表"""

@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>权限组管理 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <style>
+        body {
+            padding: 15px;
+            background-color: #f3f4f6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+        .card-wrapper {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.05);
+            border: 1px solid #ebeef5;
+        }
+        .action-bar { margin-bottom: 15px; }
+
+        .btn-theme-blue {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            padding: 0 16px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+        }
+
+        .layui-table-view { border: 1px solid #ebeef5 !important; border-radius: 6px !important; overflow: hidden; }
+        .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
+        .layui-table td { height: 48px; }
+
+        /* 统一按钮矩阵样式基础 */
+        .btn-matrix-ops { background: transparent !important; border-radius: 4px !important; padding: 0 8px !important; transition: all 0.2s; font-size: 12px !important; }
+        .btn-matrix-edit { color: #4b5563 !important; border: 1px solid #d1d5db !important; }
+        .btn-matrix-edit:hover { background: #f3f4f6 !important; border-color: #9ca3af !important; }
+        .btn-matrix-assign { color: #6366f1 !important; border: 1px solid rgba(99, 102, 241, 0.2) !important; }
+        .btn-matrix-assign:hover { background: #e0e7ff !important; border-color: #6366f1 !important; }
+
+        /* 正常状态下的粉碎按钮 */
+        .btn-matrix-del { color: #ef4444 !important; border: 1px solid rgba(239, 68, 68, 0.2) !important; cursor: pointer; }
+        .btn-matrix-del:hover { background: #fef2f2 !important; border-color: #ef4444 !important; }
+
+        /* 🌟 新增：专门用于超级管理员的物理粉碎禁用（Disabled）状态样式 */
+        .btn-matrix-del-disabled {
+            color: #94a3b8 !important;
+            border: 1px solid #e2e8f0 !important;
+            background: #f1f5f9 !important;
+            cursor: not-allowed !important;
+            opacity: 0.6;
+        }
+
+        .layui-checkbox-disdisabled { opacity: 0.85 !important; cursor: not-allowed !important; }
+
+        .pop-matrix-container { padding: 25px 30px 10px 10px; }
+        .layui-form-label { color: #4b5563; font-weight: 500; width: 95px; }
+        .layui-input-block { margin-left: 125px; }
+
+        .layui-input, .layui-textarea {
+            border-radius: 6px !important;
+            border-color: #d1d5db !important;
+            transition: all 0.2s;
+        }
+        .layui-input { height: 36px; }
+        .layui-input:focus, .layui-textarea:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+        .tree-scroll-wrapper { max-height: 290px; overflow-y: auto; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; }
+
+        .node-tag {
+            display: inline-block;
+            background: #ecfdf5;
+            color: #10b981;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin: 2px 4px 2px 0;
+            border: 1px solid rgba(16, 185, 129, 0.1);
+        }
+    </style>
+</head>
+<body>
+
+<div class="card-wrapper">
+    <div class="action-bar">
+        <button class="layui-btn btn-theme-blue" id="btn-add-role">
+            <i class="layui-icon layui-icon-add-1" style="font-size:13px; margin-right:3px;"></i> 新增权限组(分组)
+        </button>
+    </div>
+
+    <table id="role-table" lay-filter="roleTable"></table>
+</div>
+
+{% raw %}
+<script type="text/html" id="table-bar">
+    <div style="display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-edit" lay-event="edit">基本配置</button>
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-assign" lay-event="assign">分配节点</button>
+
+        {{# if(d.name === 'admin' || d.name === 'root_admin' || d.role_id === 1){ }}
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-del-disabled" lay-event="disabled_del_tip">物理粉碎</button>
+        {{# } else { }}
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-del" lay-event="del">物理粉碎</button>
+        {{# } }}
+    </div>
+</script>
+
+<script type="text/html" id="nodes-tpl">
+    {{# layui.each(d.permissions, function(index, item){ }}
+        <span class="node-tag">{{= layui.util.escape(item) }}</span>
+    {{# }); }}
+    {{# if(!d.permissions || d.permissions.length === 0){ }}
+        <span style="color: #94a3b8; font-style: italic; font-size: 12px;">暂未绑定任何节点</span>
+    {{# } }}
+</script>
+
+<script type="text/html" id="status-tpl">
+    {{# if(d.name === 'admin' || d.name === 'root_admin' || d.role_id === 1){ }}
+        <input type="checkbox" name="is_active" value="{{= d.role_id }}" lay-skin="switch" lay-text="正常|禁用" checked disabled>
+    {{# } else { }}
+        <input type="checkbox" name="is_active" value="{{= d.role_id }}" lay-skin="switch" lay-text="正常|禁用" lay-filter="status-switch" {{ d.is_active ? 'checked' : '' }}>
+    {{# } }}
+</script>
+{% endraw %}
+
+<div id="role-dialog" style="display: none;">
+    <form class="layui-form pop-matrix-container" id="actual-role-form">
+        <input type="hidden" name="role_id">
+        <div class="layui-form-item">
+            <label class="layui-form-label"><span style="color:#ef4444">*</span> 权限组标识</label>
+            <div class="layui-input-block">
+                <input type="text" name="name" required lay-verify="required" placeholder="如：tenant_admin" class="layui-input" autocomplete="off">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">范围描述</label>
+            <div class="layui-input-block">
+                <textarea name="description" placeholder="请输入职责范围细节..." class="layui-textarea" style="height: 80px; resize: none;"></textarea>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div id="assign-dialog" style="display: none; padding: 20px;">
+    <div class="tree-scroll-wrapper">
+        <div id="actual-permission-tree"></div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
+<script>
+layui.use(['table', 'form', 'layer', 'tree'], function(){
+    const table = layui.table, form = layui.form, layer = layui.layer, tree = layui.tree, $ = layui.$;
+
+    // 1. 数据资产网格主渲染流
+    table.render({
+        elem: '#role-table',
+        url: '/api/v1/permission/group.list',
+        parseData: function(res) {
+            return { "code": res.status === "success" ? 0 : 500, "msg": res.message || "", "data": res.data || [] };
+        },
+        page: false,
+        escape: true,
+        cols: [[
+            {field: 'role_id', title: '组 ID', width: 80, sort: true, align: 'center'},
+            {field: 'name', title: '权限组核心标识', width: 130, style: 'font-weight: 600; color: #1e293b;'},
+            {field: 'description', title: '职责描述细则', width: 170},
+            {field: 'permissions', title: '已就位原子节点映射矩阵', templet: '#nodes-tpl', escape: false,width: 580},
+            {field: 'is_active', title: '网关状态', width: 100, templet: '#status-tpl', align: 'center', escape: false},
+            {title: '全维权限资产操作', width: 240, toolbar: '#table-bar', align: 'center', fixed: 'right', escape: false}
+        ]]
+    });
+
+    // 2. 统一安全 JSON 异步通信流
+    function securePostJson(url, payload, callback) {
+        const loading = layer.load(2);
+        $.ajax({
+            url: url,
+            type: 'POST',
+            contentType: 'application/json; charset=utf-8',
+            data: JSON.stringify(payload),
+            dataType: 'json',
+            success: function(res) {
+                layer.close(loading);
+                if(res.status === 'success') {
+                    layer.msg(res.message || '中台配置同步完成', {icon: 1, time: 1000});
+                    if(callback) callback(res);
+                } else {
+                    layer.msg(res.message || '网关熔断拒绝执行', {icon: 2});
+                    table.reload('role-table');
+                }
+            },
+            error: function(xhr) {
+                layer.close(loading);
+                layer.msg(xhr.responseJSON?.detail || '资产中台网关拦截异常', {icon: 2, time: 3000});
+                table.reload('role-table');
+            }
+        });
+    }
+
+    // 3. 动态滑块变更事件
+    form.on('switch(status-switch)', function(obj){
+        let roleId = parseInt(this.value, 10);
+        let activeStatus = obj.elem.checked;
+        let rowData = table.cache['role-table'].find(item => item.role_id === roleId) || {};
+
+        securePostJson('/api/v1/permission/group.update', {
+            role_id: roleId,
+            name: rowData.name,
+            is_active: activeStatus
+        });
+    });
+
+    // 4. 唤起权限组基础配置弹窗
+    function openRoleModal(title, oldData = null) {
+        layer.open({
+            type: 1,
+            title: title,
+            area: ['480px', '315px'],
+            content: $('#role-dialog').html(),
+            btn: ['核准部署并网', '放弃'],
+            success: function(layero){
+                const currentForm = layero.find('#actual-role-form');
+                currentForm.attr('lay-filter', 'dynamicRoleForm');
+                form.render(null, 'dynamicRoleForm');
+
+                layero.find('.layui-layer-btn0').css({ 'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb' });
+
+                if(oldData) {
+                    form.val('dynamicRoleForm', {
+                        role_id: oldData.role_id,
+                        name: oldData.name,
+                        description: oldData.description
+                    });
+                    if(oldData.name === 'admin' || oldData.name === 'root_admin' || oldData.role_id === 1) {
+                        layero.find('input[name="name"]').attr('disabled', true).css({'background': '#f1f5f9', 'cursor': 'not-allowed'});
+                    }
+                }
+            },
+            yes: function(layerIndex, layero) {
+                const formData = form.val('dynamicRoleForm');
+                if(!formData.name) {
+                    layer.msg('核心唯一标识符不可空缺', {icon: 5, shift: 6});
+                    return false;
+                }
+
+                let url = formData.role_id ? '/api/v1/permission/group.update' : '/api/v1/permission/group.create';
+                const payload = { name: formData.name, description: formData.description, is_active: true };
+                if(formData.role_id) payload.role_id = parseInt(formData.role_id, 10);
+
+                securePostJson(url, payload, function(){
+                    layer.close(layerIndex);
+                    table.reload('role-table');
+                });
+            }
+        });
+    }
+
+    $('#btn-add-role').click(function(){ openRoleModal('🚀 部署全新授信权限分组'); });
+
+    // 5. 行内按钮分发中心
+    table.on('tool(roleTable)', function(obj){
+        const data = obj.data;
+        if(obj.event === 'edit') {
+            openRoleModal('⚙️ 精密修调权限组资产细则', data);
+        } else if(obj.event === 'assign') {
+            openAssignModal(data);
+        } else if(obj.event === 'disabled_del_tip') {
+            // 🌟 用户点击置灰禁用的超管物理粉碎按钮时进行友好提示
+            layer.msg('核心安全策略：系统最高管理组为全局根授信节点，禁止被粉碎移除！', {icon: 4});
+        } else if(obj.event === 'del') {
+            layer.confirm(`⚠️ 粉碎警告：确定物理注销权限组 [${data.name}] 吗？此操作不可回滚！`, {
+                icon: 3, title: '最高级别清退清查',
+                success: (layero) => { layero.find('.layui-layer-btn0').css('background-color', '#ef4444'); }
+            }, function(index){
+                const loading = layer.load(2);
+                $.ajax({
+                    url: `/api/v1/permission/group.delete?role_id=${data.role_id}`,
+                    type: 'DELETE',
+                    success: function(res){
+                        layer.close(loading);
+                        if(res.status === 'success'){
+                            layer.close(index);
+                            table.reload('role-table');
+                            layer.msg('该权限组资产已被粉碎移除', {icon: 1});
+                        }
+                    },
+                    error: function(xhr){ layer.close(loading); layer.msg(xhr.responseJSON?.detail || '删除异常', {icon: 2}); }
+                });
+            });
+        }
+    });
+
+    // 6. 🔀 授权纽带校准分配中心
+    function openAssignModal(roleData) {
+        const isSuperAdmin = roleData.name === 'admin' || roleData.name === 'root_admin' || roleData.role_id === 1;
+
+        layer.open({
+            type: 1,
+            title: `🛡️ 授权纽带校准 -> [ 权限组: ${roleData.name} ]`,
+            area: ['450px', '430px'],
+            content: $('#assign-dialog').html(),
+            btn: ['注入并网', '撤销'],
+            success: function(layero, layerIndex){
+                layero.find('.layui-layer-btn0').css({ 'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb' });
+                const treeContainer = layero.find('#actual-permission-tree');
+
+                const loading = layer.load(2);
+                $.get('/api/v1/permission/node.list', function(nodeRes){
+                    if(nodeRes.status !== 'success') { layer.close(loading); layer.msg('拉取全部节点源失败'); return; }
+
+                    // 7个绝对禁止删除的系统特权标识
+                    const PROTECTED_PERMS = ["read", "write", "admin:read", "admin:write", "admin:create", "admin:delete", "admin:update"];
+
+                    let childLeafNodes = nodeRes.data.map(item => {
+                        let shouldDisable = isSuperAdmin && PROTECTED_PERMS.includes(item.name);
+                        return {
+                            id: item.permission_id,
+                            title: item.name + (item.description ? ` (${item.description})` : ''),
+                            disabled: shouldDisable
+                        };
+                    });
+
+                    let secureTreeStructure = [{
+                        id: -999,
+                        title: '🔓 系统全量高危原子节点控制链',
+                        spread: true,
+                        disabled: isSuperAdmin,
+                        children: childLeafNodes
+                    }];
+
+                    let ownedNodeNames = roleData.permissions || [];
+                    let defaultCheckedIds = [];
+
+                    nodeRes.data.forEach(item => {
+                        if(ownedNodeNames.includes(item.name) || (isSuperAdmin && PROTECTED_PERMS.includes(item.name))) {
+                            defaultCheckedIds.push(item.permission_id);
+                        }
+                    });
+
+                    tree.render({
+                        elem: treeContainer,
+                        data: secureTreeStructure,
+                        showCheckbox: true,
+                        id: 'permTreeInstance'
+                    });
+
+                    setTimeout(function(){
+                        layer.close(loading);
+                        if (defaultCheckedIds.length > 0) {
+                            tree.setChecked('permTreeInstance', defaultCheckedIds);
+                        }
+                    }, 50);
+                });
+            },
+            yes: function(layerIndex, layero) {
+                let checkedData = tree.getChecked('permTreeInstance');
+                let targetNodeIds = [];
+
+                function extractNodeIds(nodes){
+                    nodes.forEach(n => {
+                        if(n.id !== -999) {
+                            targetNodeIds.push(parseInt(n.id, 10));
+                        }
+                        if(n.children) extractNodeIds(n.children);
+                    });
+                }
+                extractNodeIds(checkedData);
+
+                const payload = {
+                    role_id: parseInt(roleData.role_id, 10),
+                    name: roleData.name,
+                    description: roleData.description,
+                    is_active: roleData.is_active,
+                    permission_ids: targetNodeIds
+                };
+
+                securePostJson('/api/v1/permission/group.update', payload, function(){
+                    layer.close(layerIndex);
+                    table.reload('role-table');
+                });
+            }
+        });
+    }
+});
+</script>
+</body>
+</html>

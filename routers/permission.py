@@ -2,22 +2,26 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db, Role, Permission
 from middlewares.rbac import RBACChecker
+from routers.webhook import dispatch_webhook_event
 from schemas.PermissionUpdateSchema import PermissionGroupUpdateSchema
 from middlewares.auth import redis_client
+import time
+
 router = APIRouter(tags=["【管理接口】权限类核心网关"])
+
+# 🌟 全局定义 7 个系统终极保护、绝对不可删除和必须被兜底的黄金根权限标识
+PROTECTED_PERMS = ["read", "write", "admin:read", "admin:write", "admin:create", "admin:delete", "admin:update"]
 
 
 # ============================ 权限组增删改查核心接口 ============================
 
-
 @router.post("/api/v1/permission/group.update", summary="【核心管理接口】更新权限分组信息")
 def update_permission_group(
-        payload: PermissionGroupUpdateSchema,  # 1. 接收前端 JSON 传参
-        db: Session = Depends(get_db),  # 2. 注入数据库连接
+        payload: PermissionGroupUpdateSchema,  # 接收前端 JSON 传参
+        db: Session = Depends(get_db),  # 注入数据库连接
         current_user=Depends(RBACChecker("admin:write", "admin:update"))
 ):
-
-    # 锁定目标角色（权限组）
+    # 1. 锁定目标角色（权限组）
     role = db.query(Role).filter(Role.id == payload.role_id).first()
     if not role:
         raise HTTPException(
@@ -25,8 +29,17 @@ def update_permission_group(
             detail=f"更新失败：未找到 ID 为 [{payload.role_id}] 的权限分组"
         )
 
+    # 2. 识别是否为系统超级管理员
+    is_super_admin = role.name in ["root_admin", "admin"] or role.id == 1
+
     # 如果要修改角色的唯一标识符（name），需要检查是否跟别的角色重名
     if payload.name and payload.name != role.name:
+        if is_super_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="核心熔断防御：系统最高管理组标识（name）属于底层安全基石，禁止被变更"
+            )
+
         existing_role = db.query(Role).filter(Role.name == payload.name).first()
         if existing_role:
             raise HTTPException(
@@ -35,32 +48,57 @@ def update_permission_group(
             )
         role.name = payload.name
 
-
     if payload.description is not None:
         role.description = payload.description
 
+    # 3. 🛡️ 安全硬熔断：拦截最高管理组的禁用状态切换（禁止禁用超管）
     if payload.is_active is not None:
-        # 确保你的 Role 模型上有 is_active 字段
         if hasattr(role, 'is_active'):
+            if is_super_admin:
+                if payload.is_active is False or payload.is_active == 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="核心熔断防御：系统最高管理组为全局授信根节点，禁止被关闭（禁用）"
+                    )
             role.is_active = payload.is_active
 
-
+    # 4. 👑 核心逻辑变更：超级管理员可以修改权限，但后端兜底策略自动强制补回、禁删核心默认权限
     if payload.permission_ids is not None:
         # 去数据库里把前端传来的这批 ID 对应的 Permission 实体全部捞出来
         new_permissions = db.query(Permission).filter(Permission.id.in_(payload.permission_ids)).all()
 
-        # 安全防御：防范前端传了不存在的恶意 ID
+        # 安全防御：防范前端传了不存在的无效 ID
         if len(new_permissions) != len(set(payload.permission_ids)):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="更新失败：传入的权限节点 ID 列表中包含不存在的无效节点"
             )
 
+        if is_super_admin:
+            # 查出当前系统内这 7 个核心权限在数据库里的真实实体
+            mandatory_perms = db.query(Permission).filter(Permission.name.in_(PROTECTED_PERMS)).all()
+
+            # 转化为 Set 做高速去重合并，防止超管由于前端误操作或黑客绕过将这 7 个核心权限漏掉
+            existing_ids = {p.id for p in new_permissions}
+            for mp in mandatory_perms:
+                if mp.id not in existing_ids:
+                    new_permissions.append(mp)  # 🦾 自动硬并网补齐，保障超管底座绝对不崩溃
+
         role.permissions = new_permissions
 
     try:
         db.commit()
         db.refresh(role)  # 刷新对象获取最新状态
+        dispatch_webhook_event(
+            event_type="role.update",
+            payload={
+                "role_id": role.id,
+                "role_name": role.name,
+                "action": "permissions_modified",
+                "timestamp": int(time.time())
+            },
+            db=db
+        )
     except Exception as e:
         db.rollback()
         raise HTTPException(
@@ -78,7 +116,6 @@ def update_permission_group(
             "current_nodes": [p.name for p in role.permissions]
         }
     }
-
 
 @router.get("/api/v1/permission/group.list", summary="【核心管理接口】查询权限分组列表")
 def list_permission_groups(
@@ -111,6 +148,13 @@ def delete_permission_group(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"删除失败：未找到 ID 为 [{role_id}] 的权限分组"
+        )
+
+    # 🛡️ 核心熔断加固：拦截最高管理员角色的清退，防止核心特权链连带崩溃
+    if role.name in ["admin", "root_admin"] or role.id == 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"核心熔断防御：权限组 [{role.name}] 为系统全局高危根节点，受底层策略保护，禁止物理粉碎！"
         )
 
     try:
@@ -308,6 +352,13 @@ def delete_permission_node(
             detail=f"删除失败：未找到 ID 为 [{permission_id}] 的权限节点"
         )
 
+    # 🛡️ 核心硬熔断拦截：如果当前尝试删除的节点属于默认 7 个系统基石特权之一，直接拦截拒绝！
+    if perm.name in PROTECTED_PERMS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"核心熔断防御：节点标识 [{perm.name}] 属于系统核心授信底层底座，属于非可删除资产！"
+        )
+
     try:
         db.delete(perm)
         db.commit()
@@ -353,15 +404,14 @@ def notify_all_sessions_dirty(user_id: int):
     try:
         user_set_key = f"user:active_sessions:{user_id}"
 
-        # 1. 一口气把该用户在所有设备（手机、网页等）上的 session_id 全部取出来
+        # 一口气把该用户在所有设备上的 session_id 全部取出来
         active_sessions = redis_client.smembers(user_set_key)
 
         if active_sessions:
-            # 2. 批量将这些会话全部从 Redis 里彻底抹去
-            # *active_sessions 利用 Python 拆包特性，一次网络 I/O 就能批量删除
+            # 批量将这些会话全部从 Redis 里彻底抹去
             redis_client.delete(*active_sessions)
 
-        # 3. 顺便把这个索引 Key 自己也删掉
+        # 顺便把这个索引 Key 自己也删掉
         redis_client.delete(user_set_key)
         print(f"[高性能熔断] 用户 [{user_id}] 的所有终端已成功强制下线")
     except Exception as e:

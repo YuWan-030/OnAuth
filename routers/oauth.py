@@ -8,9 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Form, Cookie, Resp
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-
+import time
 from database import get_db, AppCredential, User, Role
 from middlewares.auth import redis_client
+from routers.webhook import dispatch_webhook_event
 from utils.crypto import verify_password, create_jwt_token, hash_secret
 from config import SECRET_KEY, ALGORITHM
 
@@ -118,6 +119,7 @@ def oauth_authorize(
 @router.post("/oauth/login_submit", summary="内部路由：处理中台登录提交并执行安全认证")
 def login_submit(
         response: Response,
+        request: Request,
         username: str = Form(...),
         password: str = Form(...),
         client_id: str = Form(...),
@@ -145,9 +147,20 @@ def login_submit(
 
 
     # 3. 🎯 组装目标重定向 URL
-    target_url = f"/oauth/authorize?client_id={client_id}&response_type=code&redirect_uri={redirect_uri}&scope={scope}&session_id={new_session_id}"
+    target_url = f"/oauth/authorize?client_id={client_id}&response_type=code&redirect_uri={redirect_uri}&scope={scope}"
     if state:
         target_url += f"&state={state}"
+
+    dispatch_webhook_event(
+        event_type="auth.login",
+        payload={
+            "user_id": user.id,
+            "username": user.username,
+            "ip_address": request.client.host,  # 视你如何抓取 IP 而定
+            "login_at": int(time.time())
+        },
+        db=db
+    )
 
     # 4. 🚀 【下发 SSO 凭证】
     response.set_cookie(
