@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>空间分配 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <style>
+        body { margin: 0; padding: 16px; background: #f3f4f6; font-family: "Microsoft YaHei", sans-serif; }
+        .card { background: #fff; border: 1px solid #ebeef5; border-radius: 10px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+        .btn-theme { background: linear-gradient(135deg,#2563eb,#1d4ed8) !important; border: none !important; border-radius: 6px !important; }
+        .btn-light { border-radius: 6px !important; }
+        .layui-table th { background: #f8fafc !important; color: #475569 !important; }
+        .form-box { padding: 14px 16px 0 6px; }
+        .layui-form-label { width: 100px; }
+        .layui-input-block { margin-left: 130px; }
+        .tip { color: #64748b; font-size: 12px; line-height: 1.7; margin-top: 6px; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div style="display:flex; justify-content: space-between; align-items:center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
+        <div>
+            <div style="font-size: 16px; font-weight: 700; color: #0f172a;">租户空间分配中心</div>
+            <div class="tip">把已审核通过的空间分配给指定租户管理员，并可同步绑定该用户归属。</div>
+        </div>
+        <button class="layui-btn btn-theme" id="btn-refresh"><i class="layui-icon layui-icon-refresh"></i> 刷新</button>
+    </div>
+    <table class="layui-hide" id="groupTable"></table>
+</div>
+
+<div class="card">
+    <div style="font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 10px;">快速分配</div>
+    <form class="layui-form" lay-filter="assignForm">
+        <div class="layui-form-item">
+            <label class="layui-form-label">选择空间</label>
+            <div class="layui-input-block">
+                <select name="group_id" lay-search lay-verify="required" id="groupSelect"></select>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">租户管理员</label>
+            <div class="layui-input-block">
+                <select name="user_id" lay-search lay-verify="required" id="userSelect"></select>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">同步绑定</label>
+            <div class="layui-input-block">
+                <input type="checkbox" name="bind_user_group" checked lay-skin="switch" lay-text="绑定|不绑定">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <div class="layui-input-block">
+                <button class="layui-btn btn-theme" lay-submit lay-filter="submitAssign">提交分配</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
+<script>
+layui.use(['table','layer','form'], function(){
+    const table = layui.table, layer = layui.layer, form = layui.form, $ = layui.$;
+
+    let groupCache = [];
+    let userCache = [];
+
+    function loadGroups(){
+        $.get('/admin/groups/list', function(res){
+            const data = Array.isArray(res) ? res : (res.data || res || []);
+            groupCache = data.filter(item => item.status === 'approved' || item.is_active === true);
+            const html = ['<option value="">请选择空间</option>'];
+            groupCache.forEach(item => {
+                html.push(`<option value="${item.id}">${item.group_name} (${item.group_code || '-'})</option>`);
+            });
+            $('#groupSelect').html(html.join(''));
+            form.render('select');
+        });
+    }
+
+    function loadUsers(){
+        $.get('/admin/users/list?limit=100', function(res){
+            const data = res.data || [];
+            userCache = data.filter(item => (item.roles || []).includes('tenant_admin') || (item.roles || []).includes('super_admin'));
+            const html = ['<option value="">请选择租户管理员</option>'];
+            userCache.forEach(item => {
+                html.push(`<option value="${item.id}">${item.nickname || item.username} (${item.username})</option>`);
+            });
+            $('#userSelect').html(html.join(''));
+            form.render('select');
+        });
+    }
+
+    function loadTable(){
+        table.render({
+            elem: '#groupTable',
+            url: '/admin/groups/list',
+            page: false,
+            parseData: function(res){
+                const data = Array.isArray(res) ? res : (res.data || []);
+                return {code: 0, msg: '', count: data.length, data: data};
+            },
+            cols: [[
+                {field:'id', title:'ID', width:80},
+                {field:'group_name', title:'空间名称', minWidth:180},
+                {field:'group_code', title:'识别码', width:160},
+                {field:'owner', title:'当前归属', width:140},
+                {field:'owner_user_id', title:'归属用户ID', width:120},
+                {field:'status', title:'状态', width:100},
+                {field:'expire_at', title:'到期时间', width:180}
+            ]]
+        });
+    }
+
+    form.on('submit(submitAssign)', function(data){
+        const payload = {
+            user_id: parseInt(data.field.user_id, 10),
+            bind_user_group: data.field.bind_user_group === 'on'
+        };
+        const groupId = parseInt(data.field.group_id, 10);
+        if (!groupId || !payload.user_id) {
+            layer.msg('请选择空间和租户管理员', {icon: 2});
+            return false;
+        }
+        $.ajax({
+            url: `/admin/groups/${groupId}/assign`,
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: function(res){
+                if (res.status === 'success') {
+                    layer.msg(res.message || '分配成功', {icon: 1});
+                    loadGroups();
+                    loadUsers();
+                    loadTable();
+                } else {
+                    layer.msg(res.message || '分配失败', {icon: 2});
+                }
+            },
+            error: function(xhr){
+                layer.msg(xhr.responseJSON?.detail || '分配失败', {icon: 2});
+            }
+        });
+        return false;
+    });
+
+    $('#btn-refresh').on('click', function(){
+        loadGroups();
+        loadUsers();
+        loadTable();
+    });
+
+    loadGroups();
+    loadUsers();
+    loadTable();
+});
+</script>
+</body>
+</html>
+

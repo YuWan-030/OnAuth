@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>空间审核 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <style>
+        body { margin: 0; padding: 16px; background: #f3f4f6; font-family: "Microsoft YaHei", sans-serif; }
+        .card { background: #fff; border: 1px solid #ebeef5; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+        .btn-theme { background: linear-gradient(135deg,#2563eb,#1d4ed8) !important; border: none !important; border-radius: 6px !important; }
+        .btn-light { border-radius: 6px !important; }
+        .layui-table th { background: #f8fafc !important; color: #475569 !important; }
+        .form-box { padding: 14px 16px 0 6px; }
+        .layui-form-label { width: 100px; }
+        .layui-input-block { margin-left: 130px; }
+        .tip { color: #64748b; font-size: 12px; line-height: 1.7; margin-top: 6px; }
+        .expire-helper { color: #64748b; font-size: 12px; margin-top: 6px; line-height: 1.7; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div style="display:flex; justify-content: space-between; align-items:center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
+        <div>
+            <div style="font-size: 16px; font-weight: 700; color: #0f172a;">租户空间审核中心</div>
+            <div class="tip">仅超级管理员可处理。通过审核时必须填写到期时间。</div>
+        </div>
+        <button class="layui-btn btn-theme" id="btn-refresh"><i class="layui-icon layui-icon-refresh"></i> 刷新</button>
+    </div>
+    <table class="layui-hide" id="reviewTable"></table>
+</div>
+
+<div id="reviewTpl" style="display:none;">
+    <div class="layui-form form-box" lay-filter="reviewFormFilter">
+        <div class="layui-form-item">
+            <label class="layui-form-label">审核动作</label>
+            <div class="layui-input-block">
+                <input type="radio" name="action" value="approve" title="通过" checked>
+                <input type="radio" name="action" value="reject" title="拒绝">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">到期时间</label>
+            <div class="layui-input-block">
+                <input type="text" name="expire_at" placeholder="例如 2026-12-31 23:59:59" class="layui-input">
+                <div class="expire-helper">通过审核时请选择到期日期时间，不再支持直接输入天数。</div>
+            </div>
+        </div>
+        <div class="layui-form-item layui-form-text">
+            <label class="layui-form-label">审批备注</label>
+            <div class="layui-input-block"><textarea name="review_note" placeholder="通过说明或拒绝原因" class="layui-textarea"></textarea></div>
+        </div>
+    </div>
+</div>
+
+<script type="text/html" id="rowTool">
+{% raw %}
+<div style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+    <button class="layui-btn layui-btn-xs btn-light" lay-event="review">审核</button>
+    <button class="layui-btn layui-btn-xs btn-light" lay-event="expire">续期</button>
+</div>
+{% endraw %}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
+<script>
+layui.use(['table','layer','form','laydate'], function(){
+    const table = layui.table, layer = layui.layer, form = layui.form, laydate = layui.laydate, $ = layui.$;
+
+    function loadTable(){
+        table.render({
+            elem: '#reviewTable',
+            url: '/admin/groups/reviews/pending',
+            page: false,
+            parseData: function(res){
+                const data = res.data || [];
+                return {code: res.status === 'success' ? 0 : 500, msg: res.message || '', count: data.length, data: data};
+            },
+            cols: [[
+                {field:'id', title:'ID', width:80, sort:true},
+                {field:'group_name', title:'空间名称', minWidth:180},
+                {field:'group_code', title:'识别码', width:150},
+                {field:'owner', title:'申请人', width:140},
+                {field:'status', title:'状态', width:110},
+                {field:'expire_at', title:'到期时间', width:180},
+                {field:'review_note', title:'备注', minWidth:180},
+                {fixed:'right', title:'操作', toolbar:'#rowTool', width:180, align:'center'}
+            ]]
+        });
+    }
+
+    function submitReview(groupId, payload, onSuccess){
+        $.ajax({
+            url: `/admin/groups/${groupId}/review`,
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: function(res){
+                if (res.status === 'success') {
+                    layer.msg(res.message || '审核完成', {icon: 1});
+                    if (onSuccess) onSuccess();
+                    loadTable();
+                } else {
+                    layer.msg(res.message || '审核失败', {icon: 2});
+                }
+            },
+            error: function(xhr){
+                layer.msg(xhr.responseJSON?.detail || '审核失败', {icon: 2});
+            }
+        });
+    }
+
+    table.on('tool(reviewTable)', function(obj){
+        const data = obj.data;
+        if (obj.event === 'review') {
+            layer.open({
+                type: 1,
+                title: `审核空间：${data.group_name}`,
+                area: ['560px','420px'],
+                content: $('#reviewTpl').html(),
+                btn: ['提交审核','取消'],
+                success: function(layero){
+                    form.render(null, 'reviewFormFilter');
+                    layero.find('input[name="expire_at"]').val(data.expire_at || '');
+                    layero.find('textarea[name="review_note"]').val(data.review_note || '');
+                    laydate.render({
+                        elem: layero.find('input[name="expire_at"]')[0],
+                        type: 'datetime',
+                        format: 'yyyy-MM-dd HH:mm:ss',
+                        trigger: 'click'
+                    });
+                },
+                yes: function(index, layero){
+                    const action = layero.find('input[name="action"]:checked').val();
+                    let expireAt = layero.find('input[name="expire_at"]').val().trim();
+
+                    if (action === 'approve') {
+                        if (!expireAt) {
+                            layer.msg('通过审核时必须填写到期时间', {icon: 2});
+                            return false;
+                        }
+                        expireAt = expireAt.replace(' ', 'T');
+                    }
+
+                    const formData = {
+                        action: action,
+                        expire_at: action === 'approve' ? expireAt : '',
+                        review_note: layero.find('textarea[name="review_note"]').val().trim()
+                    };
+                    submitReview(data.id, formData, function(){ layer.close(index); });
+                }
+            });
+        }
+        if (obj.event === 'expire') {
+            layer.prompt({title: `为 ${data.group_name} 续期`, formType: 0, value: data.expire_at || ''}, function(value, index){
+                if (!value.trim()) return layer.msg('到期时间不能为空', {icon: 2});
+                $.ajax({
+                    url: `/admin/groups/${data.id}/expire?expire_at=${encodeURIComponent(value.trim())}`,
+                    type: 'PUT',
+                    success: function(res){
+                        if (res.status === 'success') {
+                            layer.msg(res.message || '续期成功', {icon: 1});
+                            layer.close(index);
+                            loadTable();
+                        } else {
+                            layer.msg(res.message || '续期失败', {icon: 2});
+                        }
+                    },
+                    error: function(xhr){
+                        layer.msg(xhr.responseJSON?.detail || '续期失败', {icon: 2});
+                    }
+                });
+            });
+        }
+    });
+
+    $('#btn-refresh').on('click', loadTable);
+    loadTable();
+});
+</script>
+</body>
+</html>
+

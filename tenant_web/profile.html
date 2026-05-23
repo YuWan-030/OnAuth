@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>租户概览 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        body { background: #f3f4f6; padding: 15px; font-family: "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
+        .layui-fluid { padding: 0; }
+        .layui-card { background: #fff; border: 1px solid #ebeef5; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+        .title { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 12px; }
+        .row { display: flex; gap: 16px; flex-wrap: wrap; }
+        .item { flex: 1; min-width: 220px; padding: 12px; border-radius: 8px; background: #f8fafc; border: 1px solid #e2e8f0; }
+        .label { color: #64748b; font-size: 12px; margin-bottom: 6px; }
+        .value { color: #111827; font-size: 15px; font-weight: 700; word-break: break-all; }
+        .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn-theme { background: linear-gradient(135deg, #2563eb, #1d4ed8) !important; border: none !important; border-radius: 6px !important; }
+        .btn-light { border-radius: 6px !important; }
+        .status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+        .status-pending { background: #fef3c7; color: #b45309; }
+        .status-approved { background: #dcfce7; color: #15803d; }
+        .status-rejected { background: #fee2e2; color: #b91c1c; }
+        .status-unknown { background: #e2e8f0; color: #334155; }
+        .top-note { display:inline-block; margin-top: 4px; padding: 4px 10px; border-radius: 999px; background:#eef2ff; color:#4338ca; font-size:12px; font-weight:700; }
+    </style>
+</head>
+<body>
+<div class="layui-card">
+    <div class="title">当前账号</div>
+    <div class="row">
+        <div class="item"><div class="label">用户名</div><div class="value" id="username">-</div></div>
+        <div class="item"><div class="label">昵称</div><div class="value" id="nickname">-</div></div>
+        <div class="item"><div class="label">角色</div><div class="value" id="roles">-</div></div>
+    </div>
+</div>
+
+<div class="layui-card">
+    <div class="title">租户空间状态</div>
+    <div class="top-note" id="group-note">空间信息加载中...</div>
+    <div class="row">
+        <div class="item"><div class="label">空间名称</div><div class="value" id="group-name">-</div></div>
+        <div class="item"><div class="label">空间识别码</div><div class="value" id="group-code">-</div></div>
+        <div class="item"><div class="label">审批状态</div><div class="value"><span id="group-status" class="status-badge status-unknown">UNKNOWN</span></div></div>
+        <div class="item"><div class="label">到期时间</div><div class="value" id="group-expire-at">-</div></div>
+        <div class="item"><div class="label">审批备注</div><div class="value" id="group-review-note">-</div></div>
+    </div>
+</div>
+
+<div class="layui-card">
+    <div class="title">快捷入口</div>
+    <div class="actions">
+        <button class="layui-btn btn-theme" id="btn-apps">管理应用</button>
+        <button class="layui-btn layui-btn-primary btn-light" id="btn-creds">管理凭证</button>
+        <button class="layui-btn layui-btn-primary btn-light" id="btn-users">邀请成员</button>
+        <button class="layui-btn layui-btn-primary btn-light" id="btn-copy-code">复制识别码</button>
+    </div>
+</div>
+
+<script>
+layui.use(['layer'], function(){
+    const layer = layui.layer, $ = layui.$;
+
+    $.ajaxSetup({
+        complete: function(xhr) {
+            const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
+            if (xhr.status === 401) {
+                window.top.location.href = '/login';
+                return;
+            }
+            if (xhr.status === 403 && detail) {
+                layer.msg(detail, {icon: 2, time: 2500});
+            }
+        }
+    });
+
+    function setStatusBadge(status) {
+        const badge = $('#group-status');
+        const normalized = (status || 'unknown').toLowerCase();
+        badge.removeClass('status-pending status-approved status-rejected status-unknown');
+        if (normalized === 'pending') badge.addClass('status-pending').text('PENDING');
+        else if (normalized === 'approved') badge.addClass('status-approved').text('APPROVED');
+        else if (normalized === 'rejected') badge.addClass('status-rejected').text('REJECTED');
+        else badge.addClass('status-unknown').text(normalized.toUpperCase());
+    }
+
+    function loadProfile() {
+        $.get('/auth/me', function(res){
+            if (res.status !== 'success') {
+                layer.msg(res.message || '加载失败', {icon: 2});
+                return;
+            }
+            const data = res.data || {};
+            $('#group-note').text(data.group_name ? '空间已绑定，点击下方功能快速进入管理' : '当前账号尚未创建空间，请先申请创建空间');
+            $('#username').text(data.username || '-');
+            $('#nickname').text(data.nickname || '-');
+            $('#roles').text((data.roles || []).join(', ') || '-');
+            $('#group-name').text(data.group_name || '-');
+            $('#group-code').text(data.group_code || '-');
+            $('#group-expire-at').text(data.group_expire_at || '永久有效/待审批');
+            $('#group-review-note').text(data.group_review_note || '-');
+            setStatusBadge(data.group_status);
+        }).fail(function(){
+            layer.msg('用户画像加载失败', {icon: 2});
+        });
+    }
+
+    loadProfile();
+
+    $('#btn-apps').on('click', function(){ window.location.href = '/tenant/apps'; });
+    $('#btn-creds').on('click', function(){ window.location.href = '/tenant/credentials'; });
+    $('#btn-users').on('click', function(){ window.location.href = '/tenant/users'; });
+    $('#btn-copy-code').on('click', function(){
+        const code = $('#group-code').text().trim();
+        if (!code || code === '-') return layer.msg('暂无租户识别码', {icon: 4});
+        navigator.clipboard?.writeText(code).then(function(){
+            layer.msg('识别码已复制', {icon: 1});
+        }).catch(function(){
+            window.prompt('复制租户识别码：', code);
+        });
+    });
+});
+</script>
+</body>
+</html>
+
+

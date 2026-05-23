@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OnAuth - 用户中心</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #f5f7fb;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+        .header {
+            height: 60px;
+            background: #111827;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 22px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 999;
+            box-shadow: 0 1px 4px rgba(0,0,0,.08);
+        }
+        .logo-area {
+            display: flex;
+            align-items: center;
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: .5px;
+        }
+        .logo-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            background: linear-gradient(135deg,#2563eb,#1d4ed8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-size: 18px;
+            box-shadow: 0 4px 12px rgba(37,99,235,.35);
+        }
+        .side {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            bottom: 0;
+            width: 220px;
+            background: #1f2937;
+            overflow-y: auto;
+            overflow-x: hidden;
+            border-right: 1px solid rgba(255,255,255,.04);
+        }
+        .side::-webkit-scrollbar { width: 5px; }
+        .side::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 10px; }
+        .side-menu {
+            width: 220px;
+            background: transparent !important;
+            padding-top: 10px;
+        }
+        .side-menu .layui-nav-item > a {
+            height: 48px;
+            line-height: 48px;
+            padding-left: 22px !important;
+            font-size: 14px;
+            color: rgba(255,255,255,.82) !important;
+            transition: all .2s ease;
+        }
+        .side-menu .layui-nav-item > a:hover { background: rgba(255,255,255,.04); }
+        .side-menu .layui-nav-item i { margin-right: 12px; font-size: 16px; }
+        .side-menu .layui-nav-child { background: rgba(0,0,0,.18) !important; }
+        .side-menu .layui-nav-child dd a {
+            padding-left: 52px !important;
+            color: rgba(255,255,255,.72) !important;
+            height: 42px;
+            line-height: 42px;
+        }
+        .side-menu .layui-nav-child dd a:hover { background: rgba(255,255,255,.03); }
+        .side-menu .layui-this > a,
+        .side-menu .layui-nav-child dd.layui-this a {
+            background: linear-gradient(90deg,#2563eb,#1d4ed8) !important;
+            color: #fff !important;
+        }
+        .main {
+            position: fixed;
+            left: 220px;
+            top: 60px;
+            right: 0;
+            bottom: 0;
+            background: #f3f4f6;
+        }
+        .user-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #fff;
+        }
+        .user-info-area .layui-nav {
+            background: transparent;
+            padding: 0;
+        }
+        .user-info-area .layui-nav-item { line-height: 60px; }
+        .user-info-area .layui-nav-item > a {
+            color: #fff !important;
+            padding: 0 12px !important;
+            font-size: 14px;
+        }
+        .user-info-area .layui-nav-child a { color: #333 !important; }
+        .meta-pill {
+            background: rgba(255,255,255,.1);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .meta-pill.status-ok { background: rgba(34,197,94,.16); color: #86efac; }
+        .meta-pill.status-warn { background: rgba(245,158,11,.16); color: #fde68a; }
+        .meta-pill.status-muted { background: rgba(148,163,184,.16); color: #cbd5e1; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="logo-area">
+        <div class="logo-icon">🔐</div>
+        OnAuth 用户中心
+        <span class="meta-pill" id="tenant-pill">租户未绑定</span>
+    </div>
+    <div class="user-info-area">
+        <ul class="layui-nav">
+            <li class="layui-nav-item">
+                <a href="javascript:;" id="current-user">未登录</a>
+                <dl class="layui-nav-child">
+                    <dd><a href="javascript:;" id="btn-profile">个人中心</a></dd>
+                    <dd><a href="javascript:;" id="btn-unregister" style="color:#ef4444;">注销账户</a></dd>
+                    <dd><a href="javascript:;" id="btn-logout">退出登录</a></dd>
+                </dl>
+            </li>
+        </ul>
+    </div>
+</div>
+
+<div class="side">
+    <ul class="layui-nav layui-nav-tree side-menu" lay-filter="sideNav">
+        <li class="layui-nav-item layui-this">
+            <a href="javascript:;" data-src="/user/profile"><i class="layui-icon layui-icon-user"></i>用户中心</a>
+        </li>
+        <li class="layui-nav-item tenant-only" style="display: none;">
+            <a href="javascript:;"><i class="layui-icon layui-icon-group"></i>租户管理</a>
+            <dl class="layui-nav-child">
+                <dd><a href="javascript:;" data-src="/user/invite">成员邀请</a></dd>
+            </dl>
+        </li>
+    </ul>
+</div>
+
+<div class="main">
+    <iframe id="main-iframe" class="user-iframe" src="/user/profile"></iframe>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
+<script>
+layui.use(['element', 'layer'], function(){
+    const element = layui.element, layer = layui.layer, $ = layui.$;
+
+    $.ajaxSetup({
+        complete: function(xhr) {
+            const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
+            if (xhr.status === 401) {
+                window.top.location.href = '/login';
+                return;
+            }
+            if (xhr.status === 403 && detail) {
+                layer.msg(detail, {icon: 2, time: 2500});
+            }
+        }
+    });
+
+    function setTenantBadge(text, cls) {
+        $('#tenant-pill').removeClass('status-ok status-warn status-muted').addClass(cls || 'status-muted').text(text);
+    }
+
+    function loadProfile() {
+        $.get('/auth/me', function(res){
+            if (res.status !== 'success') {
+                layer.msg(res.message || '获取用户信息失败', {icon: 2});
+                return;
+            }
+            const data = res.data || {};
+            $('#current-user').text(data.nickname || data.username || '用户');
+            if (data.group_name) {
+                $('#tenant-pill').text(data.group_name);
+                $('#tenant-pill').removeClass('status-muted').addClass(data.group_status === 'approved' ? 'status-ok' : 'status-warn');
+            } else {
+                setTenantBadge('未绑定空间', 'status-muted');
+            }
+            if (data.is_tenant_admin) {
+                $('.tenant-only').show();
+            }
+        }).fail(function(){
+            layer.msg('获取用户信息失败', {icon: 2});
+        });
+    }
+
+    loadProfile();
+
+    element.on('nav(sideNav)', function(elem){
+        const src = elem.attr('data-src');
+        if (src) {
+            $('#main-iframe').attr('src', src);
+        }
+    });
+
+    $('#btn-profile').on('click', function(){
+        $('#main-iframe').attr('src', '/user/profile');
+    });
+
+    $('#btn-logout').on('click', function(){
+        const loading = layer.load(2);
+        $.post('/auth/logout', function(){
+            layer.close(loading);
+            window.location.href = '/login';
+        }).fail(function(xhr){
+            layer.close(loading);
+            layer.msg(xhr.responseJSON?.detail || '退出失败', {icon: 2});
+        });
+    });
+
+    $('#btn-unregister').on('click', function(){
+        layer.prompt({
+            title: '请输入当前密码以确认注销',
+            formType: 1,
+            success: function(layero) {
+                layero.find('.layui-layer-btn0').css({'background': '#ef4444', 'border-color': '#ef4444'});
+            }
+        }, function(value, index){
+            if (!value) {
+                layer.msg('密码不能为空', {icon: 2});
+                return;
+            }
+            const loading = layer.load(2);
+            $.ajax({
+                url: '/auth/unregister',
+                type: 'DELETE',
+                data: { confirm_password: value },
+                success: function(res){
+                    layer.close(loading);
+                    layer.msg(res.message || '账户已注销', {icon: 1}, function(){
+                        window.location.href = '/login';
+                    });
+                },
+                error: function(xhr){
+                    layer.close(loading);
+                    layer.msg(xhr.responseJSON?.detail || '注销失败', {icon: 2});
+                }
+            });
+            layer.close(index);
+        });
+    });
+});
+</script>
+</body>
+</html>
+
+

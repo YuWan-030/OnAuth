@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>应用管理 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        body {
+            background-color: #f3f4f6;
+            padding: 15px;
+            font-family: "Microsoft YaHei", sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .layui-fluid { padding: 0; }
+        .layui-card {
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            border: 1px solid #ebeef5;
+            background: #fff;
+        }
+        .layui-card-body { padding: 16px; }
+        .btn-theme-gradient {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            padding: 0 16px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+            transition: all 0.2s ease;
+        }
+        .layui-btn-container { margin-bottom: 14px; }
+        .layui-table-view { border: 1px solid #ebeef5 !important; border-radius: 6px !important; overflow: hidden; }
+        .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
+        .layui-table td { color: #334155; height: 48px; }
+        .form-box { padding: 14px 16px 0 6px; }
+        .layui-form-label { width: 90px; }
+        .layui-input-block { margin-left: 120px; }
+        .note { display:inline-block; margin-top: 4px; padding: 4px 10px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:12px; font-weight:700; }
+        .logo-img {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            object-fit: cover;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            vertical-align: middle;
+        }
+        .logo-upload-box { display:flex; flex-direction:column; gap:10px; }
+        .logo-preview-box { min-height:80px; border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; padding:12px; display:flex; align-items:center; gap:12px; color:#64748b; font-size:12px; }
+        .logo-preview-img { width:56px; height:56px; border-radius:12px; object-fit:cover; background:#fff; border:1px solid #e2e8f0; box-shadow:0 2px 8px rgba(15,23,42,.08); }
+        .logo-hint { font-size:12px; color:#64748b; line-height:1.6; }
+    </style>
+</head>
+<body>
+<div class="layui-fluid">
+    <div class="layui-card">
+        <div class="layui-card-body">
+            <div class="layui-btn-container">
+                <button class="layui-btn btn-theme-gradient" id="btn-add-app"><i class="layui-icon layui-icon-add-1"></i> 新建应用</button>
+            </div>
+            <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">你可以在自己的租户空间下创建应用，并继续签发应用凭证。</div>
+            <span class="note">空间未通过审核时将无法创建应用</span>
+            <table class="layui-hide" id="appTable"></table>
+        </div>
+    </div>
+</div>
+
+<div id="appFormTpl" style="display:none;">
+    <div class="layui-form form-box" lay-filter="appFormFilter">
+        <div class="layui-form-item">
+            <label class="layui-form-label">应用名称</label>
+            <div class="layui-input-block"><input type="text" name="app_name" required lay-verify="required" placeholder="请输入应用名称" class="layui-input"></div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">应用图标</label>
+            <div class="layui-input-block">
+                <input type="hidden" name="app_logo" id="appLogoValue">
+                <div class="logo-upload-box">
+                    <input type="file" id="appLogoFile" accept="image/png,image/jpeg,image/webp" class="layui-input">
+                    <div class="logo-hint">仅支持 PNG / JPEG / WebP，单文件不超过 2MB；上传后自动转为 PNG，不允许手填 URL。</div>
+                    <div class="logo-preview-box" id="appLogoPreview">尚未上传图标，创建后将使用默认图标。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="text/html" id="statusTpl">
+{% raw %}
+    {{# if(d.is_active){ }}<span style="color:#15803d;font-weight:700;">启用</span>{{# } else { }}<span style="color:#b91c1c;font-weight:700;">停用</span>{{# } }}
+{% endraw %}
+</script>
+
+<script type="text/html" id="logoTpl">
+{% raw %}
+    {{# if(d.app_logo){ }}
+        <img src="{{= d.app_logo }}" class="logo-img" alt="Logo">
+    {{# } else { }}
+        <span style="display:inline-block; width:32px; height:32px; line-height:32px; background:#eff6ff; border-radius:8px; text-align:center;">
+            <i class="layui-icon layui-icon-app" style="font-size: 18px; color: #2563eb;"></i>
+        </span>
+    {{# } }}
+{% endraw %}
+</script>
+
+<script>
+layui.use(['table','layer','form'], function(){
+    const table = layui.table, layer = layui.layer, form = layui.form, $ = layui.$;
+
+    function resetLogoPreview($scope) {
+        $scope.find('input[name="app_logo"]').val('');
+        $scope.find('#appLogoFile').val('');
+        $scope.find('#appLogoPreview').html('尚未上传图标，创建后将使用默认图标。');
+    }
+
+    function setLogoPreview($scope, url) {
+        const $box = $scope.find('#appLogoPreview');
+        $box.empty();
+        if (!url) {
+            $box.text('尚未上传图标，创建后将使用默认图标。');
+            return;
+        }
+        const $img = $('<img>').addClass('logo-preview-img').attr('src', url).attr('alt', 'logo');
+        const $text = $('<div>').css({ 'word-break': 'break-all', 'line-height': '1.6' }).text(url);
+        $box.append($img).append($text);
+    }
+
+    function uploadAppLogo(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        return $.ajax({
+            url: '/tenant/apps/logo/upload',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false
+        });
+    }
+
+    $(document).on('change', '#appLogoFile', function(){
+        const $scope = $(this).closest('.layui-layer');
+        const file = this.files && this.files[0];
+        if (!file) {
+            return;
+        }
+        if (!/^image\/(png|jpeg|webp)$/i.test(file.type)) {
+            layer.msg('仅支持 PNG、JPEG 或 WebP 图片', {icon: 2});
+            this.value = '';
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            layer.msg('图片大小不能超过 2MB', {icon: 2});
+            this.value = '';
+            return;
+        }
+
+        const loading = layer.msg('图标上传中，请稍候...', {icon: 16, shade: 0.2, time: 0});
+        uploadAppLogo(file).done(function(res){
+            layer.close(loading);
+            const logo = res?.data?.app_logo || '';
+            if (!logo) {
+                layer.msg('图标上传失败', {icon: 2});
+                resetLogoPreview($scope);
+                return;
+            }
+            $scope.find('input[name="app_logo"]').val(logo);
+            setLogoPreview($scope, logo);
+            layer.msg('图标上传成功', {icon: 1});
+        }).fail(function(xhr){
+            layer.close(loading);
+            resetLogoPreview($scope);
+            if (xhr.status === 401) {
+                layer.msg('会话已失效，请重新登录', {icon: 2}, function(){ window.top.location.href = '/login'; });
+            } else {
+                layer.msg(xhr.responseJSON?.detail || '图标上传失败', {icon: 2});
+            }
+        });
+    });
+
+    $.ajaxSetup({
+        complete: function(xhr) {
+            const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
+            if (xhr.status === 401) {
+                window.top.location.href = '/login';
+                return;
+            }
+            if (xhr.status === 403 && detail) {
+                layer.msg(detail, {icon: 2, time: 2500});
+            }
+        }
+    });
+
+    function loadTable() {
+        table.render({
+            elem: '#appTable',
+            url: '/tenant/apps/list',
+            page: false,
+            cols: [[
+                {field:'app_id', title:'ID', width:90, sort:true},
+                {field:'app_logo', title:'图标', width:80, templet:'#logoTpl', align:'center'},
+                {field:'app_name', title:'应用名称', minWidth:180},
+                {field:'is_active', title:'状态', width:110, templet:'#statusTpl'},
+                {field:'created_at', title:'创建时间', width:180}
+            ]],
+            parseData: function(res){
+                const data = Array.isArray(res) ? res : (res.data || []);
+                return {code: 0, msg: '', count: data.length, data: data};
+            }
+        });
+    }
+
+    $('#btn-add-app').on('click', function(){
+        layer.open({
+            type: 1,
+            title: '新建应用',
+            area: ['620px','430px'],
+            content: $('#appFormTpl').html(),
+            btn: ['创建', '取消'],
+            success: function(layero){
+                resetLogoPreview(layero);
+            },
+            yes: function(index, layero){
+                const appName = layero.find('input[name="app_name"]').val();
+                const appLogo = layero.find('input[name="app_logo"]').val();
+                if (!appName || !appName.trim()) {
+                    return layer.msg('应用名称不能为空', {icon: 2});
+                }
+                $.ajax({
+                    url: '/tenant/apps',
+                    type: 'POST',
+                    data: { app_name: appName, app_logo: appLogo || '' },
+                    success: function(res){
+                        if (res.status === 'success') {
+                            layer.msg(res.message || '创建成功', {icon: 1});
+                            layer.close(index);
+                            loadTable();
+                        } else {
+                            layer.msg(res.message || '创建失败', {icon: 2});
+                        }
+                    },
+                    error: function(xhr){
+                        layer.msg(xhr.responseJSON?.detail || '创建失败', {icon: 2});
+                    }
+                });
+            },
+            end: function(){
+                // 弹层关闭后内容会销毁，无需额外清理
+            }
+        });
+    });
+
+    loadTable();
+});
+</script>
+</body>
+</html>
+

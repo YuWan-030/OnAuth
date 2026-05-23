@@ -127,6 +127,14 @@
             <input type="password" name="password" lay-verify="required" lay-reqtext="请输入登录认证密码" placeholder="请输入登录密码" class="layui-input" autocomplete="off">
         </div>
 
+        <!-- 验证码输入域（动态显示） -->
+        <div class="layui-form-item" id="captchaRow" style="display:none;">
+            <i class="layui-icon layui-icon-vercode input-icon"></i>
+            <input type="text" name="captcha_code" placeholder="请输入验证码" class="layui-input" autocomplete="off" style="padding-right: 120px;">
+            <input type="hidden" name="captcha_token" id="captchaToken">
+            <img id="captchaImage" alt="验证码" style="position:absolute; right:8px; top:50%; transform: translateY(-50%); height:32px; cursor:pointer; border-radius:4px;">
+        </div>
+
         <!-- 授信登录动作 -->
         <div class="layui-form-item" style="margin-top: 26px; margin-bottom: 5px;">
             <button class="layui-btn layui-btn-fluid btn-login-theme" lay-submit lay-filter="doLogin">安全验证并登录</button>
@@ -142,6 +150,21 @@
 <script>
 layui.use(['form', 'layer'], function(){
     var form = layui.form, layer = layui.layer, $ = layui.$;
+
+    const loadCaptcha = function(){
+        $.get('/system/captcha', function(res){
+            if (!res || res.code !== 200) {
+                return;
+            }
+            $('#captchaToken').val(res.data.token);
+            $('#captchaImage').attr('src', res.data.image);
+            $('#captchaRow').show();
+        });
+    };
+
+    $('#captchaImage').on('click', function(){
+        loadCaptcha();
+    });
 
     // 🛡️ 边界防御：防 Iframe 跨域嵌套与点击劫持
     if (window !== window.top) {
@@ -166,8 +189,14 @@ layui.use(['form', 'layer'], function(){
             },
             error: function(err){
                 layer.close(loading);
+                const res = err.responseJSON || {};
+                if (res.captcha_required) {
+                    $('#captchaToken').val(res.captcha_token || '');
+                    $('#captchaImage').attr('src', res.captcha_image || '');
+                    $('#captchaRow').show();
+                }
                 // 精细化读取拦截网格下发的详细错误
-                var errMsg = err.responseJSON?.detail || err.responseJSON?.message || '身份认证失败，凭证不正确';
+                var errMsg = res.message || res.detail || '身份认证失败，凭证不正确';
                 layer.msg(errMsg, {icon: 2, shift: 6});
             }
         });

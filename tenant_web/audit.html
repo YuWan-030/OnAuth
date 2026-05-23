@@ -2,14 +2,11 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>审计日志中心 - OnAuth 云中台</title>
+    <title>租户操作日志 - OnAuth</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
     <style>
-        /* ==========================================================================
-           全维中台扁平化风格适配
-           ========================================================================== */
         body {
             background-color: #f3f4f6;
             padding: 15px;
@@ -18,8 +15,6 @@
             -webkit-font-smoothing: antialiased;
         }
         .layui-fluid { padding: 0; }
-
-        /* 卡片轻量化 */
         .layui-card {
             border-radius: 8px;
             border: 1px solid #ebeef5;
@@ -35,8 +30,6 @@
             line-height: 48px;
         }
         .layui-card-body { padding: 16px; }
-
-        /* 检索条件舱 */
         .search-panel {
             background: #fff;
             padding: 16px;
@@ -45,8 +38,6 @@
             border: 1px solid #ebeef5;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
-
-        /* 输入框、下拉框与日期选择 */
         .layui-input, .layui-form-select input {
             border-radius: 6px !important;
             border-color: #d1d5db !important;
@@ -57,8 +48,6 @@
             border-color: #2563eb !important;
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
         }
-
-        /* 检索按钮 */
         .btn-search-theme {
             background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
             color: #fff !important;
@@ -71,80 +60,56 @@
             font-weight: 500;
             box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
         }
-
-        /* ==========================================================================
-           数据网格、轻标签与高亮显示
-           ========================================================================== */
         .layui-table-view { border: 1px solid #ebeef5 !important; border-radius: 6px !important; overflow: hidden; }
         .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
-
-        /* 请求方法轻标签 */
         .method-tag { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; font-family: monospace; margin-right: 4px; }
         .method-get { background: #f0fdf4; color: #16a34a; }
         .method-post { background: #eff6ff; color: #2563eb; }
         .method-delete { background: #fef2f2; color: #ef4444; }
         .method-put { background: #fff7ed; color: #ea580c; }
-
-        /* 安全级别状态 */
         .level-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
         .level-info { background-color: #f1f5f9; color: #475569; }
         .level-warn { background-color: #fef3c7; color: #d97706; }
         .level-risk { background-color: #fee2e2; color: #ef4444; }
-
-        /* 行内 Outline 查看详情按钮 */
         .btn-action-view { background: transparent !important; color: #2563eb !important; border: 1px solid rgba(37,99,235,0.2) !important; border-radius: 4px !important; padding: 0 8px !important; font-size: 12px !important; transition: all 0.2s; }
         .btn-action-view:hover { background: #eff6ff !important; border-color: #2563eb !important; }
-
-        /* 深度审计 JSON 面板 */
         .json-block { background: #0f172a; color: #38bdf8; padding: 14px; border-radius: 6px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; }
     </style>
 </head>
 <body>
 
 <div class="layui-fluid">
-    <!-- 🔍 过滤、穿透检索舱 -->
     <div class="search-panel layui-form">
         <div class="layui-row layui-col-space10">
             <div class="layui-col-md3">
-                <input type="text" name="operator" placeholder="👤 操作人账号 / 凭证 ID..." class="layui-input">
-            </div>
-            <div class="layui-col-md2">
-                <select name="scope">
-                    <option value="system_admin">系统管理员日志</option>
-                    <option value="tenant_admin">租户管理员日志</option>
-                </select>
+                <input type="text" name="operator" placeholder="👤 操作人账号" class="layui-input">
             </div>
             <div class="layui-col-md2">
                 <select name="level">
-                    <option value="">全部审计级别</option>
+                    <option value="">全部级别</option>
                     <option value="INFO">常规操作 (INFO)</option>
                     <option value="WARN">配置变更 (WARN)</option>
                     <option value="RISK">高危风险 (RISK)</option>
                 </select>
             </div>
-            <div class="layui-col-md3">
+            <div class="layui-col-md4">
                 <input type="text" name="date_range" id="date-range" placeholder="📅 操作时间跨度过滤" class="layui-input" readonly>
             </div>
-            <div class="layui-col-md2">
-                <button class="layui-btn btn-search-theme" lay-submit lay-filter="search-submit">执行审计检索</button>
+            <div class="layui-col-md3">
+                <button class="layui-btn btn-search-theme" lay-submit lay-filter="search-submit">执行检索</button>
             </div>
         </div>
     </div>
 
-    <!-- 📊 日志流阵列矩阵 -->
     <div class="layui-card">
-        <div class="layui-card-header">🛡️ 系统管理员操作日志</div>
+        <div class="layui-card-header">📒 租户管理员操作日志</div>
         <div class="layui-card-body">
             <table id="audit-table" lay-filter="audit-table"></table>
         </div>
     </div>
 </div>
 
-<!-- ==========================================================================
-   表格动态加工渲染模板轴
-   ========================================================================== */ -->
 {% raw %}
-<!-- 请求方法与路由组装模板 -->
 <script type="text/html" id="tpl-path">
     <div style="display: flex; align-items: center; font-family: monospace;">
         {{# if(d.method === 'GET'){ }} <span class="method-tag method-get">GET</span> {{# } }}
@@ -155,7 +120,6 @@
     </div>
 </script>
 
-<!-- 风险级别模板 -->
 <script type="text/html" id="tpl-level">
     {{# if(d.level === 'RISK'){ }}
         <span class="level-badge level-risk">高危熔断</span>
@@ -166,7 +130,6 @@
     {{# } }}
 </script>
 
-<!-- 操作动作控制链 -->
 <script type="text/html" id="tpl-ops">
     <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
         <button class="layui-btn layui-btn-xs btn-action-view" lay-event="inspect">核验报文</button>
@@ -176,15 +139,13 @@
 
 <script>
 layui.use(['table', 'form', 'laydate', 'layer'], function(){
-    const table = layui.table, form = layui.form, laydate = layui.laydate, layer = layui.layer, $ = layui.$;
+    const table = layui.table, form = layui.form, laydate = layui.laydate, layer = layui.layer;
 
-    // 初始化日期选择器周期
     laydate.render({ elem: '#date-range', range: true });
 
-    // 🔗 操作日志拉取：对接后端的 /admin/audit/logs 路由
     table.render({
         elem: '#audit-table',
-        url: '/admin/audit/logs',
+        url: '/tenant/audit/logs',
         method: 'GET',
         page: true,
         limit: 15,
@@ -195,40 +156,38 @@ layui.use(['table', 'form', 'laydate', 'layer'], function(){
         }),
         cols: [[
             {field: 'id', title: '流水ID', width: 80, align: 'center', sort: true},
-            {field: 'operator', title: '操作账号/凭证', width: 140, align: 'center'},
-            {field: 'action', title: '审计事务行为', minWidth: 180},
-            {field: 'path', title: '请求链路 (Gateway)', width: 260, templet: '#tpl-path'},
+            {field: 'operator', title: '操作账号', width: 140, align: 'center'},
+            {field: 'action', title: '操作行为', minWidth: 180},
+            {field: 'path', title: '请求链路', width: 260, templet: '#tpl-path'},
             {field: 'ip', title: '源IP地址', width: 130, align: 'center'},
-            {field: 'level', title: '审计级别', width: 110, align: 'center', templet: '#tpl-level'},
-            {field: 'created_at', title: '时序戳归档', width: 170, align: 'center', sort: true},
-            {title: '全数控制', width: 100, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
+            {field: 'level', title: '级别', width: 110, align: 'center', templet: '#tpl-level'},
+            {field: 'created_at', title: '时间', width: 170, align: 'center', sort: true},
+            {title: '详情', width: 100, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
         ]],
         error: function() {
             layer.msg('日志拉取失败，请检查权限或后端服务状态', {icon: 2});
         }
     });
 
-    // 搜索过滤重载总线
     form.on('submit(search-submit)', d => {
         table.reload('audit-table', {where: d.field, page: {curr: 1}});
         return false;
     });
 
-    // 行内控制事件：拉起安全核验抽屉 (Inspector Layer)
     table.on('tool(audit-table)', obj => {
         const d = obj.data;
         if(obj.event === 'inspect'){
             layer.open({
                 type: 1,
-                title: `🔍 审计核验快照 [流水号: ${d.id}]`,
+                title: `日志详情 [${d.id}]`,
                 area: ['520px', '400px'],
-                offset: 'r', // 右侧滑出抽屉流质感
+                offset: 'r',
                 anim: 'slideLeft',
                 shadeClose: true,
                 content: `<div style="padding: 20px;">
                             <p style="font-size:13px; color:#64748b; margin-bottom:10px;"><strong>关联事务：</strong>${d.action}</p>
-                            <p style="font-size:13px; color:#64748b; margin-bottom:15px;"><strong>报文 Payload 快照 (JSON)：</strong></p>
-                            <div class="json-block">${d.payload || '{\n  "message": "本次原子级操作未携带可序列化的 Request Body"\n}'}</div>
+                            <p style="font-size:13px; color:#64748b; margin-bottom:15px;"><strong>报文 Payload：</strong></p>
+                            <div class="json-block">${d.payload || '{\n  "message": "本次操作未携带可序列化的 Request Body"\n}'}</div>
                           </div>`
             });
         }
@@ -237,3 +196,4 @@ layui.use(['table', 'form', 'laydate', 'layer'], function(){
 </script>
 </body>
 </html>
+

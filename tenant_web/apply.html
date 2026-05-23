@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>申请创建空间 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <style>
+        body { margin: 0; padding: 16px; background: #f3f4f6; font-family: "Microsoft YaHei", sans-serif; }
+        .card { background:#fff; border:1px solid #ebeef5; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+        .title { font-size: 16px; font-weight: 700; color:#0f172a; margin-bottom: 10px; }
+        .tip { font-size: 12px; color:#64748b; line-height: 1.7; margin-bottom: 16px; }
+        .btn-theme { background: linear-gradient(135deg,#2563eb,#1d4ed8) !important; border: none !important; border-radius: 6px !important; }
+        .layui-form-label { width: 100px; }
+        .layui-input-block { margin-left: 130px; }
+        .badge { display:inline-block; padding:4px 10px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:12px; font-weight:700; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="title">申请创建租户空间</div>
+    <div class="badge">审核通过后可创建应用与接入 Webhook</div>
+    <div class="tip">如果你当前没有空间，请先提交申请；审核通过后才能创建应用、签发凭证以及接入 Webhook。</div>
+
+    <form class="layui-form" lay-filter="applyForm">
+        <div class="layui-form-item">
+            <label class="layui-form-label">空间名称</label>
+            <div class="layui-input-block">
+                <input type="text" name="group_name" lay-verify="required" placeholder="请输入空间名称" class="layui-input">
+            </div>
+        </div>
+        <div class="layui-form-item layui-form-text">
+            <label class="layui-form-label">空间说明</label>
+            <div class="layui-input-block">
+                <textarea name="description" placeholder="可选：填写空间用途、团队说明" class="layui-textarea"></textarea>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <div class="layui-input-block">
+                <button class="layui-btn btn-theme" lay-submit lay-filter="submitApply">提交申请</button>
+                <a class="layui-btn layui-btn-primary" href="/tenant/error">查看空间状态</a>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
+<script>
+layui.use(['form','layer'], function(){
+    const form = layui.form, layer = layui.layer, $ = layui.$;
+
+    $.ajaxSetup({
+        complete: function(xhr) {
+            const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
+            if (xhr.status === 401) {
+                window.top.location.href = '/login';
+                return;
+            }
+            if (xhr.status === 403 && detail) {
+                layer.msg(detail, {icon: 2, time: 2500});
+            }
+        }
+    });
+
+    form.on('submit(submitApply)', function(data){
+        const payload = {
+            group_name: (data.field.group_name || '').trim(),
+            description: (data.field.description || '').trim()
+        };
+        if (!payload.group_name) {
+            layer.msg('空间名称不能为空', {icon: 2});
+            return false;
+        }
+        $.ajax({
+            url: '/tenant/space/apply',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: function(res){
+                if (res.status === 'success') {
+                    layer.alert(`申请已提交，空间识别码：<b>${res.data?.group_code || ''}</b>`, {icon: 1, title: '提交成功'}, function(){
+                        window.location.href = '/tenant/error';
+                    });
+                } else {
+                    layer.msg(res.message || '申请失败', {icon: 2});
+                }
+            },
+            error: function(xhr){
+                layer.msg(xhr.responseJSON?.detail || '申请失败', {icon: 2});
+            }
+        });
+        return false;
+    });
+});
+</script>
+</body>
+</html>
+

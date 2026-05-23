@@ -229,6 +229,8 @@ button:disabled {
         <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
         <input type="hidden" name="scope" value="{{ scope }}">
         <input type="hidden" name="state" value="{{ state }}">
+        <input type="hidden" name="code_challenge" value="{{ code_challenge }}">
+        <input type="hidden" name="code_challenge_method" value="{{ code_challenge_method }}">
 
         <div class="input-group">
             <label class="label">用户名</label>
@@ -238,6 +240,15 @@ button:disabled {
         <div class="input-group">
             <label class="label">密码</label>
             <input class="input" type="password" name="password" placeholder="请输入密码" required>
+        </div>
+
+        <div class="input-group" id="captchaGroup" style="display:none;">
+            <label class="label">验证码</label>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <input class="input" type="text" name="captcha_code" placeholder="请输入验证码" style="flex:1;">
+                <input type="hidden" name="captcha_token" id="captchaToken">
+                <img id="captchaImage" alt="验证码" style="height:36px; border-radius:8px; cursor:pointer;">
+            </div>
         </div>
 
         <button type="submit" id="submitBtn">安全登录</button>
@@ -251,6 +262,24 @@ button:disabled {
 </div>
 
 <script>
+const captchaGroup = document.getElementById("captchaGroup");
+const captchaImage = document.getElementById("captchaImage");
+const captchaToken = document.getElementById("captchaToken");
+
+const loadCaptcha = async () => {
+    const response = await fetch("/system/captcha");
+    const result = await response.json();
+    if (result && result.code === 200) {
+        captchaToken.value = result.data.token;
+        captchaImage.src = result.data.image;
+        captchaGroup.style.display = "block";
+    }
+};
+
+captchaImage.addEventListener("click", () => {
+    loadCaptcha();
+});
+
 document.getElementById("loginForm").addEventListener("submit", async function(e) {
     e.preventDefault(); // 🛑 核心拦截点：阻止浏览器原生表单提交刷新页面
 
@@ -289,8 +318,14 @@ document.getElementById("loginForm").addEventListener("submit", async function(e
             submitBtn.disabled = false;
             submitBtn.innerText = "安全登录";
 
+            if (result.captcha_required) {
+                captchaToken.value = result.captcha_token || "";
+                captchaImage.src = result.captcha_image || "";
+                captchaGroup.style.display = "block";
+            }
+
             // 流式灌入通知内容
-            errorText.innerText = result.detail || "认证网关发生未知异常";
+            errorText.innerText = result.message || result.detail || "认证网关发生未知异常";
             errorBox.style.display = "flex";
 
             // 强行触发 CSS 的抖动特效

@@ -76,12 +76,19 @@ class DeveloperGroup(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     group_name = Column(String(64), nullable=False, unique=True, comment="工作室名称")
+    group_code = Column(String(32), nullable=True, unique=True, index=True, comment="租户空间唯一识别码")
     description = Column(String(255), nullable=True)
     owner = Column(String(64), default="admin")
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String(20), default="pending", index=True, comment="租户空间状态: pending/approved/rejected")
+    review_note = Column(String(255), nullable=True, comment="���批备注")
+    reviewed_at = Column(DateTime, nullable=True, comment="审批时间")
+    expire_at = Column(DateTime, nullable=True, comment="空间到期时间")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.now)
 
     apps = relationship("App", back_populates="group", cascade="all, delete-orphan")
+    users = relationship("User", back_populates="group", foreign_keys="User.group_id")
 
 
 class App(Base):
@@ -133,6 +140,24 @@ class AppDevice(Base):
     credential = relationship("AppCredential", back_populates="devices")
 
 
+class OperationLog(Base):
+    """操作日志：区分系统管理员与租户管理员"""
+    __tablename__ = "operation_logs"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    actor_id = Column(Integer, nullable=False, index=True)
+    actor_username = Column(String(64), nullable=False, index=True)
+    actor_role = Column(String(32), nullable=False, index=True)  # system_admin / tenant_admin
+    group_id = Column(Integer, nullable=True, index=True)
+    method = Column(String(10), nullable=False)
+    path = Column(String(255), nullable=False)
+    action = Column(String(255), nullable=False)
+    level = Column(String(10), default="INFO")
+    ip = Column(String(64), nullable=True)
+    payload = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.now, index=True)
+
+
 # ==================== 🔐 RBAC 核心账号与分离权限体系 ====================
 
 class Permission(Base):
@@ -172,10 +197,12 @@ class User(Base):
     nickname = Column(String(64), nullable=True, comment="用户昵称")
     password_hash = Column(String(128), nullable=False, comment="密码哈希值")
     email = Column(String(128), nullable=True, comment="用户邮箱")
+    group_id = Column(Integer, ForeignKey("developer_groups.id", ondelete="SET NULL"), nullable=True, index=True)
 
     is_active = Column(Boolean, default=True, comment="账户是否激活，False 代表被冻结")
     created_at = Column(DateTime, default=datetime.datetime.now, comment="账户创建时间")
 
+    group = relationship("DeveloperGroup", back_populates="users", foreign_keys=[group_id])
     # 多对多关联：角色组
     roles = relationship("Role", secondary=user_role_association)
     # 多对多关联：额外独立赋权
@@ -211,3 +238,73 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# ==================== 🧭 风控规则与事件流 ====================
+
+class RiskRule(Base):
+    __tablename__ = "risk_rules"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String(128), nullable=False, index=True)
+    rule_type = Column(String(64), default="GENERIC", index=True)
+    target_key = Column(String(128), nullable=True)
+    match_key = Column(Text, nullable=False)
+    threshold_count = Column(Integer, default=1)
+    threshold_window = Column(Integer, default=60)
+    action = Column(String(16), default="BLOCK", index=True)
+    status = Column(Boolean, default=True)
+    creator_id = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+    events = relationship("RiskEvent", back_populates="rule", cascade="all, delete-orphan")
+
+
+class RiskEvent(Base):
+    __tablename__ = "risk_events"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    rule_id = Column(Integer, ForeignKey("risk_rules.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String(16), default="BLOCK", index=True)
+    latency_ms = Column(Integer, default=0)
+    ip = Column(String(64), nullable=True)
+    path = Column(String(255), nullable=True)
+    risk_level = Column(String(16), default="medium")
+    created_at = Column(DateTime, default=datetime.datetime.now, index=True)
+
+    rule = relationship("RiskRule", back_populates="events")
+
+
+class RiskGlobalSetting(Base):
+    __tablename__ = "risk_settings"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    is_melt = Column(Boolean, default=False)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+class SystemSiteSetting(Base):
+    __tablename__ = "system_site_settings"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    site_name = Column(String(128), default="OnAuth 云中台")
+    domain = Column(String(255), default="https://localhost:8000")
+    copyright = Column(String(500), nullable=True)
+    updated_by = Column(String(64), nullable=True)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+class SystemAnnouncement(Base):
+    __tablename__ = "system_announcements"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    type = Column(String(32), default="notice", index=True)
+    is_pinned = Column(Boolean, default=False)
+    status = Column(String(32), default="published", index=True)
+    creator = Column(String(64), default="system")
+    creator_id = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.datetime.now, index=True)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)

@@ -205,49 +205,154 @@
 layui.use(['table', 'form', 'layer'], function(){
     const table = layui.table, form = layui.form, layer = layui.layer, $ = layui.$;
 
-    // 🔗 策略数据网格拉取：对接后端的 /system/risk/rules
+    const loadStats = () => {
+        $.get('/system/risk/stats', res => {
+            if (!res || res.code !== 200) {
+                return;
+            }
+            const blocksToday = res.data?.blocks_today ?? 0;
+            const rulesActive = res.data?.rules_active ?? 0;
+            const avgLatency = res.data?.avg_latency_ms ?? 0;
+            $('#stat-blocks').text(Number(blocksToday).toLocaleString());
+            $('#stat-rules').text(Number(rulesActive).toLocaleString());
+            $('#stat-latency').text(`${avgLatency} ms`);
+        });
+    };
+
+    const loadGlobalMelt = () => {
+        $.get('/system/risk/global_melt', res => {
+            if (!res || res.code !== 200) {
+                return;
+            }
+            const isActive = !!res.data?.is_active;
+            const $switch = $('input[name="global_melt"]');
+            $switch.prop('checked', isActive);
+            form.render('checkbox');
+        });
+    };
+
+    const openRuleModal = (mode, data = null) => {
+        const isEdit = mode === 'edit';
+        const title = isEdit ? '🛠️ 编辑风控规则' : '💡 创建自适应全维风控策略';
+        layer.open({
+            type: 1,
+            title,
+            area: ['520px', '520px'],
+            content: `
+                <form class="layui-form" style="padding: 20px;" lay-filter="risk-rule-form">
+                    <input type="hidden" name="id">
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">策略名称</label>
+                        <div class="layui-input-block" style="margin-left:105px;">
+                            <input type="text" name="name" lay-verify="required" placeholder="如: 账密输错限流" class="layui-input">
+                        </div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">规则类型</label>
+                        <div class="layui-input-block" style="margin-left:105px;">
+                            <select name="rule_type" lay-verify="required">
+                                <option value="GENERIC">通用规则 (GENERIC)</option>
+                                <option value="LOGIN_FAIL_CAPTCHA">登录失败触发验证码</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">规则目标</label>
+                        <div class="layui-input-block" style="margin-left:105px;">
+                            <input type="text" name="target_key" placeholder="如: username+ip" class="layui-input">
+                        </div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">表达式配置</label>
+                        <div class="layui-input-block" style="margin-left:105px;">
+                             <input type="text" name="match_key" lay-verify="required" placeholder="例如: startswith(ip, '10.') or contains(lower(user_agent), 'bot')" class="layui-input" style="font-family:monospace;">
+                             <div style="font-size:12px;color:#94a3b8;margin-top:6px;line-height:1.7;">
+                                 支持变量: username, ip, path, user_agent, browser, os, location, is_mobile, fail_count, req.ip 等<br>
+                                 支持函数: contains(), startswith(), endswith(), regex(), lower(), upper(), len()
+                             </div>
+                        </div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">风控阈值</label>
+                        <div class="layui-input-block" style="margin-left:105px; display:flex; gap:10px;">
+                            <input type="number" name="threshold_count" min="1" lay-verify="required" placeholder="次数" class="layui-input" style="width:50%;">
+                            <input type="number" name="threshold_window" min="1" lay-verify="required" placeholder="时间(秒)" class="layui-input" style="width:50%;">
+                        </div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">阻断手段</label>
+                        <div class="layui-input-block" style="margin-left:105px;">
+                            <select name="action" lay-verify="required">
+                                <option value="BLOCK">直接封锁访问 (BLOCK)</option>
+                                <option value="MFA">强化两步MFA认证 (MFA)</option>
+                                <option value="CAPTCHA">滑块拦截核验 (CAPTCHA)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" style="width:90px;padding:9px 0;">启用状态</label>
+                        <div class="layui-input-block" style="margin-left:105px;">
+                            <input type="checkbox" name="status" lay-skin="switch" lay-text="启用|停用">
+                        </div>
+                    </div>
+                    <div class="layui-form-item" style="text-align: right; margin-top:30px;">
+                        <button class="layui-btn btn-theme-primary" lay-submit lay-filter="risk-rule-submit">${isEdit ? '保存修改' : '编译并同步策略群'}</button>
+                    </div>
+                </form>
+            `,
+            success: function(){
+                if (data) {
+                    form.val('risk-rule-form', {
+                        id: data.id,
+                        name: data.name,
+                        rule_type: data.rule_type || 'GENERIC',
+                        target_key: data.target_key || '',
+                        match_key: data.match_key,
+                        threshold_count: data.threshold_count,
+                        threshold_window: data.threshold_window,
+                        action: data.action,
+                        status: data.status
+                    });
+                }
+                form.render();
+            }
+        });
+    };
+
     table.render({
         elem: '#risk-table',
+        id: 'risk-table',
         url: '/system/risk/rules',
         method: 'GET',
         page: true,
         limit: 10,
+        request: {
+            pageName: 'page',
+            limitName: 'limit'
+        },
         parseData: res => ({
             code: res.code === 200 ? 0 : (res.code || 500),
             count: res.count || res.total || 0,
-            data: res.data
+            data: res.data || []
         }),
         cols: [[
             {field: 'id', title: '策略ID', width: 80, align: 'center', sort: true},
             {field: 'name', title: '风控策略定义', width: 180, fontStyle: 'font-weight:600'},
+            {field: 'rule_type', title: '规则类型', width: 160, align: 'center'},
             {field: 'match_key', title: '特征匹配字段 (Expression)', minWidth: 200, style: 'font-family:monospace; color:#475569;'},
             {field: 'threshold', title: '频控阈值', width: 130, align: 'center', templet: d => `<span style="font-family: monospace;">${d.threshold_count} 次 / ${d.threshold_window} 秒</span>`},
             {field: 'action', title: '风控处置手段', width: 130, align: 'center', templet: '#tpl-action'},
             {field: 'status', title: '引擎态', width: 100, align: 'center', templet: '#tpl-status'},
             {field: 'updated_at', title: '最后同步时间', width: 170, align: 'center'},
             {title: '全数控制', width: 130, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
-        ]],
-        error: function() {
-            // 💡 离线开发沙盒环境下的高保真数据降级兜底模拟
-            table.reload('risk-table', {
-                url: '',
-                data: [
-                    {id: 101, name: "境外恶意撞库防御", match_key: "req.geo != 'CN' && req.path == '/login'", threshold_count: 5, threshold_window: 60, action: "BLOCK", status: true, updated_at: "2026-05-20 00:22:11"},
-                    {id: 102, name: "接口越权暴力遍历", match_key: "req.rate_limit_key == 'ip' && req.is_api", threshold_count: 120, threshold_window: 10, action: "CAPTCHA", status: true, updated_at: "2026-05-19 23:14:02"},
-                    {id: 103, name: "提现事务敏感操作强化", match_key: "req.path == '/wallet/withdraw' && req.amount > 50000", threshold_count: 1, threshold_window: 1, action: "MFA", status: true, updated_at: "2026-05-19 14:05:55"},
-                    {id: 104, name: "第三方Webhook高频恶意探测", match_key: "req.headers['user-agent'].contains('Go-http-client')", threshold_count: 30, threshold_window: 5, action: "BLOCK", status: false, updated_at: "2026-05-18 11:42:19"}
-                ]
-            });
-        }
+        ]]
     });
 
-    // 搜索过滤重载总线
     form.on('submit(search-submit)', d => {
         table.reload('risk-table', {where: d.field, page: {curr: 1}});
         return false;
     });
 
-    // ⚡ 全局熔断保护开关风控
     form.on('switch(global-melt)', function(data){
         const isMelt = data.elem.checked;
         layer.confirm(isMelt ? '⚠️ 警告：激活全局自动熔断后，策略引擎将对所有判定为RISK的流量实施极严无差别封锁，是否启动？' : '确认关闭全局熔断保护保护，系统恢复正常流控策略？', {
@@ -255,82 +360,145 @@ layui.use(['table', 'form', 'layer'], function(){
             btn: ['确认签发', '取消'],
             success: (layero) => { if(isMelt) layero.find('.layui-layer-btn0').css('background-color', '#ef4444'); }
         }, function(index){
-            layer.close(index);
-            layer.msg(isMelt ? '🛑 全局最高防御熔断拦截已紧急升起！' : '🟢 全局熔断阻断解除，系统进入标准策略自适应状态', {icon: isMelt ? 2 : 1});
+            $.ajax({
+                url: '/system/risk/global_melt',
+                method: 'PUT',
+                contentType: 'application/json',
+                data: JSON.stringify({is_active: isMelt}),
+                success: function(res){
+                    if (res && res.code === 200) {
+                        layer.close(index);
+                        layer.msg(isMelt ? '🛑 全局最高防御熔断拦截已紧急升起！' : '🟢 全局熔断阻断解除，系统进入标准策略自适应状态', {icon: isMelt ? 2 : 1});
+                    } else {
+                        layer.msg('全局熔断状态更新失败', {icon: 2});
+                        data.elem.checked = !isMelt;
+                        form.render('checkbox');
+                    }
+                },
+                error: function(){
+                    layer.msg('全局熔断状态更新失败', {icon: 2});
+                    data.elem.checked = !isMelt;
+                    form.render('checkbox');
+                }
+            });
         }, function(){
             data.elem.checked = !isMelt;
             form.render('checkbox');
         });
     });
 
-    // 🔄 行内规则快速 激活/挂起 开关
     form.on('switch(status-switch)', function(obj){
         const ruleId = this.value;
         const isActive = obj.elem.checked;
-        layer.msg(`策略 [ID: ${ruleId}] 已${isActive ? '动态激活实时计算' : '挂起，规则失效'}`, {icon: 1, time: 1000});
-    });
-
-    // ➕ 新增规则弹窗模态层
-    $('#btn-add-rule').on('click', function(){
-        layer.open({
-            type: 1,
-            title: '💡 创建自适应全维风控策略',
-            area: ['500px', '420px'],
-            content: `
-                <div class="layui-form" style="padding: 20px;">
-                    <div class="layui-form-item">
-                        <label class="layui-form-label" style="width:90px;padding:9px 0;">策略名称</label>
-                        <div class="layui-input-block" style="margin-left:105px;">
-                            <input type="text" placeholder="如: 账密输错限流" class="layui-input">
-                        </div>
-                    </div>
-                    <div class="layui-form-item">
-                        <label class="layui-form-label" style="width:90px;padding:9px 0;">表达式配置</label>
-                        <div class="layui-input-block" style="margin-left:105px;">
-                            <input type="text" placeholder="例如: req.ip == '1.1.1.1'" class="layui-input" style="font-family:monospace;">
-                        </div>
-                    </div>
-                    <div class="layui-form-item">
-                        <label class="layui-form-label" style="width:90px;padding:9px 0;">风控阈值</label>
-                        <div class="layui-input-block" style="margin-left:105px; display:flex; gap:10px;">
-                            <input type="number" placeholder="次数" class="layui-input" style="width:50%;">
-                            <input type="number" placeholder="时间(秒)" class="layui-input" style="width:50%;">
-                        </div>
-                    </div>
-                    <div class="layui-form-item">
-                        <label class="layui-form-label" style="width:90px;padding:9px 0;">阻断手段</label>
-                        <div class="layui-input-block" style="margin-left:105px;">
-                            <select name="pop_action">
-                                <option value="BLOCK">直接封锁访问 (BLOCK)</option>
-                                <option value="MFA">强化两步MFA认证 (MFA)</option>
-                                <option value="CAPTCHA">滑块拦截核验 (CAPTCHA)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="layui-form-item" style="text-align: right; margin-top:30px;">
-                        <button class="layui-btn btn-theme-primary" onclick="layer.closeAll(); layer.msg('策略下发成功，已推送到边缘节点群', {icon:1});">编译并同步策略群</button>
-                    </div>
-                </div>
-            `,
-            success: function(){
-                form.render('select');
+        $.ajax({
+            url: `/system/risk/rules/${ruleId}/status`,
+            method: 'PATCH',
+            contentType: 'application/json',
+            data: JSON.stringify({status: isActive}),
+            success: function(res){
+                if (res && res.code === 200) {
+                    layer.msg(`策略 [ID: ${ruleId}] 已${isActive ? '动态激活实时计算' : '挂起，规则失效'}`, {icon: 1, time: 1000});
+                } else {
+                    layer.msg('规则状态更新失败', {icon: 2});
+                    obj.elem.checked = !isActive;
+                    form.render('checkbox');
+                }
+            },
+            error: function(){
+                layer.msg('规则状态更新失败', {icon: 2});
+                obj.elem.checked = !isActive;
+                form.render('checkbox');
             }
         });
     });
 
-    // 🛠️ 行内事件：编辑与物理擦除
+    $('#btn-add-rule').on('click', function(){
+        openRuleModal('create');
+    });
+
+    form.on('submit(risk-rule-submit)', function(d){
+        const ruleId = d.field.id;
+        const payload = {
+            name: d.field.name,
+            rule_type: d.field.rule_type,
+            target_key: d.field.target_key || null,
+            match_key: d.field.match_key,
+            threshold_count: Number(d.field.threshold_count),
+            threshold_window: Number(d.field.threshold_window),
+            action: d.field.action,
+            status: d.field.status === 'on'
+        };
+
+        const submitRule = () => $.ajax({
+            url: ruleId ? `/system/risk/rules/${ruleId}` : '/system/risk/rules',
+            method: ruleId ? 'PUT' : 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: function(res){
+                if (res && res.code === 200) {
+                    layer.closeAll();
+                    table.reload('risk-table');
+                    loadStats();
+                    layer.msg(ruleId ? '规则已更新' : '规则已创建', {icon: 1});
+                } else {
+                    layer.msg(res?.message || '规则保存失败', {icon: 2});
+                }
+            },
+            error: function(xhr){
+                const err = xhr.responseJSON ? (xhr.responseJSON.detail || xhr.responseJSON.message) : '规则保存失败';
+                layer.msg(err, {icon: 2});
+            }
+        });
+
+        $.ajax({
+            url: '/system/risk/expression/validate',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ match_key: payload.match_key }),
+            success: function(res){
+                if (res && res.code === 200) {
+                    submitRule();
+                } else {
+                    layer.msg(res?.message || '表达式校验失败', {icon: 2});
+                }
+            },
+            error: function(xhr){
+                const err = xhr.responseJSON ? (xhr.responseJSON.detail || xhr.responseJSON.message) : '表达式校验失败';
+                layer.msg(err, {icon: 2});
+            }
+        });
+        return false;
+    });
+
     table.on('tool(risk-table)', obj => {
         const d = obj.data;
         if(obj.event === 'delete'){
             layer.confirm(`⚠️ 确认为引擎彻底注销风控策略：[ ${d.name} ] 吗？`, {title:'策略销毁令'}, i => {
-                obj.del();
-                layer.close(i);
-                layer.msg('策略配置已从 Redis/内存集群中物理擦除', {icon: 1});
+                $.ajax({
+                    url: `/system/risk/rules/${d.id}`,
+                    method: 'DELETE',
+                    success: function(res){
+                        if (res && res.code === 200) {
+                            obj.del();
+                            layer.close(i);
+                            loadStats();
+                            layer.msg('策略配置已从集群中物理擦除', {icon: 1});
+                        } else {
+                            layer.msg('规则删除失败', {icon: 2});
+                        }
+                    },
+                    error: function(){
+                        layer.msg('规则删除失败', {icon: 2});
+                    }
+                });
             });
         } else if(obj.event === 'edit'){
-            layer.msg(`已同步拉取规则 [ID: ${d.id}] 的 DSL 语法树，请进入弹窗重新编译。`);
+            openRuleModal('edit', d);
         }
     });
+
+    loadStats();
+    loadGlobalMelt();
 });
 </script>
 </body>

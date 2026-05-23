@@ -9,8 +9,27 @@ import time
 
 router = APIRouter(tags=["【管理接口】权限类核心网关"])
 
-# 🌟 全局定义 7 个系统终极保护、绝对不可删除和必须被兜底的黄金根权限标识
-PROTECTED_PERMS = ["read", "write", "admin:read", "admin:write", "admin:create", "admin:delete", "admin:update"]
+# 🌟 全局定义系统默认初始化权限节点：这些节点均属于平台基础能力，禁止删除
+PROTECTED_PERMS = [
+    "read",
+    "write",
+    "tenant:user:create",
+    "tenant:app:read",
+    "tenant:app:create",
+    "tenant:credential:read",
+    "tenant:credential:create",
+    "tenant:space:review",
+    "webhook:create",
+    "webhook:update",
+    "webhook:list",
+    "webhook:delete",
+    "webhook:logs",
+    "admin:read",
+    "admin:write",
+    "admin:create",
+    "admin:delete",
+    "admin:update"
+]
 
 
 # ============================ 权限组增删改查核心接口 ============================
@@ -34,19 +53,20 @@ def update_permission_group(
 
     # 如果要修改角色的唯一标识符（name），需要检查是否跟别的角色重名
     if payload.name and payload.name != role.name:
+        new_name = payload.name
         if is_super_admin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="核心熔断防御：系统最高管理组标识（name）属于底层安全基石，禁止被变更"
             )
 
-        existing_role = db.query(Role).filter(Role.name == payload.name).first()
+        existing_role = db.query(Role).filter(Role.name == new_name).first()
         if existing_role:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"更新失败：权限组标识 [{payload.name}] 已被其他分组占用"
+                detail=f"更新失败：权限组标识 [{new_name}] 已被其他分组占用"
             )
-        role.name = payload.name
+        role.name = new_name
 
     if payload.description is not None:
         role.description = payload.description
@@ -184,16 +204,17 @@ def create_permission_group(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="创建失败：权限分组标识（name）不能为空"
         )
+    perm_name = payload.name
 
-    existing_role = db.query(Role).filter(Role.name == payload.name).first()
+    existing_role = db.query(Role).filter(Role.name == perm_name).first()
     if existing_role:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"创建失败：权限分组标识 [{payload.name}] 已被其他分组占用"
+            detail=f"创建失败：权限分组标识 [{perm_name}] 已被其他分组占用"
         )
 
     new_role = Role(
-        name=payload.name,
+        name=perm_name,
         description=payload.description,
         is_active=getattr(payload, 'is_active', True)
     )
@@ -352,27 +373,10 @@ def delete_permission_node(
             detail=f"删除失败：未找到 ID 为 [{permission_id}] 的权限节点"
         )
 
-    # 🛡️ 核心硬熔断拦截：如果当前尝试删除的节点属于默认 7 个系统基石特权之一，直接拦截拒绝！
-    if perm.name in PROTECTED_PERMS:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"核心熔断防御：节点标识 [{perm.name}] 属于系统核心授信底层底座，属于非可删除资产！"
-        )
-
-    try:
-        db.delete(perm)
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"数据库删除异常，删除事务已回滚: {str(e)}"
-        )
-
-    return {
-        "status": "success",
-        "message": f"权限节点 [{perm.name}] 已成功删除！"
-    }
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="系统策略：所有权限节点均为不可删除资产，如需调整请改用停用角色或修改授权关系"
+    )
 
 
 # ============================ 权限节点查询接口 ============================
@@ -389,7 +393,8 @@ def list_permission_nodes(
             {
                 "permission_id": perm.id,
                 "name": perm.name,
-                "description": perm.description
+                "description": perm.description,
+                "parent_id": perm.parent_id
             }
             for perm in permissions
         ]

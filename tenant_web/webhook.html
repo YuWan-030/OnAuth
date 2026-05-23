@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webhook 接入 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <style>
+        body { margin: 0; padding: 16px; background: #f3f4f6; font-family: "Microsoft YaHei", sans-serif; }
+        .card { background:#fff; border:1px solid #ebeef5; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+        .btn-theme { background: linear-gradient(135deg,#2563eb,#1d4ed8) !important; border:none !important; border-radius:6px !important; }
+        .layui-table th { background:#f8fafc !important; color:#475569 !important; }
+        .form-box { padding: 14px 16px 0 6px; }
+        .layui-form-label { width: 100px; }
+        .layui-input-block { margin-left: 130px; }
+        .tip { color:#64748b; font-size:12px; line-height:1.7; }
+        .event-grid { display:grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding-top: 6px; }
+        .tag { display:inline-block; padding:2px 6px; border-radius:4px; background:#f1f5f9; border:1px solid #e2e8f0; font-family: monospace; font-size:11px; margin-right:4px; }
+        .note { display:inline-block; margin-top: 4px; padding: 4px 10px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:12px; font-weight:700; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+        <div>
+            <div style="font-size:16px; font-weight:700; color:#0f172a;">Webhook 接入中心</div>
+            <div class="tip">当前只显示你拥有的订阅配置；可用于接收空间申请、审核、分配和应用事件。</div>
+            <span class="note">没有 webhook 权限时会显示正常提示</span>
+        </div>
+        <button class="layui-btn btn-theme" id="btn-add-webhook"><i class="layui-icon layui-icon-add-1"></i> 新建 Webhook</button>
+    </div>
+    <table class="layui-hide" id="webhookTable"></table>
+</div>
+
+<div id="webhookTpl" style="display:none;">
+    <form class="layui-form form-box" lay-filter="webhookForm">
+        <div class="layui-form-item">
+            <label class="layui-form-label">名称</label>
+            <div class="layui-input-block"><input type="text" name="name" lay-verify="required" class="layui-input" placeholder="例如：空间审核回调"></div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">回调地址</label>
+            <div class="layui-input-block"><input type="url" name="url" lay-verify="required|url" class="layui-input" placeholder="https://example.com/webhook"></div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">Secret</label>
+            <div class="layui-input-block"><input type="text" name="secret" class="layui-input" placeholder="可选验签密钥"></div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">事件</label>
+            <div class="layui-input-block event-grid">
+                <input type="checkbox" value="tenant_space.apply" title="空间申请" lay-skin="primary" checked>
+                <input type="checkbox" value="tenant_space.review" title="空间审核" lay-skin="primary" checked>
+                <input type="checkbox" value="tenant_space.assign" title="空间分配" lay-skin="primary">
+                <input type="checkbox" value="tenant_admin.create" title="管理员注册" lay-skin="primary">
+                <input type="checkbox" value="tenant_app.create" title="应用创建" lay-skin="primary">
+                <input type="checkbox" value="tenant_credential.create" title="凭证签发" lay-skin="primary">
+            </div>
+        </div>
+    </form>
+</div>
+
+<script type="text/html" id="eventTpl">
+{% raw %}
+{{# layui.each(d.events, function(_, item){ }}<span class="tag">{{ item }}</span>{{# }); }}
+{% endraw %}
+</script>
+
+<script type="text/html" id="statusTpl">
+{% raw %}
+<input type="checkbox" value="{{d.id}}" lay-skin="switch" lay-text="启用|停用" lay-filter="statusSwitch" {{ d.is_active ? 'checked' : '' }}>
+{% endraw %}
+</script>
+
+<script type="text/html" id="toolTpl">
+{% raw %}
+<button class="layui-btn layui-btn-xs layui-btn-danger" lay-event="del">删除</button>
+{% endraw %}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
+<script>
+layui.use(['table','form','layer'], function(){
+    const table = layui.table, form = layui.form, layer = layui.layer, $ = layui.$;
+
+    $.ajaxSetup({
+        complete: function(xhr) {
+            const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
+            if (xhr.status === 401) {
+                window.top.location.href = '/login';
+                return;
+            }
+            if (xhr.status === 403 && detail) {
+                layer.msg(detail, {icon: 2, time: 2500});
+            }
+        }
+    });
+
+    function loadTable(){
+        table.render({
+            elem: '#webhookTable',
+            url: '/api/v1/webhook/config.list',
+            page: false,
+            parseData: function(res){
+                const data = res.data || [];
+                return {code: res.status === 'success' ? 0 : 500, msg: res.message || '', count: data.length, data: data};
+            },
+            cols: [[
+                {field:'id', title:'ID', width:80},
+                {field:'name', title:'名称', minWidth:160},
+                {field:'url', title:'回调地址', minWidth:260},
+                {field:'events', title:'事件', minWidth:240, templet:'#eventTpl'},
+                {field:'is_active', title:'状态', width:120, templet:'#statusTpl'},
+                {field:'creator_id', title:'创建者', width:120},
+                {fixed:'right', title:'操作', width:100, toolbar:'#toolTpl'}
+            ]]
+        });
+    }
+
+    $('#btn-add-webhook').on('click', function(){
+        layer.open({
+            type: 1,
+            title: '新建 Webhook',
+            area: ['560px','460px'],
+            content: $('#webhookTpl').html(),
+            btn: ['创建', '取消'],
+            success: function(){ form.render(); },
+            yes: function(index, layero){
+                const name = layero.find('input[name="name"]').val().trim();
+                const url = layero.find('input[name="url"]').val().trim();
+                const secret = layero.find('input[name="secret"]').val().trim();
+                const events = [];
+                layero.find('.event-grid input[type="checkbox"]:checked').each(function(){ events.push($(this).val()); });
+                if (!name || !url || events.length === 0) {
+                    layer.msg('名称、地址和事件至少选择一个', {icon: 2});
+                    return false;
+                }
+                $.ajax({
+                    url: '/api/v1/webhook/config.create',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({name, url, secret: secret || null, events, is_active: true}),
+                    success: function(res){
+                        if (res.status === 'success') {
+                            layer.msg(res.message || '创建成功', {icon: 1});
+                            layer.close(index);
+                            loadTable();
+                        } else {
+                            layer.msg(res.message || '创建失败', {icon: 2});
+                        }
+                    },
+                    error: function(xhr){ layer.msg(xhr.responseJSON?.detail || '创建失败', {icon: 2}); }
+                });
+            }
+        });
+    });
+
+    form.on('switch(statusSwitch)', function(data){
+        $.ajax({
+            url: '/api/v1/webhook/config.update',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({id: parseInt(data.value, 10), is_active: data.elem.checked}),
+            success: function(res){
+                if (res.status !== 'success') layer.msg(res.message || '更新失败', {icon: 2});
+            },
+            error: function(xhr){ layer.msg(xhr.responseJSON?.detail || '更新失败', {icon: 2}); loadTable(); }
+        });
+    });
+
+    table.on('tool(webhookTable)', function(obj){
+        if (obj.event === 'del') {
+            layer.confirm(`确认删除 ${obj.data.name} ?`, function(index){
+                $.ajax({
+                    url: `/api/v1/webhook/config.delete?id=${obj.data.id}`,
+                    type: 'DELETE',
+                    success: function(res){
+                        if (res.status === 'success') {
+                            layer.msg(res.message || '删除成功', {icon: 1});
+                            layer.close(index);
+                            loadTable();
+                        } else {
+                            layer.msg(res.message || '删除失败', {icon: 2});
+                        }
+                    },
+                    error: function(xhr){ layer.msg(xhr.responseJSON?.detail || '删除失败', {icon: 2}); }
+                });
+            });
+        }
+    });
+
+    loadTable();
+});
+</script>
+</body>
+</html>
+

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="utf-8">
-    <title>申请注册中台席位 - OnAuth 云中台</title>
+    <title>注册租户管理员/使用者 - OnAuth 云中台</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
@@ -112,9 +112,17 @@
 <body>
 
 <div class="reg-container">
-    <div class="reg-title">📝 申请注册中台席位</div>
+    <div class="reg-title">📝 注册租户管理员/使用者</div>
 
     <form class="layui-form">
+        <div class="layui-form-item" style="margin-bottom: 16px;">
+            <label class="layui-form-label" style="width: 90px; padding: 9px 0;">注册类型</label>
+            <div class="layui-input-block" style="margin-left: 100px;">
+                <input type="radio" name="register_type" value="tenant_admin" title="租户管理员" lay-filter="registerType" checked>
+                <input type="radio" name="register_type" value="user" title="普通使用者" lay-filter="registerType">
+            </div>
+        </div>
+
         <!-- 设定账户域 -->
         <div class="layui-form-item">
             <i class="layui-icon layui-icon-username input-icon"></i>
@@ -125,6 +133,24 @@
         <div class="layui-form-item">
             <i class="layui-icon layui-icon-password input-icon"></i>
             <input type="password" name="password" lay-verify="required" lay-reqtext="请设定登录凭证密码" placeholder="设定登录密码" class="layui-input" autocomplete="off">
+        </div>
+
+        <div id="tenantAdminFields">
+            <div class="layui-form-item">
+                <i class="layui-icon layui-icon-group input-icon"></i>
+                <input type="text" name="group_name" lay-verify="required" lay-reqtext="请输入租户空间名称" placeholder="租户空间名称" class="layui-input" autocomplete="off">
+            </div>
+            <div class="layui-form-item">
+                <i class="layui-icon layui-icon-about input-icon"></i>
+                <input type="text" name="group_description" placeholder="租户空间说明(可选)" class="layui-input" autocomplete="off">
+            </div>
+        </div>
+
+        <div id="tenantUserFields" style="display: none;">
+            <div class="layui-form-item">
+                <i class="layui-icon layui-icon-key input-icon"></i>
+                <input type="text" name="group_code" lay-verify="required" lay-reqtext="请输入租户空间识别码" placeholder="租户空间识别码" class="layui-input" autocomplete="off">
+            </div>
         </div>
 
         <!-- 提交注册申请 -->
@@ -140,23 +166,52 @@
 </div>
 
 <script>
-layui.use(['form', 'layer'], function(){
+    layui.use(['form', 'layer'], function(){
     var form = layui.form, layer = layui.layer, $ = layui.$;
+
+        function toggleFields(type) {
+            if (type === 'tenant_admin') {
+                $('#tenantAdminFields').show();
+                $('#tenantUserFields').hide();
+                $('input[name="group_name"]').attr('lay-verify', 'required');
+                $('input[name="group_code"]').removeAttr('lay-verify');
+            } else {
+                $('#tenantAdminFields').hide();
+                $('#tenantUserFields').show();
+                $('input[name="group_name"]').removeAttr('lay-verify');
+                $('input[name="group_code"]').attr('lay-verify', 'required');
+            }
+        }
+
+        form.on('radio(registerType)', function(data){
+            toggleFields(data.value);
+        });
+
+        toggleFields('tenant_admin');
 
     // 监听网络凭证注册提交
     form.on('submit(doRegister)', function(data){
         const loading = layer.load(2);
+            const isTenantAdmin = data.field.register_type === 'tenant_admin';
+            const submitUrl = isTenantAdmin ? '/auth/register/tenant_admin' : '/auth/register';
 
         $.ajax({
-            url: '/auth/register',
+                url: submitUrl,
             type: 'POST',
             data: JSON.stringify(data.field),
             contentType: 'application/json',
             success: function(res){
                 layer.close(loading);
-                layer.msg('中台账号开辟成功！', {icon: 1, time: 1200}, function(){
-                    window.location.href = '/login';
-                });
+                    if (isTenantAdmin && res.group_code) {
+                        const msgHtml = '租户管理员注册成功！<br>空间识别码：<b>' + res.group_code + '</b><br>请妥善保存用于注册使用者账号。';
+                        layer.alert(msgHtml, {icon: 1}, function(){
+                            window.location.href = '/login';
+                        });
+                    } else {
+                        layer.msg('账号注册成功！', {icon: 1, time: 1200}, function(){
+                            window.location.href = '/login';
+                        });
+                    }
             },
             error: function(err){
                 layer.close(loading);

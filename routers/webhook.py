@@ -41,7 +41,7 @@ def create_webhook_config(
         payload: WebhookCreateSchema,
         db: Session = Depends(get_db),
         # 🌟 注入当前登录用户凭证（假设您的认证中间件返回的对象包含 id 和 username，如 current_user.id）
-        current_user=Depends(RBACChecker("admin:write", "webhook:create"))
+        current_user=Depends(RBACChecker("webhook:create", "admin:write"))
 ):
     events_str = json.dumps(payload.events)
 
@@ -87,7 +87,7 @@ def create_webhook_config(
 def update_webhook_config(
         payload: WebhookUpdateSchema,
         db: Session = Depends(get_db),
-        current_user=Depends(RBACChecker("admin:write", "webhook:update"))
+        current_user=Depends(RBACChecker("webhook:update", "admin:write"))
 ):
     config = db.query(WebhookConfig).filter(WebhookConfig.id == payload.id).first()
     if not config:
@@ -126,7 +126,7 @@ def update_webhook_config(
 @router.get("/api/v1/webhook/config.list", summary="【集成接口】拉取 Webhook 订阅网格列表")
 def list_webhook_configs(
         db: Session = Depends(get_db),
-        current_user=Depends(RBACChecker("admin:read", "webhook:list"))
+        current_user=Depends(RBACChecker("webhook:list", "admin:read"))
 ):
     operator_id = getattr(current_user, 'id', None) or getattr(current_user, 'user_id', None)
     is_admin = getattr(current_user, 'is_admin', False) or getattr(current_user, 'role_id', 0) == 1
@@ -158,7 +158,7 @@ def list_webhook_configs(
 def delete_webhook_config(
         id: int,
         db: Session = Depends(get_db),
-        current_user=Depends(RBACChecker("admin:write", "webhook:delete"))
+        current_user=Depends(RBACChecker("webhook:delete", "admin:write"))
 ):
     config = db.query(WebhookConfig).filter(WebhookConfig.id == id).first()
     if not config:
@@ -192,7 +192,7 @@ def delete_webhook_config(
 def list_webhook_logs(
         webhook_id: Optional[int] = None,
         db: Session = Depends(get_db),
-        current_user=Depends(RBACChecker("admin:read", "webhook:logs"))
+        current_user=Depends(RBACChecker("webhook:logs", "admin:read"))
 ):
     operator_id = getattr(current_user, 'id', None) or getattr(current_user, 'user_id', None)
     is_admin = getattr(current_user, 'is_admin', False) or getattr(current_user, 'role_id', 0) == 1

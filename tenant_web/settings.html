@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>空间设置 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        body { background: #f3f4f6; padding: 15px; font-family: "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
+        .layui-fluid { padding: 0; }
+        .layui-card { background: #fff; border: 1px solid #ebeef5; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+        .title { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 12px; }
+        .item { display:flex; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
+        .label { width: 110px; color: #64748b; }
+        .value { color: #111827; font-weight: 700; word-break: break-all; }
+        .btn-theme { background: linear-gradient(135deg,#2563eb,#1d4ed8) !important; border: none !important; border-radius: 6px !important; }
+        .status { display:inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+        .top-note { display:inline-block; margin-top: 4px; padding: 4px 10px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:12px; font-weight:700; }
+        .switch-box { display:flex; align-items:center; gap:10px; }
+        .switch-label { color:#64748b; font-size: 13px; }
+        .btn-light { border-radius: 6px !important; }
+    </style>
+</head>
+<body>
+    <div class="layui-card">
+    <div class="title">当前租户空间信息</div>
+    <div class="top-note" id="top-note">空间状态加载中...</div>
+    <div class="item"><div class="label">空间名称</div><div class="value" id="group-name">-</div></div>
+    <div class="item"><div class="label">空间识别码</div><div class="value" id="group-code">-</div></div>
+    <div class="item"><div class="label">审批状态</div><div class="value"><span id="group-status" class="status">-</span></div></div>
+    <div class="item"><div class="label">到期时间</div><div class="value" id="group-expire-at">-</div></div>
+    <div class="item"><div class="label">审批备注</div><div class="value" id="group-review-note">-</div></div>
+    <div class="item">
+        <div class="label">空间启用</div>
+        <div class="value switch-box">
+            <input type="checkbox" id="space-switch" lay-skin="switch" lay-text="启用|熔断">
+            <span class="switch-label" id="space-switch-label">-</span>
+            <button class="layui-btn layui-btn-primary btn-light" id="btn-refresh">刷新</button>
+        </div>
+    </div>
+</div>
+
+    <div class="layui-card">
+    <div class="title">说明</div>
+    <div style="font-size: 13px; color: #64748b; line-height: 1.8;">
+        你的租户空间由超级管理员审核通过后才会开放应用创建与凭证签发能力。
+        如果空间被拒绝或过期，请联系超级管理员重新审批或延长到期时间。
+    </div>
+</div>
+
+<script>
+layui.use(['layer', 'form'], function(){
+    const layer = layui.layer, $ = layui.$, form = layui.form;
+
+    $.ajaxSetup({
+        complete: function(xhr) {
+            const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
+            if (xhr.status === 401) {
+                window.top.location.href = '/login';
+                return;
+            }
+            if (xhr.status === 403 && detail) {
+                layer.msg(detail, {icon: 2, time: 2500});
+            }
+        }
+    });
+
+    function applyStatus(status) {
+        const el = $('#group-status');
+        const s = (status || 'unknown').toLowerCase();
+        el.removeAttr('style');
+        if (s === 'pending') el.css({background:'#fef3c7', color:'#b45309'}).text('PENDING');
+        else if (s === 'approved') el.css({background:'#dcfce7', color:'#15803d'}).text('APPROVED');
+        else if (s === 'rejected') el.css({background:'#fee2e2', color:'#b91c1c'}).text('REJECTED');
+        else el.css({background:'#e2e8f0', color:'#334155'}).text(s.toUpperCase());
+        $('#top-note').text(s === 'approved' ? '空间已通过审核，可正常使用' : (s === 'pending' ? '空间正在等待超级管理员审核' : (s === 'rejected' ? '空间申请被拒绝，请重新申请或联系管理员' : '空间状态未知或尚未创建')));
+    }
+
+    function applySwitchState(isActive, enabled) {
+        $('#space-switch').prop('checked', !!isActive).prop('disabled', !enabled);
+        form.render('checkbox');
+        $('#space-switch-label').text(!enabled
+            ? '空间未通过审核，暂不可启用/熔断'
+            : (isActive ? '当前空间已启用，可正常使用' : '当前空间已熔断，应用与凭证将不可用'));
+    }
+
+    function loadSpace() {
+        $.get('/auth/me', function(res){
+            if (res.status !== 'success') {
+                layer.msg(res.message || '加载失败', {icon:2});
+                return;
+            }
+            const data = res.data || {};
+            $('#group-name').text(data.group_name || '-');
+            $('#group-code').text(data.group_code || '-');
+            $('#group-expire-at').text(data.group_expire_at || '待审批/永久有效');
+            $('#group-review-note').text(data.group_review_note || '-');
+            applyStatus(data.group_status);
+            applySwitchState(!!data.group_is_active, (data.group_status || '').toLowerCase() === 'approved');
+        }).fail(function(xhr){
+            layer.msg(xhr.responseJSON?.detail || '加载失败', {icon: 2});
+        });
+    }
+
+    $('#btn-refresh').on('click', loadSpace);
+
+    $('#space-switch').on('change', function(){
+        const isActive = $(this).is(':checked');
+        $.ajax({
+            url: '/tenant/space/toggle',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ is_active: isActive }),
+            success: function(res){
+                if (res.status === 'success') {
+                    layer.msg(res.message || '已更新空间状态', {icon: 1});
+                    loadSpace();
+                } else {
+                    layer.msg(res.message || '更新失败', {icon: 2});
+                    loadSpace();
+                }
+            },
+            error: function(xhr){
+                layer.msg(xhr.responseJSON?.detail || '更新失败', {icon: 2});
+                loadSpace();
+            }
+        });
+    });
+
+    loadSpace();
+});
+</script>
+</body>
+</html>
+

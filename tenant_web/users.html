@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>成员邀请 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        body {
+            background-color: #f3f4f6;
+            padding: 15px;
+            font-family: "Microsoft YaHei", sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .layui-fluid { padding: 0; }
+        .layui-card {
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            border: 1px solid #ebeef5;
+            background: #fff;
+        }
+        .layui-card-body { padding: 16px; }
+        .btn-theme-gradient {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            padding: 0 16px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+            transition: all 0.2s ease;
+        }
+        .form-box { padding: 14px 16px 0 6px; }
+        .layui-form-label { width: 90px; }
+        .layui-input-block { margin-left: 120px; }
+        .note { display:inline-block; margin-top: 4px; padding: 4px 10px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:12px; font-weight:700; }
+    </style>
+</head>
+<body>
+<div class="layui-fluid">
+    <div class="layui-card">
+        <div class="layui-card-body">
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap;">
+                <div>
+                    <div style="font-size: 15px; font-weight: 700; color: #0f172a;">邀请成员加入本租户空间</div>
+                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">成员会自动分配 standard_user 角色。</div>
+                    <span class="note">无权限时会提示具体原因</span>
+                </div>
+                <button class="layui-btn btn-theme-gradient" id="btn-invite-user"><i class="layui-icon layui-icon-add-1"></i> 邀请成员</button>
+            </div>
+            <div style="font-size: 13px; color: #64748b; line-height: 1.8;">
+                租户管理员可在自己的空间内维护成员账号，超管可在邀请接口中额外指定空间。
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="inviteFormTpl" style="display:none;">
+    <div class="layui-form form-box" lay-filter="inviteFormFilter">
+        <div class="layui-form-item">
+            <label class="layui-form-label">用户名</label>
+            <div class="layui-input-block"><input type="text" name="username" required lay-verify="required" placeholder="请输入用户名" class="layui-input"></div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">密码</label>
+            <div class="layui-input-block"><input type="text" name="password" required lay-verify="required" placeholder="至少 6 位" class="layui-input"></div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">昵称</label>
+            <div class="layui-input-block"><input type="text" name="nickname" placeholder="可选" class="layui-input"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+layui.use(['layer','form'], function(){
+    const layer = layui.layer, form = layui.form, $ = layui.$;
+
+    $.ajaxSetup({
+        complete: function(xhr) {
+            const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
+            if (xhr.status === 401) {
+                window.top.location.href = '/login';
+                return;
+            }
+            if (xhr.status === 403 && detail) {
+                layer.msg(detail, {icon: 2, time: 2500});
+            }
+        }
+    });
+
+    $('#btn-invite-user').on('click', function(){
+        layer.open({
+            type: 1,
+            title: '邀请成员',
+            area: ['520px','320px'],
+            content: $('#inviteFormTpl').html(),
+            btn: ['创建', '取消'],
+            yes: function(index, layero){
+                const username = layero.find('input[name="username"]').val();
+                const password = layero.find('input[name="password"]').val();
+                const nickname = layero.find('input[name="nickname"]').val();
+                if (!username || !password) {
+                    return layer.msg('用户名和密码不能为空', {icon: 2});
+                }
+                $.ajax({
+                    url: '/tenant/users/invite',
+                    type: 'POST',
+                    data: JSON.stringify({ username: username, password: password, nickname: nickname }),
+                    contentType: 'application/json',
+                    success: function(res){
+                        if (res.status === 'success') {
+                            layer.msg(res.message || '邀请成功', {icon: 1});
+                            layer.close(index);
+                        } else {
+                            layer.msg(res.message || '邀请失败', {icon: 2});
+                        }
+                    },
+                    error: function(xhr){
+                        layer.msg(xhr.responseJSON?.detail || '邀请失败', {icon: 2});
+                    }
+                });
+            }
+        });
+    });
+});
+</script>
+</body>
+</html>
+
+

@@ -125,6 +125,8 @@
 
         .pop-matrix-container { padding: 20px 24px; }
         .pop-matrix-container .layui-form-select { margin-bottom: 12px; }
+        .tree-scroll-wrapper { max-height: 290px; overflow-y: auto; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; }
+        .inline-tip { color: #94a3b8; font-size: 12px; margin-top: 8px; }
     </style>
 </head>
 <body>
@@ -172,8 +174,8 @@
 {% endraw %}
 
 <script>
-layui.use(['table', 'form', 'layer'], function(){
-    const table = layui.table, form = layui.form, $ = layui.$, layer = layui.layer;
+layui.use(['table', 'form', 'layer', 'tree'], function(){
+    const table = layui.table, form = layui.form, $ = layui.$, layer = layui.layer, tree = layui.tree;
 
     // 🛡️ 授信通信核心骨架函数
     function securePost(url, data, callback) {
@@ -208,6 +210,41 @@ layui.use(['table', 'form', 'layer'], function(){
                 }
                 layer.msg(errMsg, {icon: 2, time: 3000});
             }
+        });
+    }
+
+    function securePostPromise(url, data) {
+        return new Promise((resolve, reject) => {
+            const loading = layer.load(2);
+            $.ajax({
+                url: url,
+                type: 'POST',
+                contentType: 'application/json; charset=utf-8',
+                data: JSON.stringify(data),
+                dataType: 'json',
+                success: function(r) {
+                    layer.close(loading);
+                    if (r.status === 'success') {
+                        resolve(r);
+                    } else {
+                        layer.msg(r.message || '资产执行链路中断', {icon: 2});
+                        reject(new Error(r.message || 'request failed'));
+                    }
+                },
+                error: function(xhr) {
+                    layer.close(loading);
+                    let errMsg = '中台网关拦截异常';
+                    if (xhr.responseJSON) {
+                        if (Array.isArray(xhr.responseJSON.detail)) {
+                            errMsg = xhr.responseJSON.detail.map(err => `${err.loc[1] || '参数'}: ${err.msg}`).join(' | ');
+                        } else {
+                            errMsg = xhr.responseJSON.message || xhr.responseJSON.detail || errMsg;
+                        }
+                    }
+                    layer.msg(errMsg, {icon: 2, time: 3000});
+                    reject(new Error(errMsg));
+                }
+            });
         });
     }
 
@@ -268,45 +305,10 @@ layui.use(['table', 'form', 'layer'], function(){
                 if(v.trim().length < 6) { layer.msg('安全警报：新密码长度必须至少为6位', {icon:5, shift:6}); return; }
                 securePost('/admin/users/update_password', {user_id: d.id, new_password: v}, () => { layer.close(i); });
             });
-        } else if(obj.event === 'roles' || obj.event === 'permissions'){
-            const postKey = obj.event === 'roles' ? 'roles' : 'permissions';
-            layer.open({
-                type: 1,
-                title: obj.event === 'roles' ? '🛡️ 调整角色授信域' : '🔑 调配精细权限流',
-                area: ['400px', '260px'],
-                content: `<div class="layui-form pop-matrix-container">
-                            <div class="layui-form-item">
-                                <select id="l-act">
-                                    <option value="add">➕ 叠加资产属性 (ADD)</option>
-                                    <option value="remove">➖ 移除资产属性 (REMOVE)</option>
-                                </select>
-                            </div>
-                            <div class="layui-form-item" style="margin-top:14px;">
-                                <input id="l-name" class="layui-input" placeholder="输入节点标记值（例如：developer）">
-                            </div>
-                          </div>`,
-                btn: ['同步配置', '放弃'],
-                success: (layero) => {
-                    form.render();
-                    layero.find('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb'});
-                },
-                yes: (i) => {
-                    const tagVal = $('#l-name').val().trim();
-                    if(!tagVal) { layer.msg('标识属性不能为空', {icon:5, shift:6}); return; }
-
-                    const url = obj.event === 'roles' ? '/admin/users/update_roles' : '/admin/users/update_permissions';
-                    const payload = {
-                        user_id: d.id,
-                        [postKey]: [tagVal],
-                        action: $('#l-act').val()
-                    };
-
-                    securePost(url, payload, () => {
-                        layer.close(i);
-                        table.reload('user-table');
-                    });
-                }
-            });
+        } else if(obj.event === 'roles'){
+            openRoleAssignModal(d);
+        } else if(obj.event === 'permissions'){
+            openPermissionAssignModal(d);
         } else if(obj.event === 'del'){
             layer.confirm('⚠️ 警报：确认从集群中物理注销该用户账户资产？', {
                 icon: 3,
@@ -363,6 +365,193 @@ layui.use(['table', 'form', 'layer'], function(){
                     roles: ["standard_user"]
                 }, () => {
                     layer.close(i);
+                    table.reload('user-table');
+                });
+            }
+        });
+    }
+
+    function openRoleAssignModal(userData) {
+        layer.open({
+            type: 1,
+            title: '🛡️ 调整角色授信域',
+            area: ['460px', '420px'],
+            content: `<form class="layui-form pop-matrix-container">
+                        <div class="tree-scroll-wrapper" id="role-checkboxes"></div>
+                      </form>`,
+            btn: ['同步配置', '放弃'],
+            success: (layero) => {
+                layero.find('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb'});
+                $.get('/api/v1/permission/group.list', function(res){
+                    if(res.status !== 'success') { layer.msg(res.message || '角色列表拉取失败', {icon: 2}); return; }
+                    const existingRoles = new Set(userData.roles || []);
+                    const html = (res.data || []).map(item => {
+                        const checked = existingRoles.has(item.name) ? 'checked' : '';
+                        return `<input type="checkbox" name="role_item" value="${item.name}" title="${item.name}" ${checked}>`;
+                    }).join('');
+                    layero.find('#role-checkboxes').html(html || '<span class="inline-tip">暂无可用角色</span>');
+                    form.render();
+                });
+            },
+            yes: (index, layero) => {
+                const selected = [];
+                layero.find('input[name="role_item"]:checked').each(function(){
+                    selected.push($(this).val());
+                });
+                const current = userData.roles || [];
+                const toAdd = selected.filter(r => !current.includes(r));
+                const toRemove = current.filter(r => !selected.includes(r));
+
+                if (toAdd.length === 0 && toRemove.length === 0) {
+                    layer.msg('角色无需变更', {icon: 1, time: 900});
+                    layer.close(index);
+                    return;
+                }
+
+                let chain = Promise.resolve();
+                if (toAdd.length) {
+                    chain = chain.then(() => securePostPromise('/admin/users/update_roles', {
+                        user_id: userData.id,
+                        roles: toAdd,
+                        action: 'add'
+                    }));
+                }
+                if (toRemove.length) {
+                    chain = chain.then(() => securePostPromise('/admin/users/update_roles', {
+                        user_id: userData.id,
+                        roles: toRemove,
+                        action: 'remove'
+                    }));
+                }
+
+                chain.then(() => {
+                    layer.close(index);
+                    table.reload('user-table');
+                }).catch(() => {
+                    table.reload('user-table');
+                });
+            }
+        });
+    }
+
+    function openPermissionAssignModal(userData) {
+        layer.open({
+            type: 1,
+            title: '🔑 调配精细权限流',
+            area: ['480px', '450px'],
+            content: `<div class="pop-matrix-container">
+                        <div class="tree-scroll-wrapper">
+                            <div id="user-perm-tree"></div>
+                        </div>
+                        <div class="inline-tip">提示：角色继承的权限不可直接移除</div>
+                      </div>`,
+            btn: ['同步配置', '放弃'],
+            success: (layero) => {
+                layero.find('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb'});
+                const loading = layer.load(2);
+                $.get('/api/v1/permission/node.list', function(res){
+                    layer.close(loading);
+                    if(res.status !== 'success') { layer.msg(res.message || '权限节点拉取失败', {icon: 2}); return; }
+                    const nodes = res.data || [];
+                    const idToName = {};
+                    const nodeMap = {};
+                    nodes.forEach(item => {
+                        idToName[item.permission_id] = item.name;
+                        nodeMap[item.permission_id] = {
+                            id: item.permission_id,
+                            title: item.name + (item.description ? ` (${item.description})` : ''),
+                            children: []
+                        };
+                    });
+
+                    const roots = [];
+                    nodes.forEach(item => {
+                        const node = nodeMap[item.permission_id];
+                        if (item.parent_id && nodeMap[item.parent_id]) {
+                            nodeMap[item.parent_id].children.push(node);
+                        } else {
+                            roots.push(node);
+                        }
+                    });
+
+                    const treeData = [{
+                        id: -999,
+                        title: '🔓 权限节点矩阵',
+                        spread: true,
+                        children: roots
+                    }];
+
+                    tree.render({
+                        elem: layero.find('#user-perm-tree')[0],
+                        data: treeData,
+                        showCheckbox: true,
+                        id: 'userPermTree'
+                    });
+
+                    const ownedPerms = new Set(userData.permissions || []);
+                    const defaultCheckedIds = [];
+                    nodes.forEach(item => {
+                        if (ownedPerms.has(item.name)) {
+                            defaultCheckedIds.push(item.permission_id);
+                        }
+                    });
+
+                    setTimeout(() => {
+                        if (defaultCheckedIds.length > 0) {
+                            tree.setChecked('userPermTree', defaultCheckedIds);
+                        }
+                    }, 30);
+
+                    layero.data('permMap', idToName);
+                });
+            },
+            yes: (index, layero) => {
+                const checkedData = tree.getChecked('userPermTree');
+                const idToName = layero.data('permMap') || {};
+                const selectedNames = [];
+
+                function extractNames(nodes) {
+                    nodes.forEach(n => {
+                        if (n.id !== -999 && idToName[n.id]) {
+                            selectedNames.push(idToName[n.id]);
+                        }
+                        if (n.children) {
+                            extractNames(n.children);
+                        }
+                    });
+                }
+                extractNames(checkedData);
+
+                const current = userData.permissions || [];
+                const toAdd = selectedNames.filter(p => !current.includes(p));
+                const toRemove = current.filter(p => !selectedNames.includes(p));
+
+                if (toAdd.length === 0 && toRemove.length === 0) {
+                    layer.msg('权限无需变更', {icon: 1, time: 900});
+                    layer.close(index);
+                    return;
+                }
+
+                let chain = Promise.resolve();
+                if (toAdd.length) {
+                    chain = chain.then(() => securePostPromise('/admin/users/update_permissions', {
+                        user_id: userData.id,
+                        permissions: toAdd,
+                        action: 'add'
+                    }));
+                }
+                if (toRemove.length) {
+                    chain = chain.then(() => securePostPromise('/admin/users/update_permissions', {
+                        user_id: userData.id,
+                        permissions: toRemove,
+                        action: 'remove'
+                    }));
+                }
+
+                chain.then(() => {
+                    layer.close(index);
+                    table.reload('user-table');
+                }).catch(() => {
                     table.reload('user-table');
                 });
             }

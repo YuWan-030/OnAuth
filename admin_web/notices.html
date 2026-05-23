@@ -190,6 +190,15 @@
 layui.use(['table', 'form', 'layer'], function(){
     const table = layui.table, form = layui.form, $ = layui.$, layer = layui.layer;
 
+    function escapeHtml(raw) {
+        return String(raw || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     // 🛡️ 统一封装的资产与事务同步 POST 骨架
     function securePost(url, data, callback) {
         const loading = layer.load(2);
@@ -218,6 +227,7 @@ layui.use(['table', 'form', 'layer'], function(){
     // 🔗 数据网格透传加载：直接调用后端标准的 /system/announcement 路由
     table.render({
         elem: '#announcement-table',
+        id: 'announcement-table',
         url: '/system/announcement',
         method: 'GET',
         page: true,
@@ -225,7 +235,7 @@ layui.use(['table', 'form', 'layer'], function(){
         parseData: res => ({
             code: res.code === 200 ? 0 : (res.code || 500),
             count: res.count || res.total || 0,
-            data: res.data
+            data: Array.isArray(res.data) ? res.data : []
         }),
         cols: [[
             {field: 'id', title: 'ID', width: 70, align: 'center', sort: true},
@@ -266,7 +276,8 @@ layui.use(['table', 'form', 'layer'], function(){
                     },
                     error: (xhr) => {
                         layer.close(loading);
-                        layer.msg(xhr.responseJSON?.message || '销毁指令受阻', {icon: 2});
+                        const err = xhr.responseJSON ? (xhr.responseJSON.detail || xhr.responseJSON.message) : '销毁指令受阻';
+                        layer.msg(err, {icon: 2});
                     }
                 });
             });
@@ -280,15 +291,18 @@ layui.use(['table', 'form', 'layer'], function(){
 
     // 封装复用的公告/通知资产编辑舱
     function openAnnouncementModal(modalTitle, entityData) {
+        const submitFilter = `modal-submit-${Date.now()}`;
+        const titleValue = escapeHtml(entityData.title);
+        const contentValue = escapeHtml(entityData.content);
         layer.open({
             type: 1,
             title: modalTitle,
-            area: ['550px', '460px'],
+            area: ['550px', '520px'],
             content: `<div class="layui-form pop-container" lay-filter="announcement-form">
                         <div class="layui-form-item">
                             <label class="layui-form-label" style="padding:9px 0; width:70px; text-align:left;">公告主题</label>
                             <div class="layui-input-block" style="margin-left:70px;">
-                                <input type="text" name="title" value="${entityData.title}" placeholder="请输入公告通知的主题标题" class="layui-input" lay-verify="required">
+                                <input type="text" name="title" value="${titleValue}" placeholder="请输入公告通知的主题标题" class="layui-input" lay-verify="required">
                             </div>
                         </div>
                         <div class="layui-form-item">
@@ -309,24 +323,42 @@ layui.use(['table', 'form', 'layer'], function(){
                         <div class="layui-form-item layui-form-text">
                             <label class="layui-form-label" style="padding:9px 0; width:70px; text-align:left;">公告正文</label>
                             <div class="layui-input-block" style="margin-left:70px;">
-                                <textarea name="content" placeholder="输入具体的公告下发流文字或富文本实体..." class="layui-textarea" style="border-radius:6px; min-height:120px; border-color:#d1d5db;">${entityData.content}</textarea>
+                                <textarea name="content" placeholder="输入具体的公告下发流文字或富文本实体..." class="layui-textarea" style="border-radius:6px; min-height:120px; border-color:#d1d5db;" lay-verify="required">${contentValue}</textarea>
+                            </div>
+                        </div>
+                        <div class="layui-form-item">
+                            <label class="layui-form-label" style="padding:9px 0; width:70px; text-align:left;">发布状态</label>
+                            <div class="layui-input-block" style="margin-left:70px;">
+                                <select name="status">
+                                    <option value="published" ${entityData.status==='published'?'selected':''}>显示中</option>
+                                    <option value="draft" ${entityData.status==='draft'?'selected':''}>草稿</option>
+                                </select>
                             </div>
                         </div>
                         <div class="layui-form-item" style="text-align: right; margin-top:24px; margin-bottom:0;">
-                            <button class="layui-btn btn-search-theme" lay-submit lay-filter="modal-submit">核准下发同步</button>
+                            <button class="layui-btn btn-search-theme" lay-submit lay-filter="${submitFilter}">核准下发同步</button>
                         </div>
                       </div>`,
             success: (layero) => {
                 form.render();
-                // 按钮美化渲染
-                layero.find('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-color': '#2563eb'});
 
                 // 绑定模态窗内提交事件
-                form.on('submit(modal-submit)', data => {
+                form.on(`submit(${submitFilter})`, data => {
                     const payload = data.field;
                     // 处理 checkbox 布尔值映射
-                    payload.is_pinned = !!payload.is_pinned;
-                    payload.status = entityData.status || 'published';
+                    payload.is_pinned = payload.is_pinned === 'on';
+                    payload.title = (payload.title || '').trim();
+                    payload.content = (payload.content || '').trim();
+                    payload.status = payload.status || 'published';
+
+                    if(!payload.title){
+                        layer.msg('公告标题不能为空', {icon: 2});
+                        return false;
+                    }
+                    if(!payload.content){
+                        layer.msg('公告正文不能为空', {icon: 2});
+                        return false;
+                    }
 
                     // 如果存在 ID 则走修改路由，不存在走创建路由
                     const targetUrl = entityData.id ? `/system/announcement/update` : `/system/announcement/create`;

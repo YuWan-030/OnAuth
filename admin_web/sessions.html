@@ -107,6 +107,7 @@
         /* 行内原子级强退按钮 */
         .btn-action-revoke { background: transparent !important; color: #ef4444 !important; border: 1px solid rgba(239,68,68,0.2) !important; border-radius: 4px !important; padding: 0 8px !important; font-size: 12px !important; transition: all 0.2s; font-weight: 500; }
         .btn-action-revoke:hover { background: #fef2f2 !important; border-color: #ef4444 !important; }
+        .ua-text { font-size: 12px; color: #475569; }
     </style>
 </head>
 <body>
@@ -138,8 +139,21 @@
             <div class="layui-col-md3">
                 <input type="text" name="ip" placeholder="🌐 锁定特定访问IP..." class="layui-input">
             </div>
-            <div class="layui-col-md4">
+            <div class="layui-col-md3">
+                <select name="device" class="layui-input">
+                    <option value="">全部终端</option>
+                    <option value="desktop">桌面端</option>
+                    <option value="mobile">移动端</option>
+                </select>
+            </div>
+            <div class="layui-col-md3">
                 <button class="layui-btn btn-search-theme" lay-submit lay-filter="search-submit">过滤会话</button>
+            </div>
+            <div class="layui-col-md3">
+                <button class="layui-btn layui-btn-danger" id="btn-batch-revoke">批量下线</button>
+            </div>
+            <div class="layui-col-md3">
+                <button class="layui-btn layui-btn-danger" id="btn-revoke-all">全部下线</button>
             </div>
         </div>
     </div>
@@ -165,8 +179,12 @@
         {{# } else { }}
             <span class="client-badge client-desktop">DESKTOP</span>
         {{# } }}
-        <span style="color: #64748b; font-size: 12px; font-family: monospace;">{{ d.browser || 'Unknown' }}</span>
+        <span style="color: #64748b; font-size: 12px; font-family: monospace;">{{ d.browser || 'Unknown' }} · {{ d.os || 'Unknown' }}</span>
     </div>
+</script>
+
+<script type="text/html" id="tpl-ua">
+    <span class="ua-text" title="{{ d.ua || '' }}">{{ (d.ua || '-').slice(0, 28) }}...</span>
 </script>
 
 <!-- 会话锁定状态 -->
@@ -199,12 +217,14 @@ layui.use(['table', 'form', 'layer'], function(){
             data: res.data
         }),
         cols: [[
-            {field: 'token_id', title: '会话令牌快照', width: 160, align: 'center', fontStyle: 'monospace'},
+            {type: 'checkbox', fixed: 'left'},
+            {field: 'token_id', title: '会话令牌快照', width: 180, align: 'center', fontStyle: 'monospace'},
             {field: 'username', title: '授信账号', width: 130, align: 'center', sort: true},
             {field: 'ip', title: '登录源IP', width: 130, align: 'center'},
-            {field: 'location', title: '物理归属地', width: 140},
+            {field: 'location', title: '物理归属地', width: 160},
             {field: 'client', title: '客端物理环境', minWidth: 220, templet: '#tpl-client'},
             {field: 'login_time', title: '握手登录时间', width: 170, align: 'center', sort: true},
+            {field: 'ua', title: 'UA 摘要', width: 200, templet: '#tpl-ua'},
             {field: 'status', title: '当前态', width: 100, align: 'center', templet: '#tpl-status'},
             {title: '风控指令', width: 100, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
         ]],
@@ -222,20 +242,39 @@ layui.use(['table', 'form', 'layer'], function(){
             }
         },
         error: function() {
-            // 💡 离线开发沙盒环境下的高保真数据降级兜底模拟
-            const mockList = [
-                {token_id: "at_88f2b3...01a", username: "admin", ip: "183.24.91.104", location: "广东深圳", is_mobile: false, browser: "Chrome 124 / macOS", login_time: "2026-05-20 00:01:10"},
-                {token_id: "at_12da9f...99d", username: "op_user01", ip: "112.90.41.67", location: "北京海淀", is_mobile: true, browser: "Safari / iPhone", login_time: "2026-05-20 00:32:45"},
-                {token_id: "at_7c34ee...61b", username: "sec_auditor", ip: "27.45.102.12", location: "福建福州", is_mobile: false, browser: "Edge 123 / Windows", login_time: "2026-05-20 00:44:19"}
-            ];
-            table.reload('session-table', {
-                url: '',
-                data: mockList
-            });
-            $('#stat-total').text(mockList.length);
-            $('#stat-desktop').text(2);
-            $('#stat-mobile').text(1);
+            layer.msg('会话数据拉取失败，请检查后端服务与权限', {icon: 2});
         }
+    });
+
+    $('#btn-batch-revoke').on('click', function(){
+        const checkStatus = table.checkStatus('session-table');
+        const rows = checkStatus.data || [];
+        if (!rows.length) {
+            return layer.msg('请先选择要下线的会话', {icon: 2});
+        }
+        const tokenIds = rows.map(item => item.token_id);
+        layer.confirm(`确认批量下线选中的 ${tokenIds.length} 个会话？`, {
+            icon: 3,
+            title: '批量下线确认'
+        }, function(index){
+            const loading = layer.load(2);
+            $.ajax({
+                url: '/system/session/revoke_batch',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ token_ids: tokenIds }),
+                success: function(res){
+                    layer.close(loading);
+                    layer.msg(res.message || '批量下线完成', {icon: 1});
+                    table.reload('session-table');
+                    layer.close(index);
+                },
+                error: function(){
+                    layer.close(loading);
+                    layer.msg('批量下线失败', {icon: 2});
+                }
+            });
+        });
     });
 
     // 搜索过滤重载总线
@@ -248,32 +287,54 @@ layui.use(['table', 'form', 'layer'], function(){
     table.on('tool(session-table)', obj => {
         const d = obj.data;
         if(obj.event === 'revoke'){
-            layer.confirm(`⚠️ 确认强制注销并下线用户 [ ${d.username} ] 对应的凭证会话？`, {
-                icon: 3, title: '风控熔断强制令',
-                success: (layero) => { layero.find('.layui-layer-btn0').css('background-color', '#ef4444'); }
-            }, i => {
+            layer.prompt({
+                title: `踢下线原因（用户：${d.username}）`,
+                formType: 2
+            }, function(value, index){
                 const loading = layer.load(2);
                 $.ajax({
                     url: `/system/session/revoke`,
                     type: 'POST',
                     contentType: 'application/json',
-                    data: JSON.stringify({ token_id: d.token_id, username: d.username }),
+                    data: JSON.stringify({ token_id: d.token_id, username: d.username, reason: value }),
                     success: r => {
                         layer.close(loading);
                         layer.msg(r.message || '会话已被强制斩断粉碎', {icon: 1});
                         table.reload('session-table');
-                        layer.close(i);
+                        layer.close(index);
                     },
                     error: () => {
                         layer.close(loading);
-                        // 沙盒环境模拟成功
-                        layer.msg('💾 [沙盒模拟] 该凭证已物理剔除，会话阻断成功', {icon: 1, time: 1200});
-                        obj.del(); // 前端直接干掉该行
-                        layer.close(i);
+                        layer.msg('会话阻断失败', {icon: 2});
                     }
                 });
             });
         }
+    });
+
+    $('#btn-revoke-all').on('click', function(){
+        layer.prompt({
+            title: '全部下线原因（默认保留当前登录）',
+            formType: 2
+        }, function(value, index){
+            const loading = layer.load(2);
+            $.ajax({
+                url: '/system/session/revoke_all',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ keep_current: true, reason: value }),
+                success: function(res){
+                    layer.close(loading);
+                    layer.msg(res.message || '全部下线完成', {icon: 1});
+                    table.reload('session-table');
+                    layer.close(index);
+                },
+                error: function(){
+                    layer.close(loading);
+                    layer.msg('全部下线失败', {icon: 2});
+                }
+            });
+        });
     });
 });
 </script>

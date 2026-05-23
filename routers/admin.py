@@ -1,23 +1,27 @@
 import datetime
+import logging
 
 import psutil
 import redis
-from fastapi import APIRouter, Query, Depends, HTTPException, Form
+from fastapi import APIRouter, Query, Depends, HTTPException, UploadFile, File
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 # 导入你的底层数据库实体与依赖
-from database import get_db, App, AppCredential, DeveloperGroup, User, Role, Permission
+from database import get_db, App, AppCredential, DeveloperGroup, User, Role, Permission, OperationLog
+from routers.webhook import dispatch_webhook_event
 from schemas.PermissionUpdateSchema import UserPermissionUpdateSchema, UserRoleUpdateSchema
 from utils.crypto import generate_random_keys, hash_secret, create_jwt_token
+from utils.app_logo import save_app_logo_upload, ensure_uploaded_logo_reference
 from sqlalchemy import func
 from database import AppDevice
-from database import App, DeveloperGroup
 from middlewares.auth import redis_client
 import json
+import secrets
 from middlewares.rbac import RBACChecker
 from schemas.admin_schema import GroupCreateInput, GroupToggleInput, AppCreateInput, AppStatusInput, CredentialStatusInput
 from schemas.admin_schema import UserCreateInput, UserNicknameUpdateInput,UserPasswordUpdateInput,UserToggleStatusInput
+from schemas.admin_schema import TenantReviewInput, TenantSpaceAssignInput
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -53,6 +57,33 @@ def revoke_user_redis_sessions(user_id: int):
     except Exception as e:
         print(f"[安全熔断失败] {str(e)}")
 
+def _generate_group_code(db: Session) -> str:
+    while True:
+        candidate = secrets.token_hex(4)
+        exists = db.query(DeveloperGroup).filter(DeveloperGroup.group_code == candidate).first()
+        if not exists:
+            return candidate
+
+def _is_super_admin(user: User) -> bool:
+    return any(role.name == "super_admin" for role in user.roles)
+
+
+def _require_super_admin(current_user: User):
+    if not _is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="仅超级管理员可执行该操作")
+
+
+def _parse_expire_at(expire_at_value: str | None) -> datetime.datetime | None:
+    if not expire_at_value:
+        return None
+
+    normalized_value = expire_at_value.strip().replace("Z", "+00:00")
+    try:
+        return datetime.datetime.fromisoformat(normalized_value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="expire_at 必须是有效的 ISO 8601 时间字符串") from exc
+
+
 # ==================== 🏢 模块一：工作室组织空间资产管控 ====================
 
 @router.get("/groups/list", summary="【管理端】拉取全量工作室组织资产")
@@ -66,8 +97,14 @@ def list_all_groups(
         result.append({
             "id": g.id,
             "group_name": g.group_name,
+            "group_code": g.group_code,
             "description": getattr(g, "description", "暂无说明") or "暂无说明",  # 🛡️ 安全防御容错，防止模型字段未迁移时报错
-            "is_active": g.is_active
+            "is_active": g.is_active,
+            "status": getattr(g, "status", "pending"),
+            "review_note": getattr(g, "review_note", None),
+            "reviewed_at": g.reviewed_at.strftime("%Y-%m-%d %H:%M:%S") if getattr(g, "reviewed_at", None) else None,
+            "expire_at": g.expire_at.strftime("%Y-%m-%d %H:%M:%S") if getattr(g, "expire_at", None) else None,
+            "owner_user_id": g.owner_user_id
         })
     return result
 
@@ -82,19 +119,30 @@ def create_group(
     if existing:
         raise HTTPException(status_code=400, detail="该工作室名称已被注册")
 
-    # 🎯 建立实例：根据你的数据库模型字段灵活适配描述
-    insert_data = {"group_name": payload.group_name}
-    if hasattr(DeveloperGroup, 'description'):
-        insert_data["description"] = payload.description
+    if payload.group_code:
+        code_exists = db.query(DeveloperGroup).filter(DeveloperGroup.group_code == payload.group_code).first()
+        if code_exists:
+            raise HTTPException(status_code=400, detail="该租户空间识别码已被占用")
+        group_code = payload.group_code
+    else:
+        group_code = _generate_group_code(db)
 
     new_group = DeveloperGroup(
         group_name=payload.group_name,
-        description=payload.description
+        description=payload.description or "",
+        group_code=group_code,
+        owner=current_user.username,
+        owner_user_id=current_user.id
     )
     db.add(new_group)
     db.commit()
     db.refresh(new_group)
-    return {"msg": "工作室主体开通成功", "group_id": new_group.id, "group_name": new_group.group_name}
+    return {
+        "msg": "工作室主体开通成功",
+        "group_id": new_group.id,
+        "group_name": new_group.group_name,
+        "group_code": new_group.group_code
+    }
 
 
 @router.post("/groups/{group_id}/toggle", summary="【管理端】工作室状态切换(兼容旧前端直发POST请求)")
@@ -139,6 +187,179 @@ def delete_group(
     return {"msg": f"工作室 [{name}] 及其旗下所有应用凭证已被全盘风暴级级联擦除"}
 
 
+@router.get("/groups/reviews/pending", summary="【管理端】查看待审批的租户空间申请")
+def list_pending_group_reviews(
+        current_user: User = Depends(RBACChecker("tenant:space:review")),
+        db: Session = Depends(get_db)
+):
+    _require_super_admin(current_user)
+    groups = db.query(DeveloperGroup).filter(DeveloperGroup.status == "pending").order_by(DeveloperGroup.id.desc()).all()
+    return {
+        "status": "success",
+        "data": [
+            {
+                "id": group.id,
+                "group_name": group.group_name,
+                "group_code": group.group_code,
+                "description": group.description,
+                "owner": group.owner,
+                "owner_user_id": group.owner_user_id,
+                "status": group.status,
+                "review_note": group.review_note,
+                "created_at": group.created_at.strftime("%Y-%m-%d %H:%M:%S") if group.created_at else None,
+                "expire_at": group.expire_at.strftime("%Y-%m-%d %H:%M:%S") if group.expire_at else None
+            }
+            for group in groups
+        ]
+    }
+
+
+@router.post("/groups/{group_id}/review", summary="【管理端】审批租户空间申请")
+def review_group_space(
+        group_id: int,
+        payload: TenantReviewInput,
+        current_user: User = Depends(RBACChecker("tenant:space:review")),
+        db: Session = Depends(get_db)
+):
+    _require_super_admin(current_user)
+    group = db.query(DeveloperGroup).filter(DeveloperGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="租户空间不存在")
+
+    action = payload.action.strip().lower()
+    group.review_note = payload.review_note
+    group.reviewed_at = datetime.datetime.now()
+
+    if action == "approve":
+        expire_at = _parse_expire_at(payload.expire_at)
+        if not expire_at:
+            raise HTTPException(status_code=400, detail="审批通过时必须提供 expire_at")
+        group.status = "approved"
+        group.is_active = True
+        group.expire_at = expire_at
+    elif action == "reject":
+        group.status = "rejected"
+        group.is_active = False
+        group.expire_at = None
+    else:
+        raise HTTPException(status_code=400, detail="action 仅支持 approve 或 reject")
+
+    db.commit()
+    db.refresh(group)
+    dispatch_webhook_event(
+        event_type="tenant_space.review",
+        payload={
+            "group_id": group.id,
+            "group_name": group.group_name,
+            "status": group.status,
+            "review_note": group.review_note,
+            "reviewed_at": group.reviewed_at.strftime("%Y-%m-%d %H:%M:%S") if group.reviewed_at else None,
+            "expire_at": group.expire_at.strftime("%Y-%m-%d %H:%M:%S") if group.expire_at else None
+        },
+        db=db
+    )
+    return {
+        "status": "success",
+        "message": f"租户空间 [{group.group_name}] 已{ '通过' if action == 'approve' else '拒绝' }",
+        "data": {
+            "group_id": group.id,
+            "status": group.status,
+            "is_active": group.is_active,
+            "expire_at": group.expire_at.strftime("%Y-%m-%d %H:%M:%S") if group.expire_at else None,
+            "review_note": group.review_note,
+            "reviewed_at": group.reviewed_at.strftime("%Y-%m-%d %H:%M:%S") if group.reviewed_at else None
+        }
+    }
+
+
+@router.put("/groups/{group_id}/expire", summary="【管理端】更新租户空间到期时间")
+def update_group_expire_at(
+        group_id: int,
+        expire_at: str = Query(..., description="ISO 8601 到期时间"),
+        current_user: User = Depends(RBACChecker("tenant:space:review")),
+        db: Session = Depends(get_db)
+):
+    _require_super_admin(current_user)
+    group = db.query(DeveloperGroup).filter(DeveloperGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="租户空间不存在")
+
+    parsed_expire_at = _parse_expire_at(expire_at)
+    if not parsed_expire_at:
+        raise HTTPException(status_code=400, detail="expire_at 不能为空")
+
+    group.expire_at = parsed_expire_at
+    if group.status != "rejected":
+        group.status = "approved"
+        group.is_active = True
+    group.reviewed_at = datetime.datetime.now()
+
+    db.commit()
+    db.refresh(group)
+    return {
+        "status": "success",
+        "message": f"租户空间 [{group.group_name}] 到期时间已更新",
+        "data": {
+            "group_id": group.id,
+            "expire_at": group.expire_at.strftime("%Y-%m-%d %H:%M:%S") if group.expire_at else None,
+            "status": group.status,
+            "is_active": group.is_active
+        }
+    }
+
+
+@router.post("/groups/{group_id}/assign", summary="【管理端】分配租户空间给租户管理员")
+def assign_group_to_tenant_admin(
+        group_id: int,
+        payload: TenantSpaceAssignInput,
+        current_user: User = Depends(RBACChecker("tenant:space:review")),
+        db: Session = Depends(get_db)
+):
+    _require_super_admin(current_user)
+    group = db.query(DeveloperGroup).filter(DeveloperGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="租户空间不存在")
+
+    target_user = db.query(User).filter(User.id == payload.user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="目标用户不存在")
+
+    role_names = {role.name for role in target_user.roles}
+    if "tenant_admin" not in role_names and "super_admin" not in role_names:
+        raise HTTPException(status_code=400, detail="目标用户不是租户管理员")
+
+    group.owner_user_id = target_user.id
+    group.owner = target_user.username
+    if payload.bind_user_group:
+        target_user.group_id = group.id
+    db.commit()
+    db.refresh(group)
+    db.refresh(target_user)
+
+    dispatch_webhook_event(
+        event_type="tenant_space.assign",
+        payload={
+            "group_id": group.id,
+            "group_name": group.group_name,
+            "user_id": target_user.id,
+            "username": target_user.username,
+            "bind_user_group": payload.bind_user_group
+        },
+        db=db
+    )
+
+    return {
+        "status": "success",
+        "message": f"租户空间 [{group.group_name}] 已分配给用户 [{target_user.username}]",
+        "data": {
+            "group_id": group.id,
+            "owner_user_id": group.owner_user_id,
+            "owner": group.owner,
+            "user_group_id": target_user.group_id
+        }
+    }
+
+
 # ==================== 📱 模块二：独立应用多租户产品生命周期 ====================
 
 @router.get("/apps/flat_list", summary="【管理端】拉取平铺的应用资产大盘（含组织信息）")
@@ -163,6 +384,21 @@ def list_apps_flat(
     return result
 
 
+@router.post("/apps/logo/upload", summary="【管理端】安全上传应用图标")
+def upload_app_logo(
+        file: UploadFile = File(...),
+        current_user: User = Depends(RBACChecker("admin:create"))
+):
+    app_logo = save_app_logo_upload(file)
+    return {
+        "status": "success",
+        "message": "图标上传成功",
+        "data": {
+            "app_logo": app_logo
+        }
+    }
+
+
 @router.post("/apps", summary="【管理端】在指定工作室下创建独立应用")
 def create_app(
         payload: AppCreateInput,
@@ -173,11 +409,13 @@ def create_app(
     if not group_exists:
         raise HTTPException(status_code=404, detail="归属工作室主体不存在，无法创建应用")
 
+    app_logo = ensure_uploaded_logo_reference(payload.app_logo) or ""
+
     new_app = App(
         group_id=payload.group_id,
         app_name=payload.app_name,
-        app_logo=payload.app_logo,
-        owner=payload.owner
+        app_logo=app_logo,
+        owner=payload.owner or "admin"
     )
     db.add(new_app)
     db.commit()
@@ -207,7 +445,6 @@ def get_dashboard_stats(
             return json.loads(cached_data)
     except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError):
         # 容错：如果 Redis 偶发性断连，打印警告日志，降级穿透去查 MySQL，保障系统高可用
-        import logging
         logging.warning("⚠️ [大盘风控] Redis 读取失败，大盘临时降级穿透撞击数据库！")
 
     # ==================== 🚫 穿透层：缓存未命中，开始计算重度数据 ====================
@@ -319,6 +556,84 @@ def get_admin_profile(
         "status": "success",
         "username": current_user.username,
         "nickname": current_user.nickname or "普通合规用户"
+    }
+
+
+def _parse_date_range(value: str | None) -> tuple[datetime.datetime | None, datetime.datetime | None]:
+    if not value:
+        return None, None
+
+    raw = value.strip()
+    if " - " not in raw:
+        return None, None
+
+    start_str, end_str = [item.strip() for item in raw.split(" - ", 1)]
+
+    def _parse_dt(text: str, is_end: bool) -> datetime.datetime | None:
+        if not text:
+            return None
+        normalized = text.replace("/", "-")
+        try:
+            parsed = datetime.datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if len(normalized) == 10:
+            if is_end:
+                return parsed + datetime.timedelta(days=1) - datetime.timedelta(seconds=1)
+            return parsed
+        return parsed
+
+    return _parse_dt(start_str, False), _parse_dt(end_str, True)
+
+
+@router.get("/audit/logs", summary="【管理端】获取系统管理员操作日志")
+def list_system_operation_logs(
+        page: int = Query(1, ge=1),
+        limit: int = Query(15, ge=1, le=100),
+        operator: str | None = Query(None),
+        level: str | None = Query(None),
+        date_range: str | None = Query(None),
+        scope: str | None = Query("system_admin"),
+        current_user: User = Depends(RBACChecker("admin:read")),
+        db: Session = Depends(get_db)
+):
+    scope_value = (scope or "system_admin").strip().lower()
+    if scope_value not in {"system_admin", "tenant_admin"}:
+        scope_value = "system_admin"
+
+    query = db.query(OperationLog).filter(OperationLog.actor_role == scope_value)
+
+    if operator:
+        query = query.filter(OperationLog.actor_username.contains(operator.strip()))
+    if level:
+        query = query.filter(OperationLog.level == level.strip().upper())
+
+    start_dt, end_dt = _parse_date_range(date_range)
+    if start_dt:
+        query = query.filter(OperationLog.created_at >= start_dt)
+    if end_dt:
+        query = query.filter(OperationLog.created_at <= end_dt)
+
+    total = query.count()
+    rows = query.order_by(OperationLog.id.desc()).offset((page - 1) * limit).limit(limit).all()
+    data = [
+        {
+            "id": item.id,
+            "operator": item.actor_username,
+            "action": item.action,
+            "method": item.method,
+            "path": item.path,
+            "ip": item.ip,
+            "level": item.level,
+            "created_at": item.created_at.strftime("%Y-%m-%d %H:%M:%S") if item.created_at else "-",
+            "payload": item.payload or ""
+        }
+        for item in rows
+    ]
+    return {
+        "code": 200,
+        "count": total,
+        "data": data
     }
 
 
@@ -608,7 +923,7 @@ def update_user_permissions(
     if updated:
         db.commit()
         # 🌟 4. 权限变更，立刻清理该用户的会话缓存，安全合规熔断
-        revoke_user_redis_sessions(target_user.id)
+        revoke_user_redis_sessions(int(getattr(target_user, "id", 0)))
 
     return {"status": "success", "message": f"用户 [{target_user.username}] 的独立权限已更新。"}
 
@@ -627,7 +942,7 @@ def update_user_roles(
     updated = False
     # 🌟 2. 干净的循环遍历
     for role_name in payload.roles:
-        role = db.query(Role).filter(Role.name == role_name).first()
+        role = db.query(Role).filter(Role.name == role_name.strip()).first()
         if not role:
             continue
 
@@ -646,7 +961,7 @@ def update_user_roles(
         try:
             db.commit()
             # 🌟 3. 角色变更意味着权限大洗牌，必须强刷缓存
-            revoke_user_redis_sessions(target_user.id)
+            revoke_user_redis_sessions(int(getattr(target_user, "id", 0)))
         except Exception as e:
             db.rollback()
             raise HTTPException(status_code=500, detail="角色更新失败，数据库错误")
@@ -698,6 +1013,14 @@ def delete_user(
 
     db.delete(target_user)
     db.commit()
+    dispatch_webhook_event(
+        event_type="user.delete",
+        payload={
+            "user_id": target_user.id,
+            "status": "terminated"
+        },
+        db=db
+    )
     return {"status": "success", "message": f"用户 [{target_user.username}] 已被物理删除"}
 
 # 强制创建用户接口，接收用户名、密码和权限组，创建新的用户
@@ -720,11 +1043,22 @@ def create_user(
 
     new_user = User(
         username=payload.username,
-        password_hash=pwd_context.hash(payload.password),
-        roles=user_roles
+        password_hash=pwd_context.hash(payload.password)
     )
+    if hasattr(new_user, "roles"):
+        new_user.roles = user_roles
     db.add(new_user)
     db.commit()
+    dispatch_webhook_event(
+        event_type="user.create",
+        payload={
+            "user_id": new_user.id,
+            "username": new_user.username,
+            "email": new_user.email,
+            "created_at": str(new_user.created_at)
+        },
+        db=db
+    )
     return {"status": "success", "message": f"用户 [{payload.username}] 已成功创建"}
 
 # 强制修改用户昵称接口，接收用户 ID 和新的昵称，更新数据库中的用户昵称
@@ -741,3 +1075,83 @@ def update_user_nickname(
     target_user.nickname = payload.new_nickname
     db.commit()
     return {"status": "success", "message": f"用户 [{target_user.username}] 的昵称已成功更新"}
+
+
+# ==================== 🏢 租户空间审批管理 ====================
+
+@router.get("/tenants/list", summary="【超管】租户空间列表与审批状态")
+def list_tenants(
+        current_user: User = Depends(RBACChecker("admin:read")),
+        db: Session = Depends(get_db)
+):
+    if not _is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="仅允许超级管理员查看租户审批列表")
+
+    groups = db.query(DeveloperGroup).order_by(DeveloperGroup.id.desc()).all()
+    return {
+        "status": "success",
+        "data": [
+            {
+                "group_id": g.id,
+                "group_name": g.group_name,
+                "group_code": g.group_code,
+                "status": g.status,
+                "is_active": g.is_active,
+                "review_note": g.review_note,
+                "reviewed_at": g.reviewed_at.strftime("%Y-%m-%d %H:%M:%S") if g.reviewed_at else None,
+                "expire_at": g.expire_at.strftime("%Y-%m-%d %H:%M:%S") if g.expire_at else None,
+                "owner_user_id": g.owner_user_id
+            }
+            for g in groups
+        ]
+    }
+
+
+@router.post("/tenants/{group_id}/review", summary="【超管】审批租户空间")
+def review_tenant(
+        group_id: int,
+        payload: TenantReviewInput,
+        current_user: User = Depends(RBACChecker("admin:update")),
+        db: Session = Depends(get_db)
+):
+    if not _is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="仅允许超级管理员审批租户空间")
+
+    target = db.query(DeveloperGroup).filter(DeveloperGroup.id == group_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="租户空间不存在")
+
+    action = (payload.action or "").lower().strip()
+    now_time = datetime.datetime.now()
+
+    if action == "approve":
+        if not payload.expire_at:
+            raise HTTPException(status_code=400, detail="审批通过必须设置到期时间")
+        try:
+            expire_at = datetime.datetime.fromisoformat(payload.expire_at)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="到期时间格式不合法，需 ISO 8601 格式")
+
+        target.status = "approved"
+        target.is_active = True
+        target.expire_at = expire_at
+        target.review_note = payload.review_note
+        target.reviewed_at = now_time
+    elif action == "reject":
+        target.status = "rejected"
+        target.is_active = False
+        target.review_note = payload.review_note
+        target.reviewed_at = now_time
+    else:
+        raise HTTPException(status_code=400, detail="无效的审批动作，必须为 approve 或 reject")
+
+    db.commit()
+    return {
+        "status": "success",
+        "message": f"租户空间 [{target.group_name}] 审批已完成",
+        "data": {
+            "group_id": target.id,
+            "status": target.status,
+            "expire_at": target.expire_at.strftime("%Y-%m-%d %H:%M:%S") if target.expire_at else None
+        }
+    }

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>租户空间异常 - OnAuth</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <style>
+        body { margin: 0; background: radial-gradient(circle at top, #f8fafc, #e2e8f0); font-family: "Microsoft YaHei", sans-serif; }
+        .wrap { min-height: 100vh; display:flex; align-items:center; justify-content:center; padding: 24px; }
+        .panel { max-width: 720px; width: 100%; background:#fff; border-radius: 16px; box-shadow: 0 20px 40px rgba(15,23,42,.08); border:1px solid #e5e7eb; overflow:hidden; }
+        .header { padding: 22px 24px; background: linear-gradient(135deg, #0f172a, #1d4ed8); color: #fff; }
+        .title { font-size: 22px; font-weight: 700; margin: 0; }
+        .sub { opacity: .9; margin-top: 6px; font-size: 13px; }
+        .body { padding: 24px; color:#334155; }
+        .badge { display:inline-block; padding: 4px 12px; border-radius: 999px; background:#fef3c7; color:#b45309; font-size: 12px; font-weight:700; }
+        .msg { margin: 16px 0 18px; padding: 14px 16px; border-radius: 10px; background:#f8fafc; border:1px solid #e2e8f0; color:#475569; line-height: 1.7; }
+        .actions { display:flex; gap: 10px; flex-wrap: wrap; }
+        .btn-primary { background: linear-gradient(135deg,#2563eb,#1d4ed8) !important; border: none !important; border-radius: 8px !important; }
+        .btn-light { border-radius: 8px !important; }
+        .meta { display:flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; font-size: 12px; color:#64748b; }
+        .meta span { background:#f8fafc; border:1px solid #e2e8f0; border-radius: 999px; padding: 5px 10px; }
+        .status-line { margin-top: 10px; color:#475569; font-size: 13px; line-height: 1.8; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="panel">
+        <div class="header">
+            <p class="title">当前没有可用租户空间</p>
+            <div class="sub">租户管理员需要先创建空间，或等待超级管理员审核通过/分配空间。</div>
+        </div>
+        <div class="body">
+            <span class="badge">SPACE REQUIRED</span>
+            <div class="msg">
+                <div><strong>原因：</strong>{{ error_message or '当前账号尚未绑定租户空间，请先创建空间。' }}</div>
+                {% if group %}
+                <div style="margin-top:8px;"><strong>当前状态：</strong>{{ group.status }}</div>
+                <div style="margin-top:8px;"><strong>审批备注：</strong>{{ group.review_note or '-' }}</div>
+                {% endif %}
+            </div>
+            <div class="status-line">如果你是租户管理员，可以先发起空间申请；如果已经提交申请，请等待超级管理员审核。</div>
+            <div class="actions">
+                <a class="layui-btn btn-primary" href="/tenant/apply">申请创建空间</a>
+                <a class="layui-btn layui-btn-primary btn-light" href="/tenant/profile">返回概览</a>
+            </div>
+            <div class="meta">
+                <span>空间申请后进入 pending</span>
+                <span>审核通过后才可创建应用</span>
+                <span>Webhook 接入仅在空间可用时开放</span>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
+

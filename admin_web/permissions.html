@@ -84,14 +84,7 @@
 <script type="text/html" id="table-bar">
     {% raw %}
     <div style="display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
-        {{#
-        var PROTECTED_PERMS = ["read", "write", "admin:read", "admin:write", "admin:create", "admin:delete", "admin:update"];
-        if(PROTECTED_PERMS.indexOf(d.name) !== -1){
-        }}
-            <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-del-disabled" lay-event="disabled_del_tip">删除节点</button>
-        {{# } else { }}
-            <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-del" lay-event="del">删除节点</button>
-        {{# } }}
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-del-disabled" lay-event="disabled_del_tip">不可删除</button>
     </div>
     {% endraw %}
 </script>
@@ -199,25 +192,8 @@ layui.use(['table', 'form', 'layer'], function(){
     // 4. 行内删除监听器
     table.on('tool(permTable)', function(obj){
         const data = obj.data;
-        if(obj.event === 'edit') {
-            openRoleModal('⚙️ 精密修调权限组资产细则', data);
-        } else if(obj.event === 'assign') {
-            openAssignModal(data);
-        } else if(obj.event === 'disabled_del_tip') {
+        if(obj.event === 'disabled_del_tip') {
             layer.msg('核心安全策略：该节点属于系统全局根授信底层底座，禁止物理擦除！', {icon: 4});
-        } else if(obj.event === 'del') {
-            layer.confirm(`⚠️ 粉碎警告：确认物理擦除权限节点 [${data.name}] 吗？这可能引发关联角色授权坍塌！`, {
-                icon: 3,
-                title: '粉碎性清退审计',
-                success: (layero) => {
-                    layero.find('.layui-layer-btn0').css('background-color', '#ef4444');
-                }
-            }, function(index){
-                executeAjax('/api/v1/permission/permission.delete', 'DELETE', { permission_id: data.permission_id }, function(){
-                    layer.close(index);
-                    table.reload('perm-table');
-                });
-            });
         }
     });
 });

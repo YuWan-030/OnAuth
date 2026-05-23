@@ -3,17 +3,193 @@ import json
 import datetime
 import os
 import secrets
+import hashlib
+import re
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Form, Cookie, Response, Request, Header
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import time
-from database import get_db, AppCredential, User, Role
+import requests
+from urllib.parse import urlencode
+from database import get_db, AppCredential, User, RiskEvent, RiskGlobalSetting
 from middlewares.auth import redis_client
 from routers.webhook import dispatch_webhook_event
 from utils.crypto import verify_password, create_jwt_token, hash_secret
+from utils.captcha import issue_captcha, verify_captcha
+from utils.risk_expr import build_risk_context, resolve_login_fail_policy
 from config import SECRET_KEY, ALGORITHM
+
+
+def _resolve_ip_location(ip_value: str) -> str:
+    if not ip_value or ip_value == "-":
+        return "未知"
+    private_prefixes = ("10.", "127.", "172.16.", "172.17.", "172.18.", "172.19.", "172.2", "192.168.")
+    if ip_value.startswith(private_prefixes):
+        return "内网"
+    try:
+        resp = requests.get(f"http://ip-api.com/json/{ip_value}", params={"fields": "country,regionName,city"}, timeout=1)
+        if resp.status_code == 200:
+            data = resp.json()
+            parts = [data.get("country"), data.get("regionName"), data.get("city")]
+            return " ".join([p for p in parts if p]) or "未知"
+    except Exception:
+        return "未知"
+    return "未知"
+
+
+def _extract_client_meta(request: Request) -> tuple[str, str, bool, str, str, str]:
+    ip_raw = request.headers.get("X-Forwarded-For") or request.headers.get("X-Real-IP") or request.client.host
+    ip_value = str(ip_raw) if ip_raw else "-"
+    client_ip = ip_value.split(",")[0].strip() if ip_value else "-"
+    user_agent = request.headers.get("User-Agent") or ""
+    ua_lower = user_agent.lower()
+    is_mobile = any(key in ua_lower for key in ["mobile", "iphone", "android", "ipad"])
+    if "edg" in ua_lower or "edge" in ua_lower:
+        browser = "Edge"
+    elif "chrome" in ua_lower and "safari" in ua_lower:
+        browser = "Chrome"
+    elif "safari" in ua_lower:
+        browser = "Safari"
+    elif "firefox" in ua_lower:
+        browser = "Firefox"
+    else:
+        browser = "Unknown"
+    if "windows" in ua_lower:
+        os_name = "Windows"
+    elif "mac os" in ua_lower or "macintosh" in ua_lower:
+        os_name = "macOS"
+    elif "android" in ua_lower:
+        os_name = "Android"
+    elif "iphone" in ua_lower or "ipad" in ua_lower or "ios" in ua_lower:
+        os_name = "iOS"
+    elif "linux" in ua_lower:
+        os_name = "Linux"
+    else:
+        os_name = "Unknown"
+    location = _resolve_ip_location(client_ip)
+    return client_ip, user_agent, is_mobile, browser, os_name, location
+
+
+def _record_risk_event(db: Session, request: Request, risk_level: str, action: str = "BLOCK") -> None:
+    client_ip, _, _, _, _, _ = _extract_client_meta(request)
+    try:
+        db.add(RiskEvent(
+            action=action,
+            latency_ms=0,
+            ip=client_ip,
+            path=request.url.path,
+            risk_level=risk_level
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _is_global_melt_enabled(db: Session) -> bool:
+    setting = db.query(RiskGlobalSetting).first()
+    return bool(setting and setting.is_melt)
+
+
+LOGIN_FAIL_THRESHOLD = 3
+LOGIN_FAIL_TTL_SECONDS = 600
+LOGIN_FAIL_RULE_TYPE = "LOGIN_FAIL_CAPTCHA"
+PKCE_VERIFIER_RE = re.compile(r"^[A-Za-z0-9\-._~]{43,128}$")
+
+
+def _get_login_fail_policy(db: Session, request: Request, username: str, fail_count: int) -> tuple[int, int]:
+    client_ip, user_agent, is_mobile, browser, os_name, location = _extract_client_meta(request)
+    context = build_risk_context(
+        username=username,
+        ip=client_ip,
+        path=request.url.path,
+        user_agent=user_agent,
+        browser=browser,
+        os=os_name,
+        location=location,
+        is_mobile=is_mobile,
+        fail_count=fail_count
+    )
+    threshold, window, _ = resolve_login_fail_policy(
+        db=db,
+        context=context,
+        default_threshold=LOGIN_FAIL_THRESHOLD,
+        default_window=LOGIN_FAIL_TTL_SECONDS,
+        rule_type=LOGIN_FAIL_RULE_TYPE,
+        action="CAPTCHA"
+    )
+    return threshold, window
+
+
+def _login_fail_key(username: str, client_ip: str) -> str:
+    safe_user = (username or "").strip().lower() or "unknown"
+    safe_ip = (client_ip or "-").strip()
+    return f"login_fail:{safe_user}:{safe_ip}"
+
+
+def _get_login_fail_count(username: str, client_ip: str) -> int:
+    value = redis_client.get(_login_fail_key(username, client_ip))
+    try:
+        return int(value or 0)
+    except ValueError:
+        return 0
+
+
+def _increment_login_fail(username: str, client_ip: str, ttl_seconds: int) -> int:
+    key = _login_fail_key(username, client_ip)
+    count = redis_client.incr(key)
+    if count == 1:
+        redis_client.expire(key, ttl_seconds)
+    return int(count)
+
+
+def _clear_login_fail(username: str, client_ip: str) -> None:
+    redis_client.delete(_login_fail_key(username, client_ip))
+
+
+def _captcha_required_response(message: str) -> JSONResponse:
+    token, image = issue_captcha(redis_client)
+    return JSONResponse(
+        status_code=403,
+        content={
+            "message": message,
+            "captcha_required": True,
+            "captcha_token": token,
+            "captcha_image": image
+        }
+    )
+
+
+def _validate_pkce_challenge(code_challenge: str) -> str:
+    challenge = (code_challenge or "").strip()
+    if len(challenge) < 43 or len(challenge) > 128:
+        raise HTTPException(status_code=400, detail="PKCE 参数错误：code_challenge 长度必须在 43~128 之间")
+    if not re.fullmatch(r"[A-Za-z0-9\-._~]+", challenge):
+        raise HTTPException(status_code=400, detail="PKCE 参数错误：code_challenge 含有非法字符")
+    return challenge
+
+
+def _normalize_pkce_method(code_challenge_method: str | None) -> str:
+    method = (code_challenge_method or "S256").strip().upper()
+    if method not in {"S256", "PLAIN"}:
+        raise HTTPException(status_code=400, detail="PKCE 参数错误：code_challenge_method 仅支持 S256 或 plain")
+    return method
+
+
+def _validate_code_verifier(code_verifier: str) -> str:
+    verifier = (code_verifier or "").strip()
+    if not PKCE_VERIFIER_RE.fullmatch(verifier):
+        raise HTTPException(status_code=400, detail="PKCE 参数错误：code_verifier 格式不合法")
+    return verifier
+
+
+def _derive_code_challenge(code_verifier: str, method: str) -> str:
+    if method == "PLAIN":
+        return code_verifier
+    digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+
 
 router = APIRouter(tags=["OAuth2标准流"])
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,6 +205,8 @@ def oauth_authorize(
         redirect_uri: str = Query(...),
         scope: str = Query("read"),
         state: str = Query(None),
+        code_challenge: str = Query(...),
+        code_challenge_method: str = Query("S256"),
 
         # 🎯 纯净双轨：只拦截你中台登录时亲手种下的两个 Session Cookie 键名
         sso_session_id: str = Cookie(None),
@@ -41,6 +219,9 @@ def oauth_authorize(
             name="oauth_error.html",
             context={"request": request, "detail": "目前仅支持 response_type='code' 标准授权码模式。"}
         )
+
+    pkce_method = _normalize_pkce_method(code_challenge_method)
+    pkce_challenge = _validate_pkce_challenge(code_challenge)
 
     cred = db.query(AppCredential).filter(AppCredential.client_id == client_id).first()
     if not cred:
@@ -91,6 +272,8 @@ def oauth_authorize(
         "redirect_uri": redirect_uri,
         "scope": scope,
         "state": state or "",
+        "code_challenge": pkce_challenge,
+        "code_challenge_method": pkce_method,
         "group_name": current_group.group_name,
         "app_name": current_app.app_name,
         "app_logo": current_app.app_logo
@@ -126,16 +309,37 @@ def login_submit(
         redirect_uri: str = Form(...),
         scope: str = Form(...),
         state: str = Form(None),
+        code_challenge: str = Form(...),
+        code_challenge_method: str = Form("S256"),
+        captcha_token: str = Form(None),
+        captcha_code: str = Form(None),
         db: Session = Depends(get_db)
 ):
+    if _is_global_melt_enabled(db):
+        _record_risk_event(db, request, risk_level="high", action="BLOCK")
+        raise HTTPException(status_code=503, detail="全局熔断已开启，登录入口临时关闭，请稍后重试")
+
+    client_ip, _, _, _, _, _ = _extract_client_meta(request)
+    fail_count = _get_login_fail_count(username, client_ip)
+    threshold, window_seconds = _get_login_fail_policy(db, request, username, fail_count)
+    if fail_count >= threshold:
+        if not verify_captcha(redis_client, captcha_token, captcha_code):
+            return _captcha_required_response("登录失败次数过多，请输入验证码")
+
     # 1. 🔍 捞取核心用户基础信息
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(password, user.password_hash):
+        _record_risk_event(db, request, risk_level="high")
+        new_count = _increment_login_fail(username, client_ip, window_seconds)
+        if new_count >= threshold:
+            return _captcha_required_response("登录失败次数过多，请输入验证码")
         raise HTTPException(status_code=401, detail="安全身份审计拒绝：用户名或密码错误，请重新核对")
 
     if not user.is_active:
+        _record_risk_event(db, request, risk_level="medium")
         raise HTTPException(status_code=403, detail="合规性安全阻断：当前用户账户已被系统永久冻结或查封")
 
+    _clear_login_fail(username, client_ip)
 
     # 2. ⚡ 生成传统的 Redis 会话（供 OAuth 授权大厅撞库）
     new_session_id = "sess_" + secrets.token_hex(12)
@@ -145,11 +349,32 @@ def login_submit(
     redis_client.sadd(user_set_key, new_session_id)
     redis_client.expire(user_set_key, 86400)  # 保持过期时间一致
 
+    client_ip, user_agent, is_mobile, browser, os_name, location = _extract_client_meta(request)
+    meta_key = f"sess_meta:{new_session_id}"
+    redis_client.hset(meta_key, mapping={
+        "ip": client_ip,
+        "ua": user_agent,
+        "is_mobile": "1" if is_mobile else "0",
+        "browser": browser,
+        "os": os_name,
+        "location": location,
+        "login_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    redis_client.expire(meta_key, 86400)
+
 
     # 3. 🎯 组装目标重定向 URL
-    target_url = f"/oauth/authorize?client_id={client_id}&response_type=code&redirect_uri={redirect_uri}&scope={scope}"
+    target_query = {
+        "client_id": client_id,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "scope": scope,
+        "code_challenge": code_challenge,
+        "code_challenge_method": code_challenge_method
+    }
     if state:
-        target_url += f"&state={state}"
+        target_query["state"] = state
+    target_url = f"/oauth/authorize?{urlencode(target_query)}"
 
     dispatch_webhook_event(
         event_type="auth.login",
@@ -185,6 +410,8 @@ def consent_submit(
         redirect_uri: str = Form(...),
         scope: str = Form(...),
         state: str = Form(None),
+        code_challenge: str = Form(...),
+        code_challenge_method: str = Form("S256"),
         session_id: str = Form(..., description="接收从上一步 HTML 隐藏表单里提交上来的会话ID"),
         db: Session = Depends(get_db)
 ):
@@ -205,6 +432,12 @@ def consent_submit(
     username = redis_client.get(session_id)
     if not username:
         raise HTTPException(status_code=401, detail="会话已过期，请重新登录")
+
+    if isinstance(username, bytes):
+        username = username.decode("utf-8")
+
+    pkce_method = _normalize_pkce_method(code_challenge_method)
+    pkce_challenge = _validate_pkce_challenge(code_challenge)
 
     user = db.query(User).filter(User.username == username).first()
     if not user:
@@ -229,7 +462,9 @@ def consent_submit(
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "scope": ",".join(final_scopes),
-        "username": username
+        "username": username,
+        "code_challenge": pkce_challenge,
+        "code_challenge_method": pkce_method
     }
     redis_client.setex(f"oauth_code:{auth_code}", 600, json.dumps(auth_code_data))
 
@@ -246,6 +481,7 @@ def oauth_token_exchange(
         client_secret: str = Form(None),
         authorization: str = Header(None, description="标准 HTTP Basic 认证头"),
         code: str = Form(None),
+        code_verifier: str = Form(None),
         refresh_token: str = Form(None),
         db: Session = Depends(get_db)
 ):
@@ -299,6 +535,8 @@ def oauth_token_exchange(
     elif grant_type == "authorization_code":
         if not code:
             raise HTTPException(status_code=400, detail="授权码模式下必须提供 'code' 参数")
+        if not code_verifier:
+            raise HTTPException(status_code=400, detail="PKCE 校验失败：授权码模式下必须提供 code_verifier")
 
         redis_key = f"oauth_code:{code}"
         code_raw = redis_client.get(redis_key)
@@ -310,6 +548,15 @@ def oauth_token_exchange(
 
         if code_info["client_id"] != client_id:
             raise HTTPException(status_code=400, detail="安全隔离阻断：串号漏洞拒绝！")
+
+        verifier = _validate_code_verifier(code_verifier)
+        method = _normalize_pkce_method(code_info.get("code_challenge_method", "S256"))
+        expected_challenge = str(code_info.get("code_challenge") or "").strip()
+        if not expected_challenge:
+            raise HTTPException(status_code=400, detail="PKCE 校验失败：授权码缺少挑战值")
+        derived_challenge = _derive_code_challenge(verifier, method)
+        if not secrets.compare_digest(derived_challenge, expected_challenge):
+            raise HTTPException(status_code=400, detail="PKCE 校验失败：code_verifier 不匹配")
 
         access_token_expire = current_time + datetime.timedelta(days=1)
         refresh_token_expire = current_time + datetime.timedelta(days=30)

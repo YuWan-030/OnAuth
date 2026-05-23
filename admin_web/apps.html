@@ -125,6 +125,41 @@
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
         }
 
+        .logo-upload-box {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .logo-preview-box {
+            min-height: 80px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 8px;
+            background: #f8fafc;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        .logo-preview-img {
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            object-fit: cover;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+        }
+
+        .logo-hint {
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.6;
+        }
+
         /* 防止下拉框在弹出层内溢出被裁切 */
         .layui-layer-page .layui-layer-content { overflow: visible !important; }
     </style>
@@ -187,9 +222,14 @@
                 </div>
             </div>
             <div class="layui-form-item">
-                <label class="layui-form-label">Logo URL</label>
+                <label class="layui-form-label">应用图标</label>
                 <div class="layui-input-block">
-                    <input type="text" name="app_logo" placeholder="可选，输入图标绝对路径" class="layui-input">
+                    <input type="hidden" name="app_logo" id="appLogoValue">
+                    <div class="logo-upload-box">
+                        <input type="file" id="appLogoFile" accept="image/png,image/jpeg,image/webp" class="layui-input">
+                        <div class="logo-hint">仅支持 PNG / JPEG / WebP，单文件不超过 2MB；上传后会自动重编码为 PNG，禁止直接填写 URL。</div>
+                        <div class="logo-preview-box" id="appLogoPreview">尚未上传图标，创建后将使用默认图标。</div>
+                    </div>
                 </div>
             </div>
         </form>
@@ -199,6 +239,76 @@
 <script>
 layui.use(['table', 'form', 'layer'], function(){
     var table = layui.table, form = layui.form, layer = layui.layer, $ = layui.$;
+
+    function resetLogoPreview($scope) {
+        $scope.find('input[name="app_logo"]').val('');
+        $scope.find('#appLogoFile').val('');
+        $scope.find('#appLogoPreview').html('尚未上传图标，创建后将使用默认图标。');
+    }
+
+    function setLogoPreview($scope, url) {
+        var $box = $scope.find('#appLogoPreview');
+        $box.empty();
+        if (!url) {
+            $box.text('尚未上传图标，创建后将使用默认图标。');
+            return;
+        }
+        var $img = $('<img>').addClass('logo-preview-img').attr('src', url).attr('alt', 'logo');
+        var $text = $('<div>').css({ 'word-break': 'break-all', 'line-height': '1.6' }).text(url);
+        $box.append($img).append($text);
+    }
+
+    function uploadAppLogo(file) {
+        var formData = new FormData();
+        formData.append('file', file);
+        return $.ajax({
+            url: '/admin/apps/logo/upload',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false
+        });
+    }
+
+    $(document).on('change', '#appLogoFile', function(){
+        var $scope = $(this).closest('.layui-layer');
+        var file = this.files && this.files[0];
+        if (!file) {
+            return;
+        }
+        if (!/^image\/(png|jpeg|webp)$/i.test(file.type)) {
+            layer.msg('仅支持 PNG、JPEG 或 WebP 图片', {icon: 2});
+            this.value = '';
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            layer.msg('图片大小不能超过 2MB', {icon: 2});
+            this.value = '';
+            return;
+        }
+
+        var loading = layer.msg('图标上传中，请稍候...', {icon: 16, shade: 0.2, time: 0});
+        uploadAppLogo(file).done(function(res){
+            layer.close(loading);
+            var logo = res?.data?.app_logo || '';
+            if (!logo) {
+                layer.msg('图标上传失败', {icon: 2});
+                resetLogoPreview($scope);
+                return;
+            }
+            $scope.find('input[name="app_logo"]').val(logo);
+            setLogoPreview($scope, logo);
+            layer.msg('图标上传成功', {icon: 1});
+        }).fail(function(xhr){
+            layer.close(loading);
+            resetLogoPreview($scope);
+            if(xhr.status === 401){
+                layer.msg('会话已失效，请重新登录', {icon: 2}, function(){ window.top.location.href = '/login'; });
+            } else {
+                layer.msg(xhr.responseJSON?.detail || '图标上传失败', {icon: 2});
+            }
+        });
+    });
 
     // 1. 初始化表格
     table.render({
@@ -275,72 +385,74 @@ layui.use(['table', 'form', 'layer'], function(){
 
     // 4. 动态弹窗并拉取数据
     $('#btn-add-app').on('click', function(){
-        $('#groupSelect').html('<option value="">-- 请选择所属组织空间 --</option>');
-
         $.ajax({
             url: '/admin/groups/list',
             type: 'GET',
             success: function(res){
+                var groupOptions = '<option value="">-- 请选择所属组织空间 --</option>';
                 $.each(res, function(index, item){
                     if(item.is_active) {
-                        $('#groupSelect').append(new Option(item.group_name, item.id));
+                        groupOptions += '<option value="' + item.id + '">' + item.group_name + '</option>';
                     }
                 });
-                form.render('select');
+
+                layer.open({
+                    type: 1,
+                    title: '🚀 开通全新独立应用主体',
+                    content: $('#addAppModal'),
+                    area: ['620px', '460px'],
+                    btn: ['立即开通', '取消'],
+                    success: function(layero){
+                        resetLogoPreview(layero);
+                        layero.find('select[name="group_id"]').html(groupOptions);
+                        form.render('select');
+                        layero.find('.layui-layer-btn0').css({
+                            'background': 'linear-gradient(135deg,#2563eb,#1d4ed8)',
+                            'border-color': '#2563eb'
+                        });
+                    },
+                    yes: function(index, layero){
+                        var groupId = layero.find('select[name="group_id"]').val();
+                        var appName = layero.find('input[name="app_name"]').val();
+                        var appLogo = layero.find('input[name="app_logo"]').val();
+                        if(!groupId || !appName) {
+                            layer.msg('请完整填写必填项');
+                            return false;
+                        }
+
+                        $.ajax({
+                            url: '/admin/apps',
+                            type: 'POST',
+                            data: JSON.stringify({
+                                group_id: parseInt(groupId),
+                                app_name: appName,
+                                app_logo: appLogo,
+                                owner: 'admin'
+                            }),
+                            contentType: 'application/json',
+                            success: function(res){
+                                layer.close(index);
+                                layer.msg('独立应用挂载成功！', {icon: 1});
+                                table.reload('appTable');
+                            },
+                            error: function(err){
+                                if(err.status === 401){
+                                    layer.msg('操作已被拦截，请重新登录！', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                                } else {
+                                    layer.msg(err.responseJSON?.detail || '开通失败', {icon: 2});
+                                }
+                            }
+                        });
+                    },
+                    end: function(){
+                        $('#addAppModal').hide();
+                    }
+                });
             },
             error: function(err){
                 if(err.status === 401){
                     layer.msg('未授权或会话过期，请先登录！', {icon: 2}, function(){ window.top.location.href = '/login'; });
                 }
-            }
-        });
-
-        layer.open({
-            type: 1,
-            title: '🚀 开通全新独立应用主体',
-            content: $('#addAppModal'),
-            area: ['520px', '340px'],
-            btn: ['立即开通', '取消'],
-            success: function(layero, index){
-                layero.find('.layui-layer-btn0').css({
-                    'background': 'linear-gradient(135deg,#2563eb,#1d4ed8)',
-                    'border-color': '#2563eb'
-                });
-            },
-            yes: function(index, layero){
-                var formData = form.val('appForm');
-                if(!formData.group_id || !formData.app_name) {
-                    layer.msg('请完整填写必填项');
-                    return false;
-                }
-
-                $.ajax({
-                    url: '/admin/apps',
-                    type: 'POST',
-                    data: JSON.stringify({
-                        group_id: parseInt(formData.group_id),
-                        app_name: formData.app_name,
-                        app_logo: formData.app_logo,
-                        owner: 'admin'
-                    }),
-                    contentType: 'application/json',
-                    success: function(res){
-                        layer.close(index);
-                        layer.msg('独立应用挂载成功！', {icon: 1});
-                        $('#appForm')[0].reset();
-                        table.reload('appTable');
-                    },
-                    error: function(err){
-                        if(err.status === 401){
-                            layer.msg('操作已被拦截，请重新登录！', {icon: 2}, function(){ window.top.location.href = '/login'; });
-                        } else {
-                            layer.msg(err.responseJSON?.detail || '开通失败', {icon: 2});
-                        }
-                    }
-                });
-            },
-            end: function(){
-                $('#addAppModal').hide();
             }
         });
     });

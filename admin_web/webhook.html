@@ -116,10 +116,16 @@
         <div class="layui-form-item">
             <label class="layui-form-label"><span style="color:#ef4444">*</span> 订阅事件</label>
             <div class="layui-input-block event-checkbox-grid">
+                <input type="checkbox" name="events[tenant_space.apply]" title="空间申请" value="tenant_space.apply" lay-skin="primary" checked>
+                <input type="checkbox" name="events[tenant_space.review]" title="空间审核" value="tenant_space.review" lay-skin="primary">
+                <input type="checkbox" name="events[tenant_space.assign]" title="空间分配" value="tenant_space.assign" lay-skin="primary">
                 <input type="checkbox" name="events[user.create]" title="用户创建" value="user.create" lay-skin="primary" checked>
                 <input type="checkbox" name="events[user.delete]" title="用户移除" value="user.delete" lay-skin="primary">
                 <input type="checkbox" name="events[role.update]" title="权限修调" value="role.update" lay-skin="primary">
                 <input type="checkbox" name="events[auth.login]" title="授信登录" value="auth.login" lay-skin="primary">
+                <input type="checkbox" name="events[tenant_admin.create]" title="租户管理员注册" value="tenant_admin.create" lay-skin="primary">
+                <input type="checkbox" name="events[tenant_app.create]" title="应用创建" value="tenant_app.create" lay-skin="primary">
+                <input type="checkbox" name="events[tenant_credential.create]" title="凭证签发" value="tenant_credential.create" lay-skin="primary">
             </div>
         </div>
     </form>
