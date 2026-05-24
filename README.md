@@ -1,19 +1,35 @@
 # 🛡️ OnAuth 多租户统一身份认证与访问控制系统
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/Uvicorn-222222?style=for-the-badge&logo=uvicorn&logoColor=white" alt="Uvicorn" />
-  <img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge" alt="Apache License 2.0" />
-</p>
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![Uvicorn](https://img.shields.io/badge/Uvicorn-222222?style=for-the-badge&logo=uvicorn&logoColor=white)
+![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge)
 
-<p align="center"><b>企业级 OAuth2.0 + License 双轨鉴权 · RBAC · 多租户 · 风控 · 会话管理</b></p>
+
+
+**企业级 OAuth2.0 + License 双轨鉴权 · RBAC · 多租户 · 风控 · 会话管理**
+
+---
+
+## 目录
+
+- [项目简介](#项目简介)
+- [功能亮点](#功能亮点)
+- [界面截图](#界面截图)
+- [标准测试软件](#标准测试软件)
+- [快速启动](#快速启动)
+- [项目结构](#项目结构)
+- [配置说明](#配置说明)
+- [风控能力](#风控能力)
+- [测试](#测试)
+- [公开发布清单](#公开发布清单)
+- [许可证](#许可证)
 
 ---
 
 ## 项目简介
 
-OnAuth 是一个面向企业内网/中台/多租户场景的统一身份认证与访问控制系统，提供：
+OnAuth 是一个面向企业内网 / 中台 / 多租户场景的统一身份认证与访问控制系统，提供：
 
 - OAuth 2.0 授权登录（`authorization_code + PKCE`、`client_credentials`、`refresh_token`）
 - 基于 RBAC 的权限控制
@@ -24,31 +40,11 @@ OnAuth 是一个面向企业内网/中台/多租户场景的统一身份认证�
 - 应用凭证与设备绑定控制
 - 管理端 / 租户端 / 用户中心三套 Web 界面
 
----
-
-## 当前完成度评价
-
-**完成度：功能完备的 MVP / Beta 版本，约 80%~90%**
-
-### 已完成的核心能力
-- OAuth2 授权与令牌签发流程已打通
-- PKCE 校验、刷新令牌、客户端凭证模式已支持
-- RBAC 权限、租户空间、应用、凭证、会话、设备管理已形成闭环
-- 风控规则引擎已可配置，并带有默认安全策略
-- 管理端、租户端、用户端页面都已具备可用功能
-- 已有 pytest 回归测试覆盖关键模块
-
-### 还不算“生产级”的部分
-- 配置仍有硬编码项，需要进一步改为环境变量化
-- 仓库需要清理敏感文件后再公开
-- README、部署脚本、演示截图还可继续增强
-- 生产环境加固、监控、审计、备份策略仍可继续完善
-
-**结论：可以上 GitHub，但建议作为“可运行的开源 MVP / Beta”发布，而不是直接宣称生产级成熟产品。**
+**完成度评价：功能完备的 MVP / Beta，约 80%~90%**
 
 ---
 
-## 核心特性
+## 功能亮点
 
 | 模块 | 能力 |
 | --- | --- |
@@ -59,38 +55,6 @@ OnAuth 是一个面向企业内网/中台/多租户场景的统一身份认证�
 | 风控 | 登录失败验证码、扫描器拦截、SQL 注入、XSS、敏感路径探测、全局熔断 |
 | 安全 | Bcrypt 密码哈希、JWT、Redis 会话、设备绑定 |
 | 运维 | 健康检查、审计日志、Webhook、Alembic 迁移 |
-
----
-
-## 技术栈
-
-- **后端**：FastAPI、Uvicorn、SQLAlchemy、Redis
-- **认证**：OAuth 2.0、JWT、PKCE
-- **数据库**：SQLite / MySQL（代码中当前默认使用 SQLite）
-- **前端**：Layui + 原生 HTML / JS
-- **测试**：pytest
-- **迁移**：Alembic
-
----
-
-## 项目结构
-
-```text
-OnAuth/
-├─ app_factory.py          # FastAPI 应用装配
-├─ bootstrap.py            # 启动初始化、默认角色/规则种子
-├─ config.py               # 当前版本的基础配置
-├─ database.py             # ORM 模型与数据库连接
-├─ main.py                 # 启动入口
-├─ routers/                # OAuth、管理端、租户端、用户端 API
-├─ middlewares/            # RBAC、异常处理、操作日志
-├─ utils/                  # 认证、安全、风控、验证码等工具
-├─ admin_web/              # 管理端页面
-├─ tenant_web/             # 租户端页面
-├─ user_web/               # 用户中心页面
-├─ templates/              # 通用模板
-└─ tests/                  # pytest 回归测试
-```
 
 ---
 
@@ -141,7 +105,7 @@ python Test_App_A.py
 - 调试 OAuth 2.0 授权码流程
 - 验证 PKCE 是否生效
 - 检查后端是否正确返回登录失败、授权失败、刷新失败等告警
-- 作为桌面端测试桩/演示工具使用
+- 作为桌面端测试桩 / 演示工具使用
 
 ---
 
@@ -185,6 +149,28 @@ python main.py
 - ReDoc：`https://127.0.0.1:8000/redoc`
 
 > 首次启动时，系统会自动初始化数据库结构、默认角色、默认风控规则和演示账号。
+
+---
+
+## 项目结构
+
+```text
+OnAuth/
+├─ app_factory.py          # FastAPI 应用装配
+├─ bootstrap.py            # 启动初始化、默认角色/规则种子
+├─ config.py                # 当前版本的基础配置
+├─ database.py              # ORM 模型与数据库连接
+├─ main.py                  # 启动入口
+├─ Test_App_A.py            # OAuth 2.0 + PKCE 标准测试软件
+├─ routers/                 # OAuth、管理端、租户端、用户端 API
+├─ middlewares/             # RBAC、异常处理、操作日志
+├─ utils/                   # 认证、安全、风控、验证码等工具
+├─ admin_web/               # 管理端页面
+├─ tenant_web/              # 租户端页面
+├─ user_web/                # 用户中心页面
+├─ templates/               # 通用模板
+└─ tests/                   # pytest 回归测试
+```
 
 ---
 
@@ -249,31 +235,8 @@ pytest -q
 - Windows 异步噪音过滤
 
 ---
-
-## 公开到 GitHub 前的建议清单
-
-如果你准备正式公开仓库，建议先做下面几件事：
-
-- [ ] 移除或替换敏感文件：`.env`、`apps.db`、`local_server.crt`、`local_server.key`
-- [ ] 添加或完善 `.gitignore`
-- [ ] 将 `config.py` 中的硬编码密钥/密码改为环境变量
-- [ ] 检查默认管理员密码是否需要改为首次启动随机生成
-- [ ] 补充项目截图或页面预览
-- [ ] 说明部署环境、数据库初始化和迁移方式
-- [ ] 在 README 中明确“这是 MVP/Beta，不是生产级最终版”
-
----
-
 ## 许可证
 
 本项目遵循 **Apache License 2.0**。
 
 你可以自由使用、修改和分发本项目，但请保留原始版权与许可证声明。
-
----
-
-## 结论
-
-这个项目已经具备了很完整的业务闭环，**可以上传 GitHub**，并且很适合作为一个 **企业级统一认证平台的开源 MVP** 来展示。
-
-不过，**在公开前最好先做一次仓库清理和配置脱敏**，否则会影响专业度，也可能带来安全风险。
