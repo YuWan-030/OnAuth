@@ -114,6 +114,17 @@ def _resolve_current_session_token(request: Request) -> str | None:
     return None
 
 
+def _load_user_from_session_value(db: Session, session_value: str | bytes | None) -> User | None:
+    raw_value = session_value.decode("utf-8") if isinstance(session_value, bytes) else str(session_value or "").strip()
+    if not raw_value:
+        return None
+
+    if raw_value.isdigit():
+        return db.query(User).filter(User.id == int(raw_value)).first()
+
+    return None
+
+
 def _resolve_user_group(db: Session, current_user: User):
     group = getattr(current_user, "group", None)
     if group is not None:
@@ -698,12 +709,8 @@ def delete_account(
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="非法或已过期的会话凭证，拒绝高危执行")
 
-    # 支持 Redis 返回的 bytes 类型解码为 str
-    if isinstance(username, bytes):
-        username = username.decode("utf-8")
-
-    # 🚀 3. 锁定数据库用户
-    user = db.query(User).filter(User.username == username).first()
+    # 🚀 3. 锁定数据库用户（Redis 里存的是 user_id，兼容旧 username 会话）
+    user = _load_user_from_session_value(db, username)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="目标账户不存在")
 
@@ -772,11 +779,8 @@ def change_password(
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="会话已过期或已被吊销，请重新登录")
 
-    if isinstance(username, bytes):
-        username = username.decode("utf-8")
-
-    # 🚀 3. 密码置换审计
-    user = db.query(User).filter(User.username == username).first()
+    # 🚀 3. 密码置换审计（Redis 里存的是 user_id，兼容旧 username 会话）
+    user = _load_user_from_session_value(db, username)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="目标账户不存在")
 
