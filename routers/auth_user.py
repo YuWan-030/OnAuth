@@ -3,20 +3,28 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
-import requests
 import secrets
 import time
+import re
 
 # 🌟 引入数据库实体与核心依赖项
 from database import get_db, User, Role, DeveloperGroup, Permission
-from database import RiskEvent, RiskGlobalSetting
 # 🌟 引入 Redis 客户端（保持原功能连通）
 from middlewares.auth import redis_client
 from middlewares.rbac import RBACChecker
 from routers.admin import _generate_group_code
 from routers.webhook import dispatch_webhook_event
-from utils.captcha import issue_captcha, verify_captcha
-from utils.risk_expr import build_risk_context, resolve_login_fail_policy
+from utils.captcha import verify_captcha
+from utils.request_utils import (
+    extract_client_meta,
+    record_risk_event,
+    is_global_melt_enabled,
+    get_login_fail_policy,
+    get_login_fail_count,
+    increment_login_fail,
+    clear_login_fail,
+    captcha_required_response,
+)
 
 # 🎯 路由配置对齐：将前缀设为全局共用，内部支持平铺管理端与业务端
 router = APIRouter(tags=["中台统一账户与动态会话鉴权中心"])
@@ -26,119 +34,140 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 LOGIN_FAIL_THRESHOLD = 3
 LOGIN_FAIL_TTL_SECONDS = 600
 LOGIN_FAIL_RULE_TYPE = "LOGIN_FAIL_CAPTCHA"
+TENANT_APPLY_TTL_SECONDS = 1800
+ACCOUNT_LOCK_THRESHOLD = 10
+ACCOUNT_LOCK_TTL_SECONDS = 1800
+PASSWORD_MIN_LENGTH = 8
+
+USERNAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,31}$")
+XSS_PATTERN = re.compile(r"(?i)(<\s*script|javascript:|on\w+\s*=|<\s*iframe|<\s*img|<\s*svg)")
+PASSWORD_COMPLEXITY_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$")
 
 
 def _get_login_fail_policy(db: Session, request: Request, username: str, fail_count: int) -> tuple[int, int]:
-    client_ip, user_agent, is_mobile, browser, os_name, location = _extract_client_meta(request)
-    context = build_risk_context(
-        username=username,
-        ip=client_ip,
-        path=request.url.path,
-        user_agent=user_agent,
-        browser=browser,
-        os=os_name,
-        location=location,
-        is_mobile=is_mobile,
-        fail_count=fail_count
-    )
-    threshold, window, _ = resolve_login_fail_policy(
+    return get_login_fail_policy(
         db=db,
-        context=context,
+        request=request,
+        username=username,
+        fail_count=fail_count,
         default_threshold=LOGIN_FAIL_THRESHOLD,
         default_window=LOGIN_FAIL_TTL_SECONDS,
         rule_type=LOGIN_FAIL_RULE_TYPE,
-        action="CAPTCHA"
     )
-    return threshold, window
 
 
-def _login_fail_key(username: str, client_ip: str) -> str:
+def _account_lock_key(username: str) -> str:
     safe_user = (username or "").strip().lower() or "unknown"
-    safe_ip = (client_ip or "-").strip()
-    return f"login_fail:{safe_user}:{safe_ip}"
+    return f"account_lock:{safe_user}"
 
 
 def _get_login_fail_count(username: str, client_ip: str) -> int:
-    value = redis_client.get(_login_fail_key(username, client_ip))
+    return get_login_fail_count(redis_client, username, client_ip)
+
+
+def _is_account_locked(username: str) -> bool:
+    value = redis_client.get(_account_lock_key(username))
+    return bool(value)
+
+
+def _lock_account(username: str) -> None:
+    redis_client.setex(_account_lock_key(username), ACCOUNT_LOCK_TTL_SECONDS, "1")
+
+
+def _clear_account_lock(username: str) -> None:
+    redis_client.delete(_account_lock_key(username))
+
+
+def _account_locked_response() -> dict:
+    return {
+        "message": "登录失败次数过多，账户已临时锁定，请稍后重试",
+        "account_locked": True,
+        "lock_seconds": ACCOUNT_LOCK_TTL_SECONDS,
+    }
+
+
+def _increment_login_fail(username: str, client_ip: str, ttl_seconds: int) -> int:
+    return increment_login_fail(redis_client, username, client_ip, ttl_seconds)
+
+
+def _clear_login_fail(username: str, client_ip: str) -> None:
+    clear_login_fail(redis_client, username, client_ip)
+
+
+def _captcha_required_response(message: str):
+    return captcha_required_response(redis_client, message)
+
+
+def _resolve_current_session_token(request: Request) -> str | None:
+    token = request.cookies.get("sso_session_id")
+    if token:
+        token = str(token).strip()
+        if token:
+            return token
+
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+        if token:
+            return token
+
+    return None
+
+
+def _resolve_user_group(db: Session, current_user: User):
+    group = getattr(current_user, "group", None)
+    if group is not None:
+        return group
+
+    group_id = getattr(current_user, "group_id", None)
+    if group_id:
+        group = db.query(DeveloperGroup).filter(DeveloperGroup.id == group_id).first()
+        if group:
+            return group
+
+    user_id = getattr(current_user, "id", None)
+    if user_id:
+        return db.query(DeveloperGroup).filter(DeveloperGroup.owner_user_id == user_id).first()
+
+    return None
+
+
+
+def _validate_password_strength(password: str) -> None:
+    text = str(password or "")
+    if len(text) < PASSWORD_MIN_LENGTH:
+        raise HTTPException(status_code=422, detail=f"密码长度至少 {PASSWORD_MIN_LENGTH} 位")
+    if not PASSWORD_COMPLEXITY_RE.fullmatch(text):
+        raise HTTPException(status_code=422, detail="密码必须包含大写字母、小写字母、数字和特殊字符")
+
+
+def _ensure_role(db: Session, role_name: str, description: str, default_perm_names: list[str]) -> Role:
+    role = db.query(Role).filter(Role.name == role_name).first()
+    if not role:
+        role = Role(name=role_name, description=description)
+        db.add(role)
+        db.flush()
+
+    if default_perm_names:
+        current_perm_names = {p.name for p in (role.permissions or [])}
+        for perm_name in default_perm_names:
+            if perm_name in current_perm_names:
+                continue
+            perm = db.query(Permission).filter(Permission.name == perm_name).first()
+            if perm:
+                role.permissions.append(perm)
+
+    db.commit()
+    db.refresh(role)
+    return role
     try:
         return int(value or 0)
     except ValueError:
         return 0
 
 
-def _increment_login_fail(username: str, client_ip: str, ttl_seconds: int) -> int:
-    key = _login_fail_key(username, client_ip)
-    count = redis_client.incr(key)
-    if count == 1:
-        redis_client.expire(key, ttl_seconds)
-    return int(count)
-
-
-def _clear_login_fail(username: str, client_ip: str) -> None:
-    redis_client.delete(_login_fail_key(username, client_ip))
-
-
-def _captcha_required_response(message: str) -> JSONResponse:
-    token, image = issue_captcha(redis_client)
-    return JSONResponse(
-        status_code=status.HTTP_403_FORBIDDEN,
-        content={
-            "message": message,
-            "captcha_required": True,
-            "captcha_token": token,
-            "captcha_image": image
-        }
-    )
-
-
-def _resolve_ip_location(ip_value: str) -> str:
-    if not ip_value or ip_value == "-":
-        return "未知"
-    private_prefixes = ("10.", "127.", "172.16.", "172.17.", "172.18.", "172.19.", "172.2", "192.168.")
-    if ip_value.startswith(private_prefixes):
-        return "内网"
-    try:
-        resp = requests.get(f"http://ip-api.com/json/{ip_value}", params={"fields": "country,regionName,city"}, timeout=1)
-        if resp.status_code == 200:
-            data = resp.json()
-            parts = [data.get("country"), data.get("regionName"), data.get("city")]
-            return " ".join([p for p in parts if p]) or "未知"
-    except Exception:
-        return "未知"
-    return "未知"
-
-
 def _extract_client_meta(request: Request) -> tuple[str, str, bool, str, str, str]:
-    ip_raw = request.headers.get("X-Forwarded-For") or request.headers.get("X-Real-IP") or request.client.host
-    ip_value = str(ip_raw) if ip_raw else "-"
-    client_ip = (ip_value.split(",")[0].strip() if ip_value else "-")
-    user_agent = request.headers.get("User-Agent") or ""
-    ua_lower = user_agent.lower()
-    is_mobile = any(key in ua_lower for key in ["mobile", "iphone", "android", "ipad"])
-    if "edg" in ua_lower or "edge" in ua_lower:
-        browser = "Edge"
-    elif "chrome" in ua_lower and "safari" in ua_lower:
-        browser = "Chrome"
-    elif "safari" in ua_lower:
-        browser = "Safari"
-    elif "firefox" in ua_lower:
-        browser = "Firefox"
-    else:
-        browser = "Unknown"
-    if "windows" in ua_lower:
-        os_name = "Windows"
-    elif "mac os" in ua_lower or "macintosh" in ua_lower:
-        os_name = "macOS"
-    elif "android" in ua_lower:
-        os_name = "Android"
-    elif "iphone" in ua_lower or "ipad" in ua_lower or "ios" in ua_lower:
-        os_name = "iOS"
-    elif "linux" in ua_lower:
-        os_name = "Linux"
-    else:
-        os_name = "Unknown"
-    location = _resolve_ip_location(client_ip)
-    return client_ip, user_agent, is_mobile, browser, os_name, location
+    return extract_client_meta(request)
 
 
 def _store_session_meta(session_id: str, request: Request):
@@ -157,35 +186,37 @@ def _store_session_meta(session_id: str, request: Request):
     redis_client.expire(meta_key, 86400)
 
 def _record_risk_event(db: Session, request: Request, risk_level: str, action: str = "BLOCK") -> None:
-    client_ip, _, _, _, _, _ = _extract_client_meta(request)
-    try:
-        db.add(RiskEvent(
-            action=action,
-            latency_ms=0,
-            ip=client_ip,
-            path=request.url.path,
-            risk_level=risk_level
-        ))
-        db.commit()
-    except Exception:
-        db.rollback()
+    record_risk_event(db, request, risk_level, action)
 
 
 def _is_global_melt_enabled(db: Session) -> bool:
-    setting = db.query(RiskGlobalSetting).first()
-    return bool(setting and setting.is_melt)
+    return is_global_melt_enabled(db)
+
+
+def _get_role(db: Session, role_name: str) -> Role:
+    role = db.query(Role).filter(Role.name == role_name).first()
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"系统角色未初始化: {role_name}"
+        )
+    return role
+
+
+def _user_has_role(user: User, role_name: str) -> bool:
+    return any(role.name == role_name for role in (user.roles or []))
 
 # --- Pydantic 输入模型验证 ---
 class UserRegisterSchema(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
-    password: str = Field(..., min_length=6, description="密码，至少6位")
+    password: str = Field(..., min_length=8, description="密码，至少8位")
     nickname: str = Field(None, description="昵称")
     group_code: str = Field(..., min_length=4, max_length=32, description="租户空间唯一识别码")
 
 
 class TenantAdminRegisterSchema(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
-    password: str = Field(..., min_length=6, description="密码，至少6位")
+    password: str = Field(..., min_length=8, description="密码，至少8位")
     nickname: str = Field(None, description="昵称")
     group_name: str = Field(..., min_length=1, max_length=64, description="租户空间名称")
     group_description: str = Field(None, description="租户空间说明")
@@ -193,7 +224,7 @@ class TenantAdminRegisterSchema(BaseModel):
 
 class TenantUserInviteSchema(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
-    password: str = Field(..., min_length=6, description="密码，至少6位")
+    password: str = Field(..., min_length=8, description="密码，至少8位")
     nickname: str = Field(None, description="昵称")
     group_code: str = Field(None, min_length=4, max_length=32, description="租户空间唯一识别码(仅超管可指定)")
 
@@ -204,9 +235,76 @@ class UserLoginSchema(BaseModel):
     captcha_token: str | None = Field(None, description="验证码 token")
     captcha_code: str | None = Field(None, description="验证码")
 
+
+class SessionRevokeInput(BaseModel):
+    token_id: str = Field(..., min_length=1, description="会话令牌")
+
+
+class SessionBatchRevokeInput(BaseModel):
+    token_ids: list[str] = Field(default_factory=list, description="会话令牌列表")
+
+
+class SessionRevokeAllInput(BaseModel):
+    keep_current: bool = Field(True, description="是否保留当前会话")
+
+
+def _looks_like_xss(value: str | None) -> bool:
+    if not value:
+        return False
+    text = str(value).strip()
+    if not text:
+        return False
+    if "<" in text or ">" in text:
+        return True
+    return bool(XSS_PATTERN.search(text))
+
+
+def _validate_tenant_admin_apply_payload(payload: "TenantAdminRegisterSchema") -> tuple[str, str, str | None, str | None]:
+    username = (payload.username or "").strip()
+    group_name = (payload.group_name or "").strip()
+    nickname = (payload.nickname or "").strip() or None
+    group_description = (payload.group_description or "").strip() or None
+
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="用户名格式非法：需以字母开头，仅允许字母/数字/下划线，长度 3-32"
+        )
+
+    for field_name, field_value in {
+        "username": username,
+        "nickname": nickname,
+        "group_name": group_name,
+        "group_description": group_description,
+    }.items():
+        if _looks_like_xss(field_value):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"字段存在潜在XSS风险: {field_name}"
+            )
+
+    return username, group_name, nickname, group_description
+
+
+def _tenant_apply_limit_key(client_ip: str) -> str:
+    safe_ip = (client_ip or "-").strip() or "-"
+    return f"tenant_apply_lock:{safe_ip}"
+
+
+def _acquire_tenant_apply_limit(client_ip: str) -> None:
+    lock_key = _tenant_apply_limit_key(client_ip)
+    accepted = redis_client.set(lock_key, "1", ex=TENANT_APPLY_TTL_SECONDS, nx=True)
+    if not accepted:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="同一IP在当前时间窗口内仅允许提交一次租户申请，请稍后再试"
+        )
+
 # --- 1. 用户注册接口 ---
 @router.post("/auth/register", summary="普通用户注册")
 def register_user(payload: UserRegisterSchema, db: Session = Depends(get_db)):
+    _validate_password_strength(payload.password)
+
     existing_user = db.query(User).filter(User.username == payload.username).first()
     if existing_user:
         raise HTTPException(
@@ -215,10 +313,10 @@ def register_user(payload: UserRegisterSchema, db: Session = Depends(get_db)):
         )
 
     group = db.query(DeveloperGroup).filter(DeveloperGroup.group_code == payload.group_code).first()
-    if not group or not group.is_active:
+    if not group or not group.is_active or (group.status or "").lower() != "approved":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="租户空间不存在或已被停用"
+            detail="租户空间不存在、未通过审批或已被停用"
         )
 
     hashed_password = pwd_context.hash(payload.password)
@@ -232,7 +330,7 @@ def register_user(payload: UserRegisterSchema, db: Session = Depends(get_db)):
     )
 
     # 自动归入默认普通用户角色组
-    default_role = _get_role(db, "standard_user")
+    default_role = _ensure_role(db, "standard_user", "普通注册合规用户组", ["read", "write"])
     new_user.roles.append(default_role)
 
     db.add(new_user)
@@ -262,16 +360,27 @@ def register_user(payload: UserRegisterSchema, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/auth/register/tenant_admin", summary="租户管理员注册")
-def register_tenant_admin(payload: TenantAdminRegisterSchema, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.username == payload.username).first()
+
+@router.post("/auth/register/tenant_admin", summary="租户管理员公开申请")
+def register_tenant_admin(
+    payload: TenantAdminRegisterSchema,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    _validate_password_strength(payload.password)
+
+    username, group_name, nickname, group_description = _validate_tenant_admin_apply_payload(payload)
+    client_ip, _, _, _, _, _ = _extract_client_meta(request)
+    _acquire_tenant_apply_limit(client_ip)
+
+    existing_user = db.query(User).filter(User.username == username).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="该用户名已被注册，请更换"
         )
 
-    existing_group = db.query(DeveloperGroup).filter(DeveloperGroup.group_name == payload.group_name).first()
+    existing_group = db.query(DeveloperGroup).filter(DeveloperGroup.group_name == group_name).first()
     if existing_group:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -280,10 +389,10 @@ def register_tenant_admin(payload: TenantAdminRegisterSchema, db: Session = Depe
 
     group_code = _generate_group_code(db)
     new_group = DeveloperGroup(
-        group_name=payload.group_name,
-        description=payload.group_description,
+        group_name=group_name,
+        description=group_description,
         group_code=group_code,
-        owner=payload.username,
+        owner=username,
         is_active=False,
         status="pending"
     )
@@ -293,14 +402,19 @@ def register_tenant_admin(payload: TenantAdminRegisterSchema, db: Session = Depe
 
     hashed_password = pwd_context.hash(payload.password)
     new_user = User(
-        username=payload.username,
+        username=username,
         password_hash=hashed_password,
-        nickname=payload.nickname or payload.username,
+        nickname=nickname or username,
         is_active=True,
         group_id=new_group.id
     )
 
-    tenant_admin_role = _get_role(db, "tenant_admin")
+    tenant_admin_role = _ensure_role(
+        db,
+        "tenant_admin",
+        "租户空间管理员",
+        ["read", "write", "tenant:user:create", "webhook:create", "webhook:update", "webhook:list", "webhook:delete", "webhook:logs"],
+    )
     webhook_perm_names = ["webhook:create", "webhook:update", "webhook:list", "webhook:delete", "webhook:logs"]
     existing_perm_names = {p.name for p in tenant_admin_role.permissions}
     for perm_name in webhook_perm_names:
@@ -325,20 +439,22 @@ def register_tenant_admin(payload: TenantAdminRegisterSchema, db: Session = Depe
             "user_id": new_user.id,
             "username": new_user.username,
             "group_id": new_group.id,
-            "group_code": new_group.group_code
+            "group_code": new_group.group_code,
+            "client_ip": client_ip
         },
         db=db
     )
 
     return {
         "status": "success",
-        "message": "租户管理员注册成功，租户空间已创建并进入待超级管理员审核状态",
+        "message": "申请已提交，租户空间已创建并进入待超级管理员审核状态",
         "user_id": new_user.id,
         "username": new_user.username,
         "assigned_role": tenant_admin_role.name,
         "group_id": new_group.id,
         "group_name": new_group.group_name,
-        "group_code": new_group.group_code
+        "group_code": new_group.group_code,
+        "apply_window_seconds": TENANT_APPLY_TTL_SECONDS
     }
 
 
@@ -366,6 +482,10 @@ def login_user(
         )
 
     client_ip, _, _, _, _, _ = _extract_client_meta(request)
+    if _is_account_locked(payload.username):
+        _record_risk_event(db, request, risk_level="high", action="LOCK")
+        return JSONResponse(status_code=status.HTTP_423_LOCKED, content=_account_locked_response())
+
     fail_count = _get_login_fail_count(payload.username, client_ip)
     threshold, window_seconds = _get_login_fail_policy(db, request, payload.username, fail_count)
     if fail_count >= threshold:
@@ -376,6 +496,9 @@ def login_user(
     if not user or not pwd_context.verify(payload.password, user.password_hash):
         _record_risk_event(db, request, risk_level="high")
         new_count = _increment_login_fail(payload.username, client_ip, window_seconds)
+        if new_count >= ACCOUNT_LOCK_THRESHOLD:
+            _lock_account(payload.username)
+            return JSONResponse(status_code=status.HTTP_423_LOCKED, content=_account_locked_response())
         if new_count >= threshold:
             return _captcha_required_response("登录失败次数过多，请输入验证码")
         raise HTTPException(
@@ -391,6 +514,7 @@ def login_user(
         )
 
     _clear_login_fail(payload.username, client_ip)
+    _clear_account_lock(payload.username)
 
     # 1. ⚡ 生成标准的分布式 Session ID（全局唯一标识）
     new_session_id = "sess_" + secrets.token_hex(12)
@@ -592,7 +716,7 @@ def delete_account(
 @router.post("/auth/change_password", summary="用户修改密码")
 def change_password(
         current_password: str = Form(..., description="当前密码"),
-        new_password: str = Form(..., min_length=6, description="新密码，至少6位"),
+        new_password: str = Form(..., min_length=8, description="新密码，至少8位"),
         authorization: str = Header(None, description="承载标准 Bearer Token 的请求头"),
         sso_session_id_cookie: str = Cookie(None, alias="sso_session_id", description="从 Cookie 中捕获的会话令牌"),
         db: Session = Depends(get_db)
@@ -628,6 +752,8 @@ def change_password(
     if not pwd_context.verify(current_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码错误，拒绝修改")
 
+    _validate_password_strength(new_password)
+
     # 哈希加盐持久化新密码
     user.password_hash = pwd_context.hash(new_password)
     db.commit()
@@ -645,6 +771,8 @@ def invite_tenant_user(
         current_user: User = Depends(RBACChecker("tenant:user:create")),
         db: Session = Depends(get_db)
 ):
+    _validate_password_strength(payload.password)
+
     existing_user = db.query(User).filter(User.username == payload.username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="用户名已存在")
@@ -656,8 +784,8 @@ def invite_tenant_user(
         if current_user.group_id:
             target_group = db.query(DeveloperGroup).filter(DeveloperGroup.id == current_user.group_id).first()
 
-    if not target_group or not target_group.is_active:
-        raise HTTPException(status_code=404, detail="租户空间不存在或已被停用")
+    if not target_group or not target_group.is_active or (target_group.status or "").lower() != "approved":
+        raise HTTPException(status_code=404, detail="租户空间不存在、未通过审批或已被停用")
 
     new_user = User(
         username=payload.username,
@@ -667,7 +795,7 @@ def invite_tenant_user(
         group_id=target_group.id
     )
 
-    default_role = _get_role(db, "standard_user")
+    default_role = _ensure_role(db, "standard_user", "普通注册合规用户组", ["read", "write"])
     new_user.roles.append(default_role)
 
     db.add(new_user)
@@ -698,16 +826,18 @@ def invite_tenant_user(
 
 @router.get("/auth/me", summary="获取当前登录用户画像")
 def get_current_user_profile(
-        current_user: User = Depends(RBACChecker("read"))
+        current_user: User = Depends(RBACChecker("read")),
+        db: Session = Depends(get_db)
 ):
-    group = current_user.group
+    group = _resolve_user_group(db, current_user)
     roles = [role.name for role in current_user.roles]
+    nickname = getattr(current_user, "nickname", None)
     return {
         "status": "success",
         "data": {
             "user_id": current_user.id,
             "username": current_user.username,
-            "nickname": current_user.nickname,
+            "nickname": nickname,
             "group_id": group.id if group else None,
             "group_name": group.group_name if group else None,
             "group_code": group.group_code if group else None,
@@ -720,3 +850,150 @@ def get_current_user_profile(
             "is_tenant_admin": "tenant_admin" in roles or "super_admin" in roles
         }
     }
+
+
+@router.get("/api/v1/user/sessions", summary="【用户中心】查询我的会话列表")
+def list_my_sessions(
+        request: Request,
+        browser: str | None = None,
+        device: str | None = None,
+        current_user: User = Depends(RBACChecker("read")),
+        db: Session = Depends(get_db)
+):
+    current_token = _resolve_current_session_token(request) or ""
+    browser_filter = (browser or "").strip().lower()
+    device_filter = (device or "").strip().lower()
+    sessions = []
+
+    user_set_key = f"user:active_sessions:{current_user.id}"
+    token_ids = redis_client.smembers(user_set_key) or []
+    for token_id in token_ids:
+        token_id = token_id.decode("utf-8") if isinstance(token_id, bytes) else str(token_id)
+        meta_key = f"sess_meta:{token_id}"
+        meta_raw = redis_client.hgetall(meta_key) or {}
+
+        def _decode(value, default=""):
+            if value is None:
+                return default
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="ignore")
+            return str(value)
+
+        meta = {str(_decode(k)): _decode(v) for k, v in meta_raw.items()}
+        browser_value = meta.get("browser", "-")
+        os_value = meta.get("os", "-")
+        location_value = meta.get("location", "-")
+        if browser_filter and browser_filter not in browser_value.lower():
+            continue
+        if device_filter and device_filter not in f"{browser_value} {os_value} {location_value}".lower():
+            continue
+        sessions.append({
+            "token_id": token_id,
+            "ip": meta.get("ip", "-"),
+            "browser": browser_value,
+            "os": os_value,
+            "location": location_value,
+            "login_time": meta.get("login_time", "-"),
+            "is_current": token_id == current_token,
+        })
+
+    sessions.sort(key=lambda item: (item.get("is_current", False), item.get("login_time", "")), reverse=True)
+    return {"status": "success", "count": len(sessions), "data": sessions}
+
+
+@router.post("/api/v1/user/sessions/revoke", summary="【用户中心】注销指定会话")
+def revoke_my_session(
+        payload: SessionRevokeInput,
+        request: Request,
+        current_user: User = Depends(RBACChecker("read")),
+        db: Session = Depends(get_db)
+):
+    current_token = _resolve_current_session_token(request) or ""
+    token_id = payload.token_id.strip()
+    if not token_id.startswith("sess_"):
+        raise HTTPException(status_code=400, detail="仅支持注销 session 会话")
+
+    user_set_key = f"user:active_sessions:{current_user.id}"
+    if not redis_client.sismember(user_set_key, token_id):
+        raise HTTPException(status_code=403, detail="不允许注销其他用户的会话")
+
+    redis_client.delete(token_id)
+    redis_client.delete(f"sess_meta:{token_id}")
+    redis_client.srem(user_set_key, token_id)
+    return {
+        "status": "success",
+        "message": "会话已注销",
+        "is_current": token_id == current_token,
+    }
+
+
+@router.post("/api/v1/user/sessions/revoke_batch", summary="【用户中心】批量注销会话")
+def revoke_my_sessions_batch(
+        payload: SessionBatchRevokeInput,
+        request: Request,
+        current_user: User = Depends(RBACChecker("read")),
+        db: Session = Depends(get_db)
+):
+    current_token = _resolve_current_session_token(request) or ""
+    user_set_key = f"user:active_sessions:{current_user.id}"
+    token_ids = []
+    seen: set[str] = set()
+    for item in payload.token_ids:
+        token_id = str(item or "").strip()
+        if not token_id or token_id in seen:
+            continue
+        seen.add(token_id)
+        if not token_id.startswith("sess_"):
+            continue
+        if token_id == current_token:
+            raise HTTPException(status_code=400, detail="当前会话请使用全部下线但保留当前会话功能")
+        if not redis_client.sismember(user_set_key, token_id):
+            raise HTTPException(status_code=403, detail="不允许注销其他用户的会话")
+        token_ids.append(token_id)
+
+    if not token_ids:
+        raise HTTPException(status_code=400, detail="至少需要一个有效会话")
+
+    for token_id in token_ids:
+        redis_client.delete(token_id)
+        redis_client.delete(f"sess_meta:{token_id}")
+        redis_client.srem(user_set_key, token_id)
+
+    return {
+        "status": "success",
+        "message": "批量会话已注销",
+        "count": len(token_ids),
+    }
+
+
+@router.post("/api/v1/user/sessions/revoke_all", summary="【用户中心】全部下线但保留当前会话")
+def revoke_my_sessions_all(
+        payload: SessionRevokeAllInput,
+        request: Request,
+        current_user: User = Depends(RBACChecker("read")),
+        db: Session = Depends(get_db)
+):
+    current_token = _resolve_current_session_token(request) or ""
+    user_set_key = f"user:active_sessions:{current_user.id}"
+    token_ids = redis_client.smembers(user_set_key) or []
+    revoked: list[str] = []
+
+    for token_id in token_ids:
+        token_id = token_id.decode("utf-8") if isinstance(token_id, bytes) else str(token_id)
+        if not token_id.startswith("sess_"):
+            continue
+        if payload.keep_current and token_id == current_token:
+            continue
+        redis_client.delete(token_id)
+        redis_client.delete(f"sess_meta:{token_id}")
+        redis_client.srem(user_set_key, token_id)
+        revoked.append(token_id)
+
+    return {
+        "status": "success",
+        "message": "全部会话已下线",
+        "count": len(revoked),
+        "kept_current": bool(payload.keep_current),
+    }
+
+

@@ -29,7 +29,17 @@
         </div>
         <button class="layui-btn btn-theme" id="btn-add-webhook"><i class="layui-icon layui-icon-add-1"></i> 新建 Webhook</button>
     </div>
-    <table class="layui-hide" id="webhookTable"></table>
+    <table class="layui-hide" id="webhookTable" lay-filter="webhookTable"></table>
+</div>
+
+<div class="card" style="margin-top:14px;">
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+        <select id="logWebhookFilter" class="layui-input" style="width:260px;">
+            <option value="">全部投递日志</option>
+        </select>
+        <button class="layui-btn layui-btn-primary" id="btn-refresh-logs">刷新日志</button>
+    </div>
+    <table class="layui-hide" id="webhookLogTable"></table>
 </div>
 
 <div id="webhookTpl" style="display:none;">
@@ -80,8 +90,9 @@
 
 <script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
 <script>
-layui.use(['table','form','layer'], function(){
+layui.use(['table','form','layer','util'], function(){
     const table = layui.table, form = layui.form, layer = layui.layer, $ = layui.$;
+    const util = layui.util;
 
     $.ajaxSetup({
         complete: function(xhr) {
@@ -99,6 +110,7 @@ layui.use(['table','form','layer'], function(){
     function loadTable(){
         table.render({
             elem: '#webhookTable',
+            id: 'tenantWebhookTable',
             url: '/api/v1/webhook/config.list',
             page: false,
             parseData: function(res){
@@ -113,6 +125,43 @@ layui.use(['table','form','layer'], function(){
                 {field:'is_active', title:'状态', width:120, templet:'#statusTpl'},
                 {field:'creator_id', title:'创建者', width:120},
                 {fixed:'right', title:'操作', width:100, toolbar:'#toolTpl'}
+            ]],
+            done: function(res){
+                const rows = Array.isArray(res.data) ? res.data : [];
+                const $filter = $('#logWebhookFilter');
+                const selected = $filter.val() || '';
+                $filter.empty().append('<option value="">全部投递日志</option>');
+                rows.forEach(function(item){
+                    $filter.append('<option value="' + item.id + '">' + item.name + ' (#' + item.id + ')</option>');
+                });
+                if (selected) {
+                    $filter.val(selected);
+                }
+                form.render('select');
+            }
+        });
+    }
+
+    function loadLogTable(){
+        const webhookId = ($('#logWebhookFilter').val() || '').trim();
+        const reqUrl = webhookId ? '/api/v1/webhook/logs.list?webhook_id=' + encodeURIComponent(webhookId) : '/api/v1/webhook/logs.list';
+        table.render({
+            elem: '#webhookLogTable',
+            id: 'tenantWebhookLogTable',
+            url: reqUrl,
+            page: false,
+            parseData: function(res){
+                const data = res.data || [];
+                return {code: res.status === 'success' ? 0 : 500, msg: res.message || '', count: data.length, data: data};
+            },
+            cols: [[
+                {field:'log_id', title:'日志ID', width:80},
+                {field:'event_type', title:'事件', width:160},
+                {field:'status_code', title:'HTTP', width:80},
+                {field:'duration_ms', title:'耗时(ms)', width:90},
+                {field:'is_success', title:'结果', width:90, templet: function(d){ return d.is_success ? '<span style="color:#15803d;">成功</span>' : '<span style="color:#b91c1c;">失败</span>'; }},
+                {field:'response_body', title:'响应', minWidth:220, templet: function(d){ return util.escape((d.response_body || '-').slice(0, 200)); }},
+                {field:'timestamp', title:'时间', width:170}
             ]]
         });
     }
@@ -145,6 +194,7 @@ layui.use(['table','form','layer'], function(){
                             layer.msg(res.message || '创建成功', {icon: 1});
                             layer.close(index);
                             loadTable();
+                            loadLogTable();
                         } else {
                             layer.msg(res.message || '创建失败', {icon: 2});
                         }
@@ -163,6 +213,7 @@ layui.use(['table','form','layer'], function(){
             data: JSON.stringify({id: parseInt(data.value, 10), is_active: data.elem.checked}),
             success: function(res){
                 if (res.status !== 'success') layer.msg(res.message || '更新失败', {icon: 2});
+                loadLogTable();
             },
             error: function(xhr){ layer.msg(xhr.responseJSON?.detail || '更新失败', {icon: 2}); loadTable(); }
         });
@@ -179,6 +230,7 @@ layui.use(['table','form','layer'], function(){
                             layer.msg(res.message || '删除成功', {icon: 1});
                             layer.close(index);
                             loadTable();
+                            loadLogTable();
                         } else {
                             layer.msg(res.message || '删除失败', {icon: 2});
                         }
@@ -189,7 +241,11 @@ layui.use(['table','form','layer'], function(){
         }
     });
 
+    $('#btn-refresh-logs').on('click', function(){ loadLogTable(); });
+    $('#logWebhookFilter').on('change', function(){ loadLogTable(); });
+
     loadTable();
+    loadLogTable();
 });
 </script>
 </body>

@@ -130,7 +130,7 @@
         }
 
         /* =========================
-           主区域
+           主区域 & 标签页轻量调整
         ========================= */
         .main {
             position: fixed;
@@ -157,6 +157,18 @@
 
         .layui-tab-title li {
             line-height: 46px;
+            font-size: 14px;
+            color: #333;
+            transition: all .2s;
+        }
+
+        /* 核心修改：当标签被选中时，底部呈现主题蓝色的小小指示线条 */
+        .layui-tab-title li.layui-this {
+            color: #2563eb !important;   /* 选中文字变蓝 */
+            font-weight: 600;
+        }
+        .layui-tab-title .layui-this:after {
+            border-bottom: 2px solid #2563eb !important; /* 底部蓝色小线条 */
         }
 
         .layui-tab-content {
@@ -209,9 +221,7 @@
             color: #1e9fff;
         }
 
-        /* =========================
-           修改密码弹窗
-        ========================= */
+        /* 修改密码弹窗 */
         .pwd-form-wrapper {
             padding: 22px 25px 5px 10px;
         }
@@ -219,11 +229,9 @@
         .layui-layer-content {
             overflow: hidden !important;
         }
-        /* =========================
-           修复右上角下拉箭头错位
-        ========================= */
+
         .user-info-area .layui-nav .layui-nav-item > a {
-            padding-right: 30px !important; /* 给右侧的有箭头留出固定空间 */
+            padding-right: 30px !important;
             display: flex;
             align-items: center;
         }
@@ -234,21 +242,17 @@
             vertical-align: middle;
         }
 
-        /* 强制修正 LayUI 自动生成的三角箭头位置 */
         .user-info-area .layui-nav .layui-nav-more {
             top: -4px !important;
-            margin-top: 5px !important; /* 经典垂直居中算法 */
+            margin-top: 5px !important;
             right: 10px !important;
-            border-top-color: rgba(255, 255, 255, 0.7) !important; /* 让未展开时的箭头颜色更柔和 */
+            border-top-color: rgba(255, 255, 255, 0.7) !important;
         }
-
-
     </style>
 </head>
 
 <body>
 
-<!-- 顶部 -->
 <div class="header">
     <div class="logo-area">
         <div class="logo-icon">🛡</div>
@@ -282,10 +286,8 @@
     </div>
 </div>
 
-<!-- 左侧菜单 -->
 <div class="side">
     <ul class="layui-nav layui-nav-tree side-menu" lay-filter="sideNav">
-        <!-- 工作台 -->
         <li class="layui-nav-item layui-this">
             <a href="javascript:;" data-url="/dashboard" data-id="dashboard" data-title="工作台">
                 <i class="layui-icon layui-icon-home"></i>
@@ -293,7 +295,6 @@
             </a>
         </li>
 
-        <!-- 租户中心 -->
         <li class="layui-nav-item layui-nav-itemed">
             <a href="javascript:;">
                 <i class="layui-icon layui-icon-group"></i>
@@ -307,7 +308,6 @@
             </dl>
         </li>
 
-        <!-- 应用接入 -->
         <li class="layui-nav-item">
             <a href="javascript:;">
                 <i class="layui-icon layui-icon-app"></i>
@@ -319,18 +319,17 @@
                 <dd><a href="javascript:;" data-url="/admin/webhook" data-id="webhook" data-title="Webhook 接入">Webhook 接入</a></dd>
             </dl>
         </li>
-            <li class="layui-nav-item">
-                <a href="javascript:;">
-                    <i class="layui-icon layui-icon-key"></i>
-                    <span>权限中心</span>
-                </a>
-                <dl class="layui-nav-child">
-                    <dd><a href="javascript:;" data-url="/admin/roles" data-id="roles" data-title="权限组管理">权限组管理</a></dd>
-                    <dd><a href="javascript:;" data-url="/admin/permissions" data-id="permissions" data-title="权限节点">权限节点管理</a></dd>
-                </dl>
-            </li>
+        <li class="layui-nav-item">
+            <a href="javascript:;">
+                <i class="layui-icon layui-icon-key"></i>
+                <span>权限中心</span>
+            </a>
+            <dl class="layui-nav-child">
+                <dd><a href="javascript:;" data-url="/admin/roles" data-id="roles" data-title="权限组管理">权限组管理</a></dd>
+                <dd><a href="javascript:;" data-url="/admin/permissions" data-id="permissions" data-title="权限节点">权限节点管理</a></dd>
+            </dl>
+        </li>
 
-        <!-- 安全中心 -->
         <li class="layui-nav-item">
             <a href="javascript:;">
                 <i class="layui-icon layui-icon-auz"></i>
@@ -343,14 +342,12 @@
             </dl>
         </li>
 
-        <!-- 系统配置 -->
         <li class="layui-nav-item">
             <a href="javascript:;">
                 <i class="layui-icon layui-icon-set"></i>
                 <span>系统配置</span>
             </a>
             <dl class="layui-nav-child">
-
                 <dd><a href="javascript:;" data-url="/system/notices" data-id="notices" data-title="通知公告">通知公告</a></dd>
                 <dd><a href="javascript:;" data-url="/system/settings" data-id="settings" data-title="基础配置">基础配置</a></dd>
                 <dd><a href="javascript:;" data-url="/admin/webhook" data-id="callbacks" data-title="回调配置">WebHook 配置</a></dd>
@@ -359,7 +356,6 @@
     </ul>
 </div>
 
-<!-- 主体 -->
 <div class="main">
     <div class="layui-tab" lay-filter="mainTabs" lay-allowclose="true">
         <ul class="layui-tab-title">
@@ -373,7 +369,6 @@
     </div>
 </div>
 
-<!-- 修改密码模板 -->
 <div id="pwd-dialog-template" style="display:none;">
     <div class="pwd-form-wrapper">
         <form class="layui-form" lay-filter="pwdForm">
@@ -446,7 +441,7 @@ layui.use(['element', 'jquery', 'layer', 'form'], function(){
     fetchAdminProfile();
 
     // =========================
-    // Tab 管理（修复：未打开则创建，无论如何都执行切换高亮）
+    // Tab 管理
     // =========================
     $('.side-menu [data-url]').click(function(e){
         e.preventDefault();
@@ -464,28 +459,21 @@ layui.use(['element', 'jquery', 'layer', 'form'], function(){
                 id: id
             });
         }
-        // 确保无论新建还是已打开，都调用切换
         element.tabChange('mainTabs', id);
     });
 
     // =========================
-    // Tab 切换联动菜单（修复：精确匹配一级和二级菜单高亮）
+    // Tab 切换联动菜单
     // =========================
     element.on('tab(mainTabs)', function(data){
-        // 获取当前被点击/切换到的 Tab 的 lay-id
         const layId = $(this).attr('lay-id');
-
-        // 清除左侧所有菜单的激活状态 (包括一级 li 和二级 dd)
         $('.side .side-menu .layui-this').removeClass('layui-this');
 
-        // 匹配对应的 a 标签
         const $targetA = $(`.side .side-menu [data-id="${layId}"]`);
         if($targetA.length > 0) {
-            // 如果是二级菜单里的 dd
             if($targetA.parents('dd').length > 0) {
                 $targetA.parent('dd').addClass('layui-this');
             } else {
-                // 如果是一级菜单里的 li（如：工作台）
                 $targetA.parent('li').addClass('layui-this');
             }
         }
@@ -526,7 +514,6 @@ layui.use(['element', 'jquery', 'layer', 'form'], function(){
             }
         },
         passConfirm: function(value, item){
-            // 修复：针对当前弹窗内部的全新表单域获取新密码组件
             const $form = $(item).closest('form');
             const newPwd = $form.find('.js-new-password').val();
 
@@ -545,13 +532,10 @@ layui.use(['element', 'jquery', 'layer', 'form'], function(){
         let pwdIndex = layer.open({
             type: 1,
             title: '修改当前账户密码',
-            area: ['440px','320px'], // 微调高度避免内容溢出滚动条
+            area: ['440px','320px'],
             content: $('#pwd-dialog-template').html(),
             success: function(layero){
-                // 必须在弹窗装载完 HTML 后，针对当前弹窗内的 DOM 重新进行表单渲染
                 form.render(null, 'pwdForm');
-
-                // 绑定取消按钮事件
                 layero.find('#btn-pwd-cancel').click(function(){
                     layer.close(pwdIndex);
                 });
@@ -594,7 +578,7 @@ layui.use(['element', 'jquery', 'layer', 'form'], function(){
                 }
             });
 
-            return false; // 阻止表单原生跳转
+            return false;
         });
     });
 

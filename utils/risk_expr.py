@@ -1,5 +1,6 @@
 import ast
 import re
+from functools import lru_cache
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -7,9 +8,44 @@ from sqlalchemy.orm import Session
 from database import RiskRule
 
 
+MAX_EXPRESSION_LENGTH = 512
+MAX_AST_NODES = 256
+MAX_AST_DEPTH = 16
+
+
+def _count_nodes_and_depth(node: ast.AST, depth: int = 1) -> tuple[int, int]:
+    total_nodes = 1
+    max_depth = depth
+    for child in ast.iter_child_nodes(node):
+        child_nodes, child_depth = _count_nodes_and_depth(child, depth + 1)
+        total_nodes += child_nodes
+        if child_depth > max_depth:
+            max_depth = child_depth
+    return total_nodes, max_depth
+
+
+def _validate_ast_complexity(tree: ast.AST) -> None:
+    node_count, depth = _count_nodes_and_depth(tree)
+    if node_count > MAX_AST_NODES:
+        raise ValueError("expression too complex: too many AST nodes")
+    if depth > MAX_AST_DEPTH:
+        raise ValueError("expression too complex: AST depth exceeded")
+
+
+@lru_cache(maxsize=512)
+def _parse_expression_cached(expression: str) -> ast.Expression:
+    expr = (expression or "").strip()
+    if len(expr) > MAX_EXPRESSION_LENGTH:
+        raise ValueError("expression too long")
+    parsed = ast.parse(expr, mode="eval")
+    _validate_ast_complexity(parsed)
+    return parsed
+
+
 class _ExprEvaluator:
     def __init__(self, context: dict[str, Any]):
         self.context = context
+        self.allowed_identifiers = set(context.keys()) | {"True", "False", "None"}
         self.allowed_funcs = {
             "contains": self._contains,
             "startswith": self._startswith,
@@ -21,7 +57,7 @@ class _ExprEvaluator:
         }
 
     def evaluate(self, expression: str) -> bool:
-        parsed = ast.parse(expression, mode="eval")
+        parsed = _parse_expression_cached(expression)
         result = self._eval_node(parsed.body)
         return bool(result)
 
@@ -77,6 +113,8 @@ class _ExprEvaluator:
         if isinstance(node, ast.Name):
             if node.id in {"True", "False", "None"}:
                 return {"True": True, "False": False, "None": None}[node.id]
+            if node.id not in self.allowed_identifiers:
+                raise ValueError(f"unknown identifier: {node.id}")
             return self.context.get(node.id)
 
         if isinstance(node, ast.Attribute):
@@ -195,7 +233,7 @@ def resolve_login_fail_policy(
             if evaluate_match_expression(expr, context):
                 threshold = int(rule.threshold_count or default_threshold)
                 window = int(rule.threshold_window or default_window)
-                return threshold, window, rule.id
+                return threshold, window, int(getattr(rule, "id", 0))
         except Exception:
             continue
 

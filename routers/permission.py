@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database import get_db, Role, Permission
 from middlewares.rbac import RBACChecker
@@ -6,8 +7,14 @@ from routers.webhook import dispatch_webhook_event
 from schemas.PermissionUpdateSchema import PermissionGroupUpdateSchema
 from middlewares.auth import redis_client
 import time
+from utils.role_constants import PRIVILEGED_ADMIN_ROLE_NAMES
 
 router = APIRouter(tags=["【管理接口】权限类核心网关"])
+
+
+class PermissionCreateInput(BaseModel):
+    name: str
+    description: str | None = None
 
 # 🌟 全局定义系统默认初始化权限节点：这些节点均属于平台基础能力，禁止删除
 PROTECTED_PERMS = [
@@ -49,7 +56,7 @@ def update_permission_group(
         )
 
     # 2. 识别是否为系统超级管理员
-    is_super_admin = role.name in ["root_admin", "admin"] or role.id == 1
+    is_super_admin = role.name in PRIVILEGED_ADMIN_ROLE_NAMES or role.id == 1
 
     # 如果要修改角色的唯一标识符（name），需要检查是否跟别的角色重名
     if payload.name and payload.name != role.name:
@@ -139,12 +146,17 @@ def update_permission_group(
 
 @router.get("/api/v1/permission/group.list", summary="【核心管理接口】查询权限分组列表")
 def list_permission_groups(
+        page: int = Query(1, ge=1),
+        limit: int = Query(20, ge=1, le=200),
         db: Session = Depends(get_db),
         current_user=Depends(RBACChecker("admin:read", "admin:list"))
 ):
-    roles = db.query(Role).all()
+    query = db.query(Role)
+    total = query.count()
+    roles = query.order_by(Role.id.desc()).offset((page - 1) * limit).limit(limit).all()
     return {
         "status": "success",
+        "count": total,
         "data": [
             {
                 "role_id": role.id,
@@ -171,7 +183,7 @@ def delete_permission_group(
         )
 
     # 🛡️ 核心熔断加固：拦截最高管理员角色的清退，防止核心特权链连带崩溃
-    if role.name in ["admin", "root_admin"] or role.id == 1:
+    if role.name in PRIVILEGED_ADMIN_ROLE_NAMES or role.id == 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"核心熔断防御：权限组 [{role.name}] 为系统全局高危根节点，受底层策略保护，禁止物理粉碎！"
@@ -324,13 +336,17 @@ def get_permission_node_details(
         }
     }
 
-@router.get("/api/v1/permission/permission.create", summary="【核心管理接口】创建权限节点")
+@router.post("/api/v1/permission/permission.create", summary="【核心管理接口】创建权限节点")
 def create_permission_node(
-        name: str,
-        description: str = None,
+        payload: PermissionCreateInput,
         db: Session = Depends(get_db),
         current_user=Depends(RBACChecker("admin:write", "admin:create"))
 ):
+    name = payload.name.strip()
+    description = (payload.description or "").strip() or None
+    if not name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="权限节点标识不能为空")
+
     existing_perm = db.query(Permission).filter(Permission.name == name).first()
     if existing_perm:
         raise HTTPException(
@@ -383,12 +399,17 @@ def delete_permission_node(
 
 @router.get("/api/v1/permission/node.list", summary="【核心管理接口】查询权限节点列表")
 def list_permission_nodes(
+        page: int = Query(1, ge=1),
+        limit: int = Query(50, ge=1, le=500),
         db: Session = Depends(get_db),
         current_user=Depends(RBACChecker("admin:read", "admin:list"))
 ):
-    permissions = db.query(Permission).all()
+    query = db.query(Permission)
+    total = query.count()
+    permissions = query.order_by(Permission.id.desc()).offset((page - 1) * limit).limit(limit).all()
     return {
         "status": "success",
+        "count": total,
         "data": [
             {
                 "permission_id": perm.id,

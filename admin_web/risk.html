@@ -253,6 +253,11 @@ layui.use(['table', 'form', 'layer'], function(){
                             <select name="rule_type" lay-verify="required">
                                 <option value="GENERIC">通用规则 (GENERIC)</option>
                                 <option value="LOGIN_FAIL_CAPTCHA">登录失败触发验证码</option>
+                                <option value="SECURITY_SCANNER_BLOCK">防扫描器</option>
+                                <option value="MALICIOUS_UI_BLOCK">防恶意UI/自动化</option>
+                                <option value="SQL_INJECTION_BLOCK">防SQL注入</option>
+                                <option value="XSS_INJECTION_BLOCK">防XSS注入</option>
+                                <option value="SENSITIVE_PATH_BLOCK">高危路径探测</option>
                             </select>
                         </div>
                     </div>

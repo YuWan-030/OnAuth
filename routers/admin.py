@@ -1,9 +1,11 @@
 import datetime
 import logging
+from urllib.parse import urlparse
 
 import psutil
 import redis
 from fastapi import APIRouter, Query, Depends, HTTPException, UploadFile, File
+from pydantic import BaseModel, Field
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,7 @@ from schemas.PermissionUpdateSchema import UserPermissionUpdateSchema, UserRoleU
 from utils.crypto import generate_random_keys, hash_secret, create_jwt_token
 from utils.app_logo import save_app_logo_upload, ensure_uploaded_logo_reference
 from sqlalchemy import func
+from sqlalchemy import or_
 from database import AppDevice
 from middlewares.auth import redis_client
 import json
@@ -22,6 +25,7 @@ from middlewares.rbac import RBACChecker
 from schemas.admin_schema import GroupCreateInput, GroupToggleInput, AppCreateInput, AppStatusInput, CredentialStatusInput
 from schemas.admin_schema import UserCreateInput, UserNicknameUpdateInput,UserPasswordUpdateInput,UserToggleStatusInput
 from schemas.admin_schema import TenantReviewInput, TenantSpaceAssignInput
+from utils.role_constants import ROLE_SUPER_ADMIN, PRIVILEGED_ADMIN_ROLE_NAMES, ROLE_TENANT_ADMIN
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -65,7 +69,30 @@ def _generate_group_code(db: Session) -> str:
             return candidate
 
 def _is_super_admin(user: User) -> bool:
-    return any(role.name == "super_admin" for role in user.roles)
+    return any(role.name == ROLE_SUPER_ADMIN for role in user.roles)
+
+
+def _resolve_group_owner_name(db: Session, group: DeveloperGroup) -> str:
+    owner_name = (getattr(group, "owner", None) or "").strip()
+    if owner_name:
+        return owner_name
+
+    owner_user_id = getattr(group, "owner_user_id", None)
+    if not owner_user_id:
+        return ""
+
+    owner_user = db.query(User).filter(User.id == owner_user_id).first()
+    return owner_user.username if owner_user else ""
+
+
+class BatchUserStatusInput(BaseModel):
+    user_ids: list[int] = Field(default_factory=list)
+    is_active: bool
+
+
+class BatchCredentialStatusInput(BaseModel):
+    client_ids: list[str] = Field(default_factory=list)
+    is_active: bool
 
 
 def _require_super_admin(current_user: User):
@@ -84,14 +111,71 @@ def _parse_expire_at(expire_at_value: str | None) -> datetime.datetime | None:
         raise HTTPException(status_code=400, detail="expire_at 必须是有效的 ISO 8601 时间字符串") from exc
 
 
+def _parse_redirect_uri_whitelist_input(raw_value: str | None) -> list[str]:
+    if raw_value is None:
+        return []
+
+    normalized = raw_value.replace("\r\n", "\n").replace("\r", "\n").replace(",", "\n")
+    values = [item.strip() for item in normalized.split("\n") if item.strip()]
+    deduped: list[str] = []
+    seen: set[str] = set()
+
+    for uri in values:
+        parsed = urlparse(uri)
+        if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+            raise HTTPException(status_code=400, detail=f"redirect_uri 不合法: {uri}")
+        if parsed.fragment:
+            raise HTTPException(status_code=400, detail=f"redirect_uri 不允许包含 fragment: {uri}")
+        if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+            raise HTTPException(status_code=400, detail=f"http redirect_uri 仅允许本地地址: {uri}")
+        if uri not in seen:
+            seen.add(uri)
+            deduped.append(uri)
+
+    return deduped
+
+
+def _load_redirect_uri_whitelist(client_id: str) -> list[str]:
+    redis_raw = redis_client.get(f"oauth:redirect_uris:{client_id}")
+    if not redis_raw:
+        return []
+
+    if isinstance(redis_raw, bytes):
+        redis_raw = redis_raw.decode("utf-8", errors="ignore")
+    redis_value = str(redis_raw).strip()
+    if not redis_value:
+        return []
+
+    try:
+        parsed = json.loads(redis_value)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except Exception:
+        pass
+
+    return [item.strip() for item in redis_value.split(",") if item.strip()]
+
+
+def _save_redirect_uri_whitelist(client_id: str, redirect_uris: list[str]) -> None:
+    redis_key = f"oauth:redirect_uris:{client_id}"
+    if redirect_uris:
+        redis_client.set(redis_key, json.dumps(redirect_uris))
+    else:
+        redis_client.delete(redis_key)
+
+
 # ==================== 🏢 模块一：工作室组织空间资产管控 ====================
 
 @router.get("/groups/list", summary="【管理端】拉取全量工作室组织资产")
 def list_all_groups(
+        page: int = Query(1, ge=1),
+        limit: int = Query(20, ge=1, le=200),
         current_user: User = Depends(RBACChecker("admin:read")),
         db: Session = Depends(get_db)
 ):
-    groups = db.query(DeveloperGroup).order_by(DeveloperGroup.id.desc()).all()
+    query = db.query(DeveloperGroup)
+    total = query.count()
+    groups = query.order_by(DeveloperGroup.id.desc()).offset((page - 1) * limit).limit(limit).all()
     result = []
     for g in groups:
         result.append({
@@ -104,9 +188,10 @@ def list_all_groups(
             "review_note": getattr(g, "review_note", None),
             "reviewed_at": g.reviewed_at.strftime("%Y-%m-%d %H:%M:%S") if getattr(g, "reviewed_at", None) else None,
             "expire_at": g.expire_at.strftime("%Y-%m-%d %H:%M:%S") if getattr(g, "expire_at", None) else None,
-            "owner_user_id": g.owner_user_id
+            "owner_user_id": g.owner_user_id,
+            "owner": _resolve_group_owner_name(db, g)
         })
-    return result
+    return {"code": 200, "count": total, "data": result}
 
 
 @router.post("/groups", summary="【管理端】新增工作室主体")
@@ -189,13 +274,18 @@ def delete_group(
 
 @router.get("/groups/reviews/pending", summary="【管理端】查看待审批的租户空间申请")
 def list_pending_group_reviews(
+        page: int = Query(1, ge=1),
+        limit: int = Query(20, ge=1, le=200),
         current_user: User = Depends(RBACChecker("tenant:space:review")),
         db: Session = Depends(get_db)
 ):
     _require_super_admin(current_user)
-    groups = db.query(DeveloperGroup).filter(DeveloperGroup.status == "pending").order_by(DeveloperGroup.id.desc()).all()
+    query = db.query(DeveloperGroup).filter(DeveloperGroup.status == "pending")
+    total = query.count()
+    groups = query.order_by(DeveloperGroup.id.desc()).offset((page - 1) * limit).limit(limit).all()
     return {
         "status": "success",
+        "count": total,
         "data": [
             {
                 "id": group.id,
@@ -325,16 +415,27 @@ def assign_group_to_tenant_admin(
         raise HTTPException(status_code=404, detail="目标用户不存在")
 
     role_names = {role.name for role in target_user.roles}
-    if "tenant_admin" not in role_names and "super_admin" not in role_names:
+    if ROLE_TENANT_ADMIN not in role_names and not role_names.intersection(PRIVILEGED_ADMIN_ROLE_NAMES):
         raise HTTPException(status_code=400, detail="目标用户不是租户管理员")
+
+    previous_owner_id = group.owner_user_id
 
     group.owner_user_id = target_user.id
     group.owner = target_user.username
     if payload.bind_user_group:
         target_user.group_id = group.id
+
+    previous_owner = None
+    if previous_owner_id and previous_owner_id != target_user.id:
+        previous_owner = db.query(User).filter(User.id == previous_owner_id).first()
+        if previous_owner and not _is_super_admin(previous_owner):
+            previous_owner.group_id = None
+
     db.commit()
     db.refresh(group)
     db.refresh(target_user)
+    if previous_owner:
+        db.refresh(previous_owner)
 
     dispatch_webhook_event(
         event_type="tenant_space.assign",
@@ -364,10 +465,14 @@ def assign_group_to_tenant_admin(
 
 @router.get("/apps/flat_list", summary="【管理端】拉取平铺的应用资产大盘（含组织信息）")
 def list_apps_flat(
+        page: int = Query(1, ge=1),
+        limit: int = Query(20, ge=1, le=200),
         current_user: User = Depends(RBACChecker("admin:read")),
         db: Session = Depends(get_db)
 ):
-    apps = db.query(App).order_by(App.id.desc()).all()
+    query = db.query(App)
+    total = query.count()
+    apps = query.order_by(App.id.desc()).offset((page - 1) * limit).limit(limit).all()
     result = []
     for a in apps:
         result.append({
@@ -381,7 +486,7 @@ def list_apps_flat(
             "created_at": a.created_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(a,
                                                                                 'created_at') and a.created_at else "-"
         })
-    return result
+    return {"code": 200, "count": total, "data": result}
 
 
 @router.post("/apps/logo/upload", summary="【管理端】安全上传应用图标")
@@ -468,7 +573,9 @@ def get_dashboard_stats(
     # 3. 在线活跃度双轨合流
     active_cutoff = now_time - datetime.timedelta(minutes=15)
     active_devices = db.query(func.count(AppDevice.id)).filter(
-        AppDevice.last_seen_at >= active_cutoff
+        AppDevice.last_seen_at >= active_cutoff,
+        AppDevice.is_revoked == False,
+        or_(AppDevice.expires_at == None, AppDevice.expires_at > now_time)
     ).scalar() or 0
 
     try:
@@ -552,10 +659,11 @@ def get_admin_profile(
     # 🎯 核心修正：降维到普通 "read" 权限，只要登录授信合规，即可读取自己的名字
     current_user: User = Depends(RBACChecker("read"))
 ):
+    nickname = getattr(current_user, "nickname", None)
     return {
         "status": "success",
         "username": current_user.username,
-        "nickname": current_user.nickname or "普通合规用户"
+        "nickname": nickname or "普通合规用户"
     }
 
 
@@ -668,14 +776,84 @@ def delete_app(
     return {"msg": f"应用 [{app_name}] 及其名下所有授权凭证已被彻底物理清除"}
 
 
+@router.get("/apps/{app_id}/devices", summary="【管理端】查看应用设备列表")
+def list_admin_app_devices(
+        app_id: int,
+        page: int = Query(1, ge=1),
+        limit: int = Query(20, ge=1, le=200),
+        current_user: User = Depends(RBACChecker("admin:read")),
+        db: Session = Depends(get_db)
+):
+    target_app = db.query(App).filter(App.id == app_id).first()
+    if not target_app:
+        raise HTTPException(status_code=404, detail="未找到该应用")
+
+    query = db.query(AppDevice).join(AppCredential, AppDevice.credential_id == AppCredential.id).filter(
+        AppCredential.app_id == target_app.id
+    )
+    total = query.count()
+    rows = query.order_by(AppDevice.id.desc()).offset((page - 1) * limit).limit(limit).all()
+
+    return {
+        "status": "success",
+        "count": total,
+        "data": [
+            {
+                "id": item.id,
+                "device_id": item.device_id,
+                "credential_id": item.credential_id,
+                "credential_name": item.credential.credential_name if item.credential else "未知凭证",
+                "client_id": item.credential.client_id if item.credential else "",
+                "is_revoked": item.is_revoked,
+                "revoked_at": item.revoked_at.strftime("%Y-%m-%d %H:%M:%S") if item.revoked_at else None,
+                "revoke_reason": item.revoke_reason,
+                "expires_at": item.expires_at.strftime("%Y-%m-%d %H:%M:%S") if item.expires_at else None,
+                "last_seen_at": item.last_seen_at.strftime("%Y-%m-%d %H:%M:%S") if item.last_seen_at else None,
+                "activated_at": item.activated_at.strftime("%Y-%m-%d %H:%M:%S") if item.activated_at else None,
+            }
+            for item in rows
+        ]
+    }
+
+
+@router.post("/apps/{app_id}/devices/{device_id}/unbind", summary="【管理端】解绑应用设备")
+def unbind_admin_app_device(
+        app_id: int,
+        device_id: str,
+        current_user: User = Depends(RBACChecker("admin:update")),
+        db: Session = Depends(get_db)
+):
+    target_app = db.query(App).filter(App.id == app_id).first()
+    if not target_app:
+        raise HTTPException(status_code=404, detail="未找到该应用")
+
+    target = db.query(AppDevice).join(AppCredential, AppDevice.credential_id == AppCredential.id).filter(
+        AppCredential.app_id == target_app.id,
+        AppDevice.device_id == device_id,
+        AppDevice.is_revoked == False,
+    ).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="设备不存在或已解绑")
+
+    target.is_revoked = True
+    target.revoked_at = datetime.datetime.now()
+    target.revoke_reason = "admin_unbind"
+    db.commit()
+    return {"status": "success", "message": "设备已解绑", "device_id": device_id}
+
+
 # ==================== 🔑 模块三：商业授权凭证与激活码下发 ====================
 
 @router.get("/credentials/flat_list", summary="【管理端】拉取全量凭证激活码大盘")
 def list_credentials_flat(
+        page: int = Query(1, ge=1),
+        limit: int = Query(20, ge=1, le=200),
         current_user: User = Depends(RBACChecker("admin:read")),
         db: Session = Depends(get_db)
 ):
-    credentials = db.query(AppCredential).order_by(AppCredential.id.desc()).all()
+    query = db.query(AppCredential)
+    total = query.count()
+    credentials = query.order_by(AppCredential.id.desc()).offset((page - 1) * limit).limit(limit).all()
     result = []
     for c in credentials:
         app_name = c.app.app_name if c.app else "未知应用"
@@ -686,12 +864,14 @@ def list_credentials_flat(
             "client_id": c.client_id,
             "credential_name": c.credential_name,
             "scope": c.scope,
+            "max_devices": c.max_devices,
+            "redirect_uris": _load_redirect_uri_whitelist(c.client_id),
             "is_active": c.is_active,
             "expire_at": c.expire_at.strftime("%Y-%m-%d %H:%M:%S") if c.expire_at else "永久有效",
             "app_name": app_name,
             "group_name": group_name
         })
-    return result
+    return {"code": 200, "count": total, "data": result}
 
 
 @router.post("/apps/{app_id}/credentials", summary="【管理端】签发应用全新商业凭证并下发激活码")
@@ -699,6 +879,8 @@ def create_app_credential(
         app_id: int,
         credential_name: str = Query(...),
         scope: str = "read",
+        max_devices: int = Query(1, ge=1, le=1000, description="当前最多允许几台设备"),
+        redirect_uris: str | None = Query(None, description="redirect_uri 白名单，支持逗号或换行分隔"),
         valid_days: int = Query(365),
         current_user: User = Depends(RBACChecker("admin:create")),
         db: Session = Depends(get_db)
@@ -709,6 +891,7 @@ def create_app_credential(
 
     client_id, client_secret = generate_random_keys()
     expire_time = datetime.datetime.now() + datetime.timedelta(days=valid_days)
+    uri_whitelist = _parse_redirect_uri_whitelist_input(redirect_uris)
 
     new_credential = AppCredential(
         app_id=app_id,
@@ -716,16 +899,20 @@ def create_app_credential(
         client_id=client_id,
         client_secret_hash=hash_secret(client_secret),
         scope=scope,
+        max_devices=max_devices,
         expire_at=expire_time
     )
     db.add(new_credential)
     db.commit()
+    _save_redirect_uri_whitelist(client_id, uri_whitelist)
 
     long_lived_token = create_jwt_token(client_id=client_id, scope=scope, expire_at=expire_time, token_type="license")
     return {
         "msg": "成功开通授权凭证并生成激活码！",
         "client_id": client_id,
         "client_secret": client_secret,
+        "max_devices": max_devices,
+        "redirect_uris": uri_whitelist,
         "expire_at": expire_time.strftime("%Y-%m-%d %H:%M:%S"),
         "license_key": long_lived_token
     }
@@ -747,12 +934,39 @@ def update_credential_status(
     return {"msg": "凭证安全防御状态同步成功！"}
 
 
+@router.post("/credentials/batch_status", summary="【管理端】批量启用/禁用凭证")
+def batch_update_credential_status(
+        payload: BatchCredentialStatusInput,
+        current_user: User = Depends(RBACChecker("admin:update")),
+        db: Session = Depends(get_db)
+):
+    client_ids = sorted({(cid or "").strip() for cid in payload.client_ids if (cid or "").strip()})
+    if not client_ids:
+        raise HTTPException(status_code=400, detail="至少需要一个有效 client_id")
+
+    creds = db.query(AppCredential).filter(AppCredential.client_id.in_(client_ids)).all()
+    if not creds:
+        raise HTTPException(status_code=404, detail="未找到目标凭证")
+
+    for cred in creds:
+        cred.is_active = payload.is_active
+
+    db.commit()
+    return {
+        "status": "success",
+        "message": "批量凭证状态同步成功",
+        "updated": len(creds)
+    }
+
+
 @router.post("/credentials/{client_id}/config", summary="【管理端】同步更新配置(兼容旧前端)")
 @router.put("/credentials/{client_id}/config", summary="【管理端】配置裁剪与商业延期")
 def update_credential_config(
         client_id: str,
         scope: str = Query(...),
         add_days: int = Query(...),
+        max_devices: int = Query(1, ge=1, le=1000, description="当前最多允许几台设备"),
+        redirect_uris: str | None = Query(None, description="redirect_uri 白名单，传空字符串可清空"),
         current_user: User = Depends(RBACChecker("admin:update")),
         db: Session = Depends(get_db)
 ):
@@ -761,11 +975,15 @@ def update_credential_config(
         raise HTTPException(status_code=404, detail="凭证未找到")
 
     cred.scope = scope
+    cred.max_devices = max_devices
     base_time = cred.expire_at if (
                 cred.expire_at and cred.expire_at > datetime.datetime.now()) else datetime.datetime.now()
     cred.expire_at = base_time + datetime.timedelta(days=add_days)
     db.commit()
-    return {"msg": f"凭证 [{cred.credential_name}] 商业授权配置及延期调整成功！"}
+    if redirect_uris is not None:
+        uri_whitelist = _parse_redirect_uri_whitelist_input(redirect_uris)
+        _save_redirect_uri_whitelist(client_id, uri_whitelist)
+    return {"msg": f"凭证 [{cred.credential_name}] 商业授权配置及延期调整成功！", "max_devices": cred.max_devices}
 
 
 @router.delete("/credentials/{client_id}", summary="【管理端】物理吊销并剔除商业凭证")
@@ -786,10 +1004,14 @@ def delete_credential(
 
 @router.get("/apps/list", summary="【管理端】拉取级联应用结构表")
 def list_all_apps(
+        page: int = Query(1, ge=1),
+        limit: int = Query(20, ge=1, le=200),
         current_user: User = Depends(RBACChecker("admin:read")),
         db: Session = Depends(get_db)
 ):
-    apps = db.query(App).all()
+    query = db.query(App)
+    total = query.count()
+    apps = query.order_by(App.id.desc()).offset((page - 1) * limit).limit(limit).all()
     result = []
     for a in apps:
         result.append({
@@ -799,7 +1021,7 @@ def list_all_apps(
                              "expire_at": c.expire_at.strftime("%Y-%m-%d %H:%M:%S") if c.expire_at else "永久有效"} for
                             c in a.credentials]
         })
-    return result
+    return {"code": 200, "count": total, "data": result}
 
 # --- 1. 用户列表分页穿透查询 ---
 @router.get("/users/list", summary="【管理端】全量用户矩阵穿透审计")
@@ -883,6 +1105,40 @@ def toggle_user_status(
 
     status_text = "激活受信" if payload.is_active else "风控隔离并强行全网切断下线"
     return {"status": "success", "message": f"用户 [{target_user.username}] 已成功切换为 {status_text} 状态"}
+
+
+@router.post("/users/batch_toggle_status", summary="【管理端】批量启用/禁用用户")
+def batch_toggle_user_status(
+        payload: BatchUserStatusInput,
+        current_user: User = Depends(RBACChecker("admin:update")),
+        db: Session = Depends(get_db)
+):
+    target_ids = sorted({int(uid) for uid in payload.user_ids if int(uid) > 0})
+    if not target_ids:
+        raise HTTPException(status_code=400, detail="至少需要一个有效 user_id")
+
+    users = db.query(User).filter(User.id.in_(target_ids)).all()
+    if not users:
+        raise HTTPException(status_code=404, detail="未找到目标用户")
+
+    changed = 0
+    skipped = 0
+    for user_item in users:
+        if user_item.username == "admin":
+            skipped += 1
+            continue
+        user_item.is_active = payload.is_active
+        changed += 1
+        if not payload.is_active:
+            revoke_user_redis_sessions(int(user_item.id))
+
+    db.commit()
+    return {
+        "status": "success",
+        "message": "批量状态切换完成",
+        "updated": changed,
+        "skipped": skipped
+    }
 
 # 权限修改接口，接收用户 ID 和新的权限列表以及是增还是删，更新数据库中的用户权限
 @router.post("/users/update_permissions", summary="【管理端】更新用户独立权限")
@@ -981,9 +1237,6 @@ def update_user_password(
     if not target_user:
         raise HTTPException(status_code=404, detail="目标用户不存在")
 
-    if target_user.username == "admin":
-        raise HTTPException(status_code=400, detail="系统最高根权限超级管理员密码禁止被修改")
-
     target_user.password_hash = pwd_context.hash(payload.new_password)
     db.commit()
 
@@ -1079,17 +1332,97 @@ def update_user_nickname(
 
 # ==================== 🏢 租户空间审批管理 ====================
 
+@router.post("/system/bootstrap", summary="【管理端】初始化核心角色与权限种子")
+def bootstrap_system_seed(
+        current_user: User = Depends(RBACChecker("admin:create", "admin:update")),
+        db: Session = Depends(get_db)
+):
+    if not _is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="仅超级管理员可执行初始化")
+
+    seed_scopes = {
+        "read": "全局可读权限",
+        "write": "全局可写权限",
+        "tenant:user:create": "租户管理端-邀请创建使用者账号",
+        "tenant:app:read": "租户管理端-查看本租户应用列表",
+        "tenant:app:create": "租户管理端-创建本租户应用",
+        "tenant:credential:read": "租户管理端-查看本租户应用凭证",
+        "tenant:credential:create": "租户管理端-签发本租户应用凭证",
+        "tenant:space:review": "超级管理员-审批租户空间",
+        "webhook:create": "Webhook-创建订阅端点",
+        "webhook:update": "Webhook-更新订阅端点",
+        "webhook:list": "Webhook-查看订阅端点",
+        "webhook:delete": "Webhook-删除订阅端点",
+        "webhook:logs": "Webhook-查看投递日志",
+        "admin:read": "中台管理端-查看",
+        "admin:create": "中台管理端-创建",
+        "admin:update": "中台管理端-更新",
+        "admin:delete": "中台管理端-删除",
+    }
+
+    created_permissions = 0
+    for scope_name, desc in seed_scopes.items():
+        exists = db.query(Permission).filter(Permission.name == scope_name).first()
+        if not exists:
+            db.add(Permission(name=scope_name, description=desc))
+            created_permissions += 1
+    db.commit()
+
+    all_seed_permissions = db.query(Permission).filter(Permission.name.in_(list(seed_scopes.keys()))).all()
+    by_name = {p.name: p for p in all_seed_permissions}
+
+    def _ensure_role(role_name: str, role_desc: str, perm_names: list[str]) -> int:
+        role = db.query(Role).filter(Role.name == role_name).first()
+        created = 0
+        if not role:
+            role = Role(name=role_name, description=role_desc)
+            db.add(role)
+            db.flush()
+            created = 1
+        existing = {p.name for p in role.permissions}
+        for perm_name in perm_names:
+            perm_obj = by_name.get(perm_name)
+            if perm_obj and perm_name not in existing:
+                role.permissions.append(perm_obj)
+        return created
+
+    created_roles = 0
+    created_roles += _ensure_role("super_admin", "系统最高权力控制组", list(seed_scopes.keys()))
+    created_roles += _ensure_role("standard_user", "普通注册合规用户组", ["read", "write"])
+    created_roles += _ensure_role(
+        "tenant_admin",
+        "租户空间管理员",
+        [
+            "read", "write", "tenant:user:create", "tenant:app:read", "tenant:app:create",
+            "tenant:credential:read", "tenant:credential:create", "webhook:create", "webhook:update",
+            "webhook:list", "webhook:delete", "webhook:logs"
+        ],
+    )
+
+    db.commit()
+    return {
+        "status": "success",
+        "message": "系统种子初始化完成",
+        "created_permissions": created_permissions,
+        "created_roles": created_roles,
+    }
+
 @router.get("/tenants/list", summary="【超管】租户空间列表与审批状态")
 def list_tenants(
+        page: int = Query(1, ge=1),
+        limit: int = Query(20, ge=1, le=200),
         current_user: User = Depends(RBACChecker("admin:read")),
         db: Session = Depends(get_db)
 ):
     if not _is_super_admin(current_user):
         raise HTTPException(status_code=403, detail="仅允许超级管理员查看租户审批列表")
 
-    groups = db.query(DeveloperGroup).order_by(DeveloperGroup.id.desc()).all()
+    query = db.query(DeveloperGroup)
+    total = query.count()
+    groups = query.order_by(DeveloperGroup.id.desc()).offset((page - 1) * limit).limit(limit).all()
     return {
         "status": "success",
+        "count": total,
         "data": [
             {
                 "group_id": g.id,
@@ -1100,7 +1433,8 @@ def list_tenants(
                 "review_note": g.review_note,
                 "reviewed_at": g.reviewed_at.strftime("%Y-%m-%d %H:%M:%S") if g.reviewed_at else None,
                 "expire_at": g.expire_at.strftime("%Y-%m-%d %H:%M:%S") if g.expire_at else None,
-                "owner_user_id": g.owner_user_id
+                "owner_user_id": g.owner_user_id,
+                "owner": _resolve_group_owner_name(db, g)
             }
             for g in groups
         ]

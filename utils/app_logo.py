@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from io import BytesIO
+import os
 from pathlib import Path
 import secrets
+import tempfile
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
@@ -77,6 +79,20 @@ def save_app_logo_upload(upload_file: UploadFile) -> str:
     APP_LOGO_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"{secrets.token_hex(16)}.png"
     target_path = APP_LOGO_DIR / filename
-    target_path.write_bytes(output.getvalue())
+    payload = output.getvalue()
+
+    # 原子写入：先写临时文件，再 replace，避免进程崩溃留下半写入文件
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False, dir=str(APP_LOGO_DIR), suffix=".tmp") as tmp:
+            tmp.write(payload)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            tmp_path = tmp.name
+        os.replace(tmp_path, str(target_path))
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
     return f"{APP_LOGO_PUBLIC_PREFIX}/{filename}"
 

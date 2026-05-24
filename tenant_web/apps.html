@@ -38,7 +38,7 @@
         .layui-table-view { border: 1px solid #ebeef5 !important; border-radius: 6px !important; overflow: hidden; }
         .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
         .layui-table td { color: #334155; height: 48px; }
-        .form-box { padding: 14px 16px 0 6px; }
+        .form-box { padding: 20px 24px 0 10px; }
         .layui-form-label { width: 90px; }
         .layui-input-block { margin-left: 120px; }
         .note { display:inline-block; margin-top: 4px; padding: 4px 10px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:12px; font-weight:700; }
@@ -50,10 +50,118 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.08);
             vertical-align: middle;
         }
-        .logo-upload-box { display:flex; flex-direction:column; gap:10px; }
-        .logo-preview-box { min-height:80px; border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; padding:12px; display:flex; align-items:center; gap:12px; color:#64748b; font-size:12px; }
-        .logo-preview-img { width:56px; height:56px; border-radius:12px; object-fit:cover; background:#fff; border:1px solid #e2e8f0; box-shadow:0 2px 8px rgba(15,23,42,.08); }
-        .logo-hint { font-size:12px; color:#64748b; line-height:1.6; }
+
+        /* ===== 全新美化的上传组件样式 ===== */
+        .upload-drag-zone {
+            position: relative;
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            background: #f8fafc;
+            padding: 24px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .upload-drag-zone:hover {
+            border-color: #2563eb;
+            background: #f0f5ff;
+        }
+        .upload-drag-zone .upload-icon {
+            font-size: 32px;
+            color: #64748b;
+            transition: color 0.2s;
+        }
+        .upload-drag-zone:hover .upload-icon {
+            color: #2563eb;
+        }
+        .upload-drag-zone .upload-text {
+            font-size: 13px;
+            color: #334155;
+            font-weight: 500;
+        }
+        .upload-drag-zone .upload-text span {
+            color: #2563eb;
+        }
+        .upload-drag-zone .upload-hint {
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.5;
+            max-width: 360px;
+        }
+        /* 隐藏原生文件输入框，通过 label 或 JS 触发 */
+        .real-file-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+            z-index: 10;
+        }
+        /* 已上传状态的预览卡片 */
+        .uploaded-preview-box {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 12px 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            position: relative;
+        }
+        .uploaded-logo-img {
+            width: 52px;
+            height: 52px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 1px solid #f1f5f9;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .uploaded-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .uploaded-filename {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-transform: p;
+            text-overflow: ellipsis;
+        }
+        .uploaded-url {
+            font-size: 11px;
+            color: #64748b;
+            word-break: break-all;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.4;
+        }
+        .btn-reupload {
+            padding: 4px 10px;
+            font-size: 12px;
+            color: #2563eb;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        .btn-reupload:hover {
+            background: #dbeafe;
+        }
     </style>
 </head>
 <body>
@@ -65,11 +173,12 @@
             </div>
             <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">你可以在自己的租户空间下创建应用，并继续签发应用凭证。</div>
             <span class="note">空间未通过审核时将无法创建应用</span>
-            <table class="layui-hide" id="appTable"></table>
+            <table class="layui-hide" id="appTable" lay-filter="appTable"></table>
         </div>
     </div>
 </div>
 
+<!-- 优化后的表单模版 -->
 <div id="appFormTpl" style="display:none;">
     <div class="layui-form form-box" lay-filter="appFormFilter">
         <div class="layui-form-item">
@@ -80,11 +189,27 @@
             <label class="layui-form-label">应用图标</label>
             <div class="layui-input-block">
                 <input type="hidden" name="app_logo" id="appLogoValue">
-                <div class="logo-upload-box">
-                    <input type="file" id="appLogoFile" accept="image/png,image/jpeg,image/webp" class="layui-input">
-                    <div class="logo-hint">仅支持 PNG / JPEG / WebP，单文件不超过 2MB；上传后自动转为 PNG，不允许手填 URL。</div>
-                    <div class="logo-preview-box" id="appLogoPreview">尚未上传图标，创建后将使用默认图标。</div>
+
+                <div class="logo-container">
+                    <!-- 状态1：未上传状态（支持点击、拖拽，覆盖原生file input） -->
+                    <div class="upload-drag-zone" id="uploadDragZone">
+                        <input type="file" id="appLogoFile" accept="image/png,image/jpeg,image/webp" class="real-file-input">
+                        <i class="layui-icon layui-icon-upload-drag upload-icon"></i>
+                        <div class="upload-text">将文件拖到此处，或<span>点击上传</span></div>
+                        <div class="upload-hint">支持 PNG、JPEG、WebP，大小不超过 2MB。上传后系统将自动进行标准化转换。</div>
+                    </div>
+
+                    <!-- 状态2：上传成功后的预览状态（默认隐藏） -->
+                    <div class="uploaded-preview-box" id="uploadedPreviewBox" style="display: none;">
+                        <img src="" class="uploaded-logo-img" id="previewImg" alt="Logo">
+                        <div class="uploaded-info">
+                            <div class="uploaded-filename" id="previewFilename">logo.png</div>
+                            <div class="uploaded-url" id="previewUrl">/tenant/apps/logo/xxx.png</div>
+                        </div>
+                        <button type="button" class="btn-reupload" id="btnReupload">重新上传</button>
+                    </div>
                 </div>
+
             </div>
         </div>
     </div>
@@ -108,26 +233,37 @@
 {% endraw %}
 </script>
 
+<script type="text/html" id="appToolTpl">
+{% raw %}
+    <button class="layui-btn layui-btn-xs" lay-event="devices">设备</button>
+    <button class="layui-btn layui-btn-xs layui-btn-primary" lay-event="edit">编辑</button>
+    <button class="layui-btn layui-btn-xs layui-btn-danger" lay-event="del">删除</button>
+{% endraw %}
+</script>
+
 <script>
 layui.use(['table','layer','form'], function(){
     const table = layui.table, layer = layui.layer, form = layui.form, $ = layui.$;
 
+    // 重置上传组件状态为“未上传”
     function resetLogoPreview($scope) {
         $scope.find('input[name="app_logo"]').val('');
         $scope.find('#appLogoFile').val('');
-        $scope.find('#appLogoPreview').html('尚未上传图标，创建后将使用默认图标。');
+        $scope.find('#uploadDragZone').show();
+        $scope.find('#uploadedPreviewBox').hide();
     }
 
-    function setLogoPreview($scope, url) {
-        const $box = $scope.find('#appLogoPreview');
-        $box.empty();
+    // 设置上传组件状态为“已上传”并显示预览卡片
+    function setLogoPreview($scope, url, filename = 'app_logo.png') {
         if (!url) {
-            $box.text('尚未上传图标，创建后将使用默认图标。');
+            resetLogoPreview($scope);
             return;
         }
-        const $img = $('<img>').addClass('logo-preview-img').attr('src', url).attr('alt', 'logo');
-        const $text = $('<div>').css({ 'word-break': 'break-all', 'line-height': '1.6' }).text(url);
-        $box.append($img).append($text);
+        $scope.find('#uploadDragZone').hide();
+        $scope.find('#previewImg').attr('src', url);
+        $scope.find('#previewFilename').text(filename);
+        $scope.find('#previewUrl').text(url);
+        $scope.find('#uploadedPreviewBox').show();
     }
 
     function uploadAppLogo(file) {
@@ -142,12 +278,12 @@ layui.use(['table','layer','form'], function(){
         });
     }
 
+    // 处理文件选择逻辑
     $(document).on('change', '#appLogoFile', function(){
         const $scope = $(this).closest('.layui-layer');
         const file = this.files && this.files[0];
-        if (!file) {
-            return;
-        }
+        if (!file) return;
+
         if (!/^image\/(png|jpeg|webp)$/i.test(file.type)) {
             layer.msg('仅支持 PNG、JPEG 或 WebP 图片', {icon: 2});
             this.value = '';
@@ -169,7 +305,7 @@ layui.use(['table','layer','form'], function(){
                 return;
             }
             $scope.find('input[name="app_logo"]').val(logo);
-            setLogoPreview($scope, logo);
+            setLogoPreview($scope, logo, file.name);
             layer.msg('图标上传成功', {icon: 1});
         }).fail(function(xhr){
             layer.close(loading);
@@ -180,6 +316,14 @@ layui.use(['table','layer','form'], function(){
                 layer.msg(xhr.responseJSON?.detail || '图标上传失败', {icon: 2});
             }
         });
+    });
+
+    // 重新上传按钮事件处理
+    $(document).on('click', '#btnReupload', function(){
+        const $scope = $(this).closest('.layui-layer');
+        resetLogoPreview($scope);
+        // 模拟点击隐藏的 input 唤起选择框
+        $scope.find('#appLogoFile').click();
     });
 
     $.ajaxSetup({
@@ -198,27 +342,140 @@ layui.use(['table','layer','form'], function(){
     function loadTable() {
         table.render({
             elem: '#appTable',
+            id: 'tenantAppTable',
             url: '/tenant/apps/list',
-            page: false,
+            page: true,
+            limit: 20,
             cols: [[
                 {field:'app_id', title:'ID', width:90, sort:true},
                 {field:'app_logo', title:'图标', width:80, templet:'#logoTpl', align:'center'},
                 {field:'app_name', title:'应用名称', minWidth:180},
                 {field:'is_active', title:'状态', width:110, templet:'#statusTpl'},
-                {field:'created_at', title:'创建时间', width:180}
+                {field:'created_at', title:'创建时间', width:180},
+                {fixed:'right', title:'操作', width:220, toolbar:'#appToolTpl'}
             ]],
             parseData: function(res){
                 const data = Array.isArray(res) ? res : (res.data || []);
-                return {code: 0, msg: '', count: data.length, data: data};
+                return {code: 0, msg: '', count: res.count || data.length, data: data};
             }
         });
     }
+
+    function reloadAppTable() {
+        table.reload('tenantAppTable', {page: {curr: 1}});
+    }
+
+    function openAppDevicesDialog(appRow) {
+        const deviceTableId = 'tenantDeviceTable';
+        const panel = '<div style="padding:12px;"><table class="layui-hide" id="' + deviceTableId + '"></table></div>';
+        layer.open({
+            type: 1,
+            title: '设备列表 - ' + appRow.app_name,
+            area: ['920px', '520px'],
+            content: panel,
+            success: function(){
+                table.render({
+                    elem: '#' + deviceTableId,
+                    id: deviceTableId,
+                    url: '/tenant/apps/' + appRow.app_id + '/devices',
+                    page: true,
+                    limit: 20,
+                    cols: [[
+                        {field:'id', title:'ID', width:80},
+                        {field:'device_id', title:'设备ID', minWidth:220},
+                        {field:'credential_id', title:'凭证ID', width:100},
+                        {field:'last_seen_at', title:'最近活跃', width:160},
+                        {field:'is_revoked', title:'状态', width:100, templet: function(d){ return d.is_revoked ? '<span style="color:#b91c1c;">已解绑</span>' : '<span style="color:#15803d;">已绑定</span>'; }},
+                        {fixed:'right', title:'操作', width:110, templet: function(d){
+                            if (d.is_revoked) return '<span style="color:#94a3b8;">-</span>';
+                            return '<button class="layui-btn layui-btn-xs layui-btn-danger js-unbind" data-device-id="' + d.device_id + '">解绑</button>';
+                        }}
+                    ]],
+                    parseData: function(res){
+                        const data = Array.isArray(res) ? res : (res.data || []);
+                        return {code: 0, msg: '', count: res.count || data.length, data: data};
+                    }
+                });
+            }
+        });
+
+        $(document).off('click.tenantUnbind').on('click.tenantUnbind', '.js-unbind', function(){
+            const deviceId = $(this).data('device-id');
+            layer.confirm('确认解绑设备 [' + deviceId + '] ?', {icon: 3, title: '解绑确认'}, function(confirmIndex){
+                $.ajax({
+                    url: '/tenant/apps/' + appRow.app_id + '/devices/' + encodeURIComponent(deviceId) + '/unbind',
+                    type: 'POST',
+                    success: function(res){
+                        layer.msg(res.message || '解绑成功', {icon: 1});
+                        table.reload(deviceTableId);
+                    },
+                    error: function(xhr){
+                        layer.msg(xhr.responseJSON?.detail || '解绑失败', {icon: 2});
+                    }
+                });
+                layer.close(confirmIndex);
+            });
+        });
+    }
+
+    table.on('tool(appTable)', function(obj){
+        const row = obj.data;
+        if (obj.event === 'edit') {
+            layer.prompt({
+                title: '修改应用名称',
+                value: row.app_name
+            }, function(value, promptIndex){
+                const nextName = (value || '').trim();
+                if (!nextName) {
+                    layer.msg('应用名称不能为空', {icon: 2});
+                    return;
+                }
+                $.ajax({
+                    url: '/tenant/apps/' + row.app_id,
+                    type: 'PUT',
+                    contentType: 'application/json',
+                    data: JSON.stringify({app_name: nextName}),
+                    success: function(res){
+                        layer.msg(res.message || '更新成功', {icon: 1});
+                        layer.close(promptIndex);
+                        reloadAppTable();
+                    },
+                    error: function(xhr){
+                        layer.msg(xhr.responseJSON?.detail || '更新失败', {icon: 2});
+                    }
+                });
+            });
+            return;
+        }
+
+        if (obj.event === 'del') {
+            layer.confirm('确认删除应用 [' + row.app_name + '] ? 删除后不可恢复。', {icon: 3, title: '删除确认'}, function(confirmIndex){
+                $.ajax({
+                    url: '/tenant/apps/' + row.app_id,
+                    type: 'DELETE',
+                    success: function(res){
+                        layer.msg(res.message || '删除成功', {icon: 1});
+                        reloadAppTable();
+                    },
+                    error: function(xhr){
+                        layer.msg(xhr.responseJSON?.detail || '删除失败', {icon: 2});
+                    }
+                });
+                layer.close(confirmIndex);
+            });
+            return;
+        }
+
+        if (obj.event === 'devices') {
+            openAppDevicesDialog(row);
+        }
+    });
 
     $('#btn-add-app').on('click', function(){
         layer.open({
             type: 1,
             title: '新建应用',
-            area: ['620px','430px'],
+            area: ['550px','400px'], // 稍微增加了一点高度适应精致的上传组件
             content: $('#appFormTpl').html(),
             btn: ['创建', '取消'],
             success: function(layero){
@@ -238,7 +495,7 @@ layui.use(['table','layer','form'], function(){
                         if (res.status === 'success') {
                             layer.msg(res.message || '创建成功', {icon: 1});
                             layer.close(index);
-                            loadTable();
+                            reloadAppTable();
                         } else {
                             layer.msg(res.message || '创建失败', {icon: 2});
                         }
@@ -247,9 +504,6 @@ layui.use(['table','layer','form'], function(){
                         layer.msg(xhr.responseJSON?.detail || '创建失败', {icon: 2});
                     }
                 });
-            },
-            end: function(){
-                // 弹层关闭后内容会销毁，无需额外清理
             }
         });
     });
@@ -259,4 +513,3 @@ layui.use(['table','layer','form'], function(){
 </script>
 </body>
 </html>
-

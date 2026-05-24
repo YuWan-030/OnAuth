@@ -4,61 +4,260 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>空间分配 - OnAuth</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
     <style>
-        body { margin: 0; padding: 16px; background: #f3f4f6; font-family: "Microsoft YaHei", sans-serif; }
-        .card { background: #fff; border: 1px solid #ebeef5; border-radius: 10px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
-        .btn-theme { background: linear-gradient(135deg,#2563eb,#1d4ed8) !important; border: none !important; border-radius: 6px !important; }
-        .btn-light { border-radius: 6px !important; }
-        .layui-table th { background: #f8fafc !important; color: #475569 !important; }
-        .form-box { padding: 14px 16px 0 6px; }
-        .layui-form-label { width: 100px; }
-        .layui-input-block { margin-left: 130px; }
-        .tip { color: #64748b; font-size: 12px; line-height: 1.7; margin-top: 6px; }
+        /* ==========================================================================
+           中台全局现代画布与盒模型修正
+           ========================================================================== */
+        *, *:before, *:after {
+            box-sizing: border-box; /* 强行修正所有元素的盒模型，防止 padding 撑开错位 */
+        }
+        body {
+            margin: 0;
+            padding: 16px;
+            background: #f3f4f6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            color: #1e293b;
+            overflow-x: hidden;
+        }
+
+        /* ==========================================================================
+           左右双翼高级卡片舱（弹性盒绝对对齐）
+           ========================================================================== */
+        .flex-container {
+            display: flex;
+            gap: 16px;
+            align-items: stretch; /* 终极武器：让左右两个卡片在任何时候都绝对等高 */
+            flex-wrap: wrap;
+        }
+
+        .panel-left {
+            flex: 1;
+            min-width: 60%; /* 保证桌面端有大广角视线 */
+        }
+
+        .panel-right {
+            width: 360px; /* 控制台宽度固定，彻底消灭拉伸和变形 */
+            flex-shrink: 0;
+        }
+
+        @media screen and (max-width: 992px) {
+            .flex-container { flex-direction: column; }
+            .panel-left, .panel-right { width: 100%; }
+        }
+
+        .panel-card {
+            background: #fff;
+            border: 1px solid #ebeef5;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
+            padding: 20px;
+            height: 100%; /* 继承父级等高 */
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ==========================================================================
+           高级渐变与辅助组件
+           ========================================================================== */
+        .btn-theme-gradient {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            padding: 0 20px !important;
+            height: 38px !important;
+            line-height: 38px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-theme-gradient:hover {
+            opacity: 0.95;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 14px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-auxiliary {
+            background: #fff !important;
+            color: #475569 !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 6px !important;
+            height: 34px !important;
+            line-height: 32px !important;
+            font-size: 13px !important;
+            padding: 0 12px !important;
+            transition: all 0.2s;
+        }
+        .btn-auxiliary:hover {
+            border-color: #2563eb !important;
+            color: #2563eb !important;
+            background: #f8fafc !important;
+        }
+
+        /* ==========================================================================
+           表格视觉修剪
+           ========================================================================== */
+        .layui-table-view {
+            border: 1px solid #ebeef5 !important;
+            border-radius: 8px !important;
+            overflow: hidden;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02) !important;
+            margin-top: 12px;
+            flex: 1; /* 让表格自适应填满卡片剩余空间 */
+        }
+        .layui-table th {
+            background-color: #f8fafc !important;
+            color: #475569 !important;
+            font-weight: 600;
+            height: 44px;
+            border-bottom: 1px solid #ebeef5 !important;
+        }
+        .layui-table td {
+            border-bottom: 1px solid #f1f5f9 !important;
+            color: #334155;
+            height: 46px;
+        }
+
+        /* ==========================================================================
+           右侧紧凑控制面板（彻底清理错位样式）
+           ========================================================================== */
+        .control-header {
+            font-size: 15px;
+            font-weight: 700;
+            color: #0f172a;
+            padding-bottom: 14px;
+            border-bottom: 1px dashed #e2e8f0;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .control-header i { color: #2563eb; font-size: 16px; }
+
+        /* 强制覆盖 Layui 原本错位的表单左位移布局 */
+        .vertical-form .layui-form-item {
+            margin-bottom: 20px;
+            clear: both;
+        }
+        .vertical-form .layui-form-label {
+            color: #475569;
+            font-weight: 500;
+            width: 100% !important; /* 宽度撑满，不要挤在一行 */
+            text-align: left !important;
+            padding: 0 0 8px 0 !important;
+            line-height: 1.5;
+            float: none !important;
+        }
+        .vertical-form .layui-input-block {
+            margin-left: 0 !important; /* 清空 Layui 默认保留的 110px 左边距 */
+            float: none !important;
+            width: 100% !important;
+        }
+
+        .vertical-form .layui-input,
+        .vertical-form .layui-select,
+        .vertical-form .layui-form-select input {
+            border-radius: 6px !important;
+            border-color: #cbd5e1 !important;
+            height: 38px !important;
+        }
+        .vertical-form .layui-input:focus,
+        .vertical-form .layui-form-select input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12) !important;
+        }
+
+        /* 开关美化 */
+        .layui-form-switch { border-radius: 20px; margin-top: 0; }
+        .layui-form-onswitch {
+            border-color: #2563eb !important;
+            background-color: #2563eb !important;
+        }
+
+        .tip-box {
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.6;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
-<div class="card">
-    <div style="display:flex; justify-content: space-between; align-items:center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
-        <div>
-            <div style="font-size: 16px; font-weight: 700; color: #0f172a;">租户空间分配中心</div>
-            <div class="tip">把已审核通过的空间分配给指定租户管理员，并可同步绑定该用户归属。</div>
+
+<div class="layui-fluid">
+    <!-- 使用现代弹性盒子，彻底干掉因 Layui 响应式 padding 产生的计算错位 -->
+    <div class="flex-container">
+
+        <!-- 📐 左侧翼：监控大盘（宽度自适应扩张） -->
+        <div class="panel-left">
+            <div class="panel-card">
+                <div style="display:flex; justify-content: space-between; align-items:flex-start; gap: 10px; margin-bottom: 14px;">
+                    <div>
+                        <div style="font-size: 16px; font-weight: 700; color: #0f172a;">租户空间分配中心</div>
+                        <div class="tip-box">集中监管调度系统中已就绪的组织空间资产。</div>
+                    </div>
+                    <button class="layui-btn btn-auxiliary" id="btn-refresh">
+                        <i class="layui-icon layui-icon-refresh"></i> 异步刷新
+                    </button>
+                </div>
+                <!-- 核心数据网格 -->
+                <table class="layui-hide" id="groupTable" lay-filter="groupTable"></table>
+            </div>
         </div>
-        <button class="layui-btn btn-theme" id="btn-refresh"><i class="layui-icon layui-icon-refresh"></i> 刷新</button>
+
+        <!-- ⚡ 右侧翼：控制舱（宽度精准固定 360px，防形变） -->
+        <div class="panel-right">
+            <div class="panel-card" style="background: #fafafa; border-color: #e2e8f0;">
+                <div class="control-header">
+                    <i class="layui-icon layui-icon-slider"></i> 快速指派控制舱
+                </div>
+
+                <form class="layui-form vertical-form" lay-filter="assignForm">
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">指派组织空间</label>
+                        <div class="layui-input-block">
+                            <select name="group_id" lay-search lay-verify="required" id="groupSelect">
+                                <option value="">正在载入空间实体...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="layui-form-item">
+                        <label class="layui-form-label">目标租户管理员</label>
+                        <div class="layui-input-block">
+                            <select name="user_id" lay-search lay-verify="required" id="userSelect">
+                                <option value="">正在拉取合规账号...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="layui-form-item" style="background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 25px;">
+                        <label class="layui-form-label" style="font-size:13px; font-weight: 600;">空间拓扑绑定</label>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                            <div class="tip-box" style="margin-top:0; color: #94a3b8; max-width: 75%;">管理员主组织架构将同步对齐该空间。</div>
+                            <input type="checkbox" name="bind_user_group" checked lay-skin="switch" lay-text="开启|关闭">
+                        </div>
+                    </div>
+
+                    <div class="layui-form-item" style="margin-top: auto; padding-top: 20px;">
+                        <!-- margin-top: auto 保证无论左边多高，按钮都优雅被吸附在右侧控制舱最底部 -->
+                        <div class="layui-input-block">
+                            <button class="layui-btn btn-theme-gradient" lay-submit lay-filter="submitAssign" style="width: 100%;">
+                                <i class="layui-icon layui-icon-release"></i> 执行资产分配
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
     </div>
-    <table class="layui-hide" id="groupTable"></table>
 </div>
 
-<div class="card">
-    <div style="font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 10px;">快速分配</div>
-    <form class="layui-form" lay-filter="assignForm">
-        <div class="layui-form-item">
-            <label class="layui-form-label">选择空间</label>
-            <div class="layui-input-block">
-                <select name="group_id" lay-search lay-verify="required" id="groupSelect"></select>
-            </div>
-        </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">租户管理员</label>
-            <div class="layui-input-block">
-                <select name="user_id" lay-search lay-verify="required" id="userSelect"></select>
-            </div>
-        </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">同步绑定</label>
-            <div class="layui-input-block">
-                <input type="checkbox" name="bind_user_group" checked lay-skin="switch" lay-text="绑定|不绑定">
-            </div>
-        </div>
-        <div class="layui-form-item">
-            <div class="layui-input-block">
-                <button class="layui-btn btn-theme" lay-submit lay-filter="submitAssign">提交分配</button>
-            </div>
-        </div>
-    </form>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
 <script>
 layui.use(['table','layer','form'], function(){
     const table = layui.table, layer = layui.layer, form = layui.form, $ = layui.$;
@@ -70,9 +269,9 @@ layui.use(['table','layer','form'], function(){
         $.get('/admin/groups/list', function(res){
             const data = Array.isArray(res) ? res : (res.data || res || []);
             groupCache = data.filter(item => item.status === 'approved' || item.is_active === true);
-            const html = ['<option value="">请选择空间</option>'];
+            const html = ['<option value="">-- 输入中台识别码检索 --</option>'];
             groupCache.forEach(item => {
-                html.push(`<option value="${item.id}">${item.group_name} (${item.group_code || '-'})</option>`);
+                html.push(`<option value="${item.id}">${item.group_name} [${item.group_code || '未定义'}]</option>`);
             });
             $('#groupSelect').html(html.join(''));
             form.render('select');
@@ -83,7 +282,7 @@ layui.use(['table','layer','form'], function(){
         $.get('/admin/users/list?limit=100', function(res){
             const data = res.data || [];
             userCache = data.filter(item => (item.roles || []).includes('tenant_admin') || (item.roles || []).includes('super_admin'));
-            const html = ['<option value="">请选择租户管理员</option>'];
+            const html = ['<option value="">-- 输入用户名/昵称检索 --</option>'];
             userCache.forEach(item => {
                 html.push(`<option value="${item.id}">${item.nickname || item.username} (${item.username})</option>`);
             });
@@ -102,14 +301,25 @@ layui.use(['table','layer','form'], function(){
                 return {code: 0, msg: '', count: data.length, data: data};
             },
             cols: [[
-                {field:'id', title:'ID', width:80},
-                {field:'group_name', title:'空间名称', minWidth:180},
-                {field:'group_code', title:'识别码', width:160},
-                {field:'owner', title:'当前归属', width:140},
-                {field:'owner_user_id', title:'归属用户ID', width:120},
-                {field:'status', title:'状态', width:100},
-                {field:'expire_at', title:'到期时间', width:180}
-            ]]
+                {field:'id', title:'ID', width:70, sort: true, align: 'center'},
+                {field:'group_name', title:'空间名称/组织实体', minWidth:150, style: 'font-weight: 500;'},
+                {field:'group_code', title:'识别码', width:120, style: 'color: #2563eb; font-family: monospace;'},
+                {field:'owner', title:'负责人', width:110},
+                {field:'status', title:'风控状态', width:90, align: 'center', templet: function(d){
+                    if(d.status === 'approved' || d.is_active) {
+                        return '<span style="color:#16a34a;font-size:12px;">● 已授信</span>';
+                    }
+                    return '<span style="color:#64748b;font-size:12px;">待校验</span>';
+                }},
+                {field:'expire_at', title:'到期时间', width:160}
+            ]],
+            error: function(res){
+                if(res.status === 401){
+                    layer.msg('会话已失效，请重新登录账号', {icon: 2}, function(){
+                        window.top.location.href = '/login';
+                    });
+                }
+            }
         });
     }
 
@@ -120,26 +330,34 @@ layui.use(['table','layer','form'], function(){
         };
         const groupId = parseInt(data.field.group_id, 10);
         if (!groupId || !payload.user_id) {
-            layer.msg('请选择空间和租户管理员', {icon: 2});
+            layer.msg('空间实体与目标管理员不可为空', {icon: 2});
             return false;
         }
+
+        var loading = layer.msg('中台资产映射更新中...', {icon: 16, shade: 0.1, time: 0});
         $.ajax({
             url: `/admin/groups/${groupId}/assign`,
             type: 'POST',
             contentType: 'application/json',
             data: JSON.stringify(payload),
             success: function(res){
+                layer.close(loading);
                 if (res.status === 'success') {
-                    layer.msg(res.message || '分配成功', {icon: 1});
+                    layer.msg(res.message || '资产分派并下发完毕', {icon: 1});
                     loadGroups();
                     loadUsers();
                     loadTable();
                 } else {
-                    layer.msg(res.message || '分配失败', {icon: 2});
+                    layer.msg(res.message || '分配请求遭遇内部阻断', {icon: 2});
                 }
             },
             error: function(xhr){
-                layer.msg(xhr.responseJSON?.detail || '分配失败', {icon: 2});
+                layer.close(loading);
+                if(xhr.status === 401) {
+                    layer.msg('登录凭证已过期', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                } else {
+                    layer.msg(xhr.responseJSON?.detail || '资产映射失败', {icon: 2});
+                }
             }
         });
         return false;
@@ -158,4 +376,3 @@ layui.use(['table','layer','form'], function(){
 </script>
 </body>
 </html>
-

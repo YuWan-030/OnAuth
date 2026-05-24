@@ -9,6 +9,7 @@ import subprocess
 import hashlib
 import os
 import sys
+import platform
 
 # 仅在 Windows 平台下导入注册表库，保障多平台跨端分发时脚本不崩溃
 if sys.platform == "win32":
@@ -78,8 +79,37 @@ def get_windows_device_id() -> str:
     return hashlib.sha256(raw_fingerprint.encode()).hexdigest()
 
 
+def get_generic_device_id() -> str:
+    """
+    非 Windows 平台降级方案：基于机器名、系统版本和 CPU 架构组合。
+    该值不是硬件强绑定，但可作为跨平台一致性设备标识兜底。
+    """
+    seeds = [
+        os.getenv("HOSTNAME", ""),
+        os.getenv("COMPUTERNAME", ""),
+        platform.system(),
+        platform.release(),
+        platform.machine(),
+        platform.node(),
+    ]
+    safe = [item.strip() for item in seeds if item and item.strip()]
+    if not safe:
+        safe = ["generic-device"]
+    raw_fingerprint = f"OnAuth_Generic_Salt_{'_'.join(safe)}"
+    return hashlib.sha256(raw_fingerprint.encode()).hexdigest()
+
+
+def get_device_id() -> str:
+    """
+    统一设备指纹入口：Windows 走强化链路，其它平台走通用兜底。
+    """
+    if sys.platform == "win32":
+        return get_windows_device_id()
+    return get_generic_device_id()
+
+
 if __name__ == "__main__":
     # 留一个极简的本地运行预览
     print("--- OnAuth Client Device Identity Scanner ---")
-    device_id = get_windows_device_id()
+    device_id = get_device_id()
     print(f"Generated Device ID (SHA-256): {device_id}")

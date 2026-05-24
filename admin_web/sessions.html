@@ -4,164 +4,339 @@
     <meta charset="UTF-8">
     <title>在线会话监控 - OnAuth 云中台</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- 引入 LayUI -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
     <style>
         /* ==========================================================================
-           全维中台扁平化风格适配
+           全局样式与基础设定
            ========================================================================== */
         body {
             background-color: #f3f4f6;
             padding: 15px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            color: #334155;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             -webkit-font-smoothing: antialiased;
+            color: #334155;
         }
-        .layui-fluid { padding: 0; }
+        @media screen and (min-width: 768px) {
+            body { padding: 20px; }
+        }
 
-        /* 卡片轻量化 */
-        .layui-card {
+        /* 模块最大宽度容器 */
+        .monitor-container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* ==========================================================================
+           数据看板卡片高级化
+           ========================================================================== */
+        .stat-card {
+            background-color: #fff;
+            padding: 20px;
             border-radius: 8px;
             border: 1px solid #ebeef5;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            background: #fff;
-            margin-bottom: 15px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }
-        .layui-card-header {
-            padding: 0 16px;
+        .stat-card-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+            letter-spacing: 0.05em;
+        }
+        .stat-card-value {
+            font-size: 30px;
             font-weight: 700;
             color: #0f172a;
-            border-bottom: 1px solid #f1f5f9;
-            height: 48px;
-            line-height: 48px;
+            margin-top: 8px;
+            font-family: monospace;
         }
-        .layui-card-body { padding: 16px; }
 
-        /* 顶部轻量统计区块 */
-        .stat-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        /* 搜索检索舱与内容舱外壳 */
+        .content-panel {
+            background-color: #fff;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            margin-top: 14px;
+        }
+        .panel-title {
+            font-weight: 700;
+            color: #0f172a;
+            font-size: 14px;
+            letter-spacing: 0.05em;
+        }
+
+        /* ==========================================================================
+           表单控制组件与高级按钮体系（核心重设）
+           ========================================================================== */
+        .search-row {
+            display: flex;
+            flex-wrap: wrap;
             gap: 12px;
-            margin-bottom: 14px;
+            align-items: center;
         }
-        .stat-card {
-            background: #fff;
-            padding: 16px;
-            border-radius: 8px;
-            border: 1px solid #ebeef5;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        .search-inputs {
+            flex: 1;
+            display: flex;
+            gap: 12px;
+            min-width: 300px;
         }
-        .stat-label { font-size: 12px; color: #64748b; font-weight: 500; }
-        .stat-value { font-size: 24px; font-weight: 700; color: #0f172a; margin-top: 4px; font-family: ui-monospace, sans-serif; }
-
-        /* 检索条件舱 */
-        .search-panel {
-            background: #fff;
-            padding: 16px;
-            border-radius: 8px;
-            margin-bottom: 14px;
-            border: 1px solid #ebeef5;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        .search-inputs > div {
+            flex: 1;
         }
 
-        /* 表单输入控件 */
-        .layui-input {
+        /* 输入框聚焦呼吸灯 */
+        .layui-input, .layui-select {
             border-radius: 6px !important;
             border-color: #d1d5db !important;
-            transition: all 0.2s;
-            height: 36px;
+            height: 36px !important;
+            transition: all 0.2s ease;
         }
         .layui-input:focus {
             border-color: #2563eb !important;
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
         }
 
-        /* 主题检索按钮 */
-        .btn-search-theme {
+        /* 响应式断点间距修正 */
+        @media screen and (max-width: 768px) {
+            .search-row { flex-direction: column; align-items: stretch; }
+            .search-inputs { flex-direction: column; gap: 12px; }
+            .action-buttons { justify-content: flex-start; margin-top: 4px; }
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        /* 👑 按钮一：核心主行动点（渐变蓝+呼吸投影） */
+        .btn-theme-gradient {
             background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
             color: #fff !important;
             border: none !important;
             border-radius: 6px !important;
+            padding: 0 18px !important;
             height: 36px !important;
             line-height: 36px !important;
-            padding: 0 18px !important;
             font-size: 13px !important;
             font-weight: 500;
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-theme-gradient:hover {
+            opacity: 0.95;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+        }
+        .btn-theme-gradient:active {
+            transform: translateY(0);
+        }
+
+        /* 🛑 按钮二：批量危险动作（幽灵浅红过渡） */
+        .btn-danger-ghost {
+            color: #ef4444 !important;
+            background: transparent !important;
+            border: 1px solid rgba(239, 68, 68, 0.25) !important;
+            border-radius: 6px !important;
+            padding: 0 16px !important;
+            height: 36px !important;
+            line-height: 34px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .btn-danger-ghost:hover {
+            background: #fef2f2 !important;
+            border-color: #ef4444 !important;
+            transform: translateY(-1px);
+        }
+
+        /* 🔥 按钮三：全局高危动作（沉稳暗红渐变） */
+        .btn-danger-gradient {
+            background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            padding: 0 16px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            font-size: 13px !important;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(220, 38, 38, 0.2);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-danger-gradient:hover {
+            opacity: 0.95;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(220, 38, 38, 0.3);
+        }
+
+        /* ⚡ 表格内微型高管级操作纽扣（精细化扁平控制） */
+        .btn-table-revoke {
+            color: #ef4444 !important;
+            background: transparent !important;
+            border: 1px solid rgba(239, 68, 68, 0.2) !important;
+            border-radius: 4px !important;
+            padding: 0 10px !important;
+            height: 24px !important;
+            line-height: 22px !important;
+            font-size: 12px !important;
+            transition: all 0.2s ease;
+        }
+        .btn-table-revoke:hover {
+            background: #fef2f2 !important;
+            border-color: #ef4444 !important;
+            transform: translateY(-0.5px);
         }
 
         /* ==========================================================================
-           数据网格与强制熔断按钮
-           ========================================================================== */
-        .layui-table-view { border: 1px solid #ebeef5 !important; border-radius: 6px !important; overflow: hidden; }
-        .layui-table th { background-color: #f8fafc !important; color: #475569 !important; font-weight: 600; height: 44px; }
+           表格高级化精细微调
+           ========================================================================= */
+        .layui-table-view {
+            border: 1px solid #ebeef5 !important;
+            border-radius: 6px !important;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+            margin-top: 12px !important;
+        }
+        .layui-table th {
+            background-color: #f8fafc !important;
+            color: #475569 !important;
+            font-weight: 600 !important;
+            height: 44px;
+            border-bottom: 1px solid #ebeef5 !important;
+        }
+        .layui-table td {
+            border-bottom: 1px solid #f1f5f9 !important;
+            color: #334155;
+            height: 48px;
+        }
+        .layui-table-page {
+            border-top: 1px solid #ebeef5 !important;
+            background-color: #fff !important;
+            padding: 8px 16px !important;
+        }
 
-        /* 终端类型小微标签 */
-        .client-badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: monospace; }
-        .client-desktop { background: #eff6ff; color: #2563eb; }
-        .client-mobile { background: #fff7ed; color: #ea580c; }
-
-        /* 状态呼吸灯（默认在线激活） */
-        .status-pulse { inline-size: 6px; block-size: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; background-color: #10b981; box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2); }
-
-        /* 行内原子级强退按钮 */
-        .btn-action-revoke { background: transparent !important; color: #ef4444 !important; border: 1px solid rgba(239,68,68,0.2) !important; border-radius: 4px !important; padding: 0 8px !important; font-size: 12px !important; transition: all 0.2s; font-weight: 500; }
-        .btn-action-revoke:hover { background: #fef2f2 !important; border-color: #ef4444 !important; }
-        .ua-text { font-size: 12px; color: #475569; }
+        /* 状态呼吸灯与徽章标签样式 */
+        .status-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            height: 100%;
+        }
+        .status-pulse {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+            background-color: #10b981;
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+        }
+        .client-badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            font-family: monospace;
+            display: inline-block;
+        }
+        .badge-mobile {
+            background-color: #fff7ed;
+            color: #ea580c;
+            border: 1px solid #ffedd5;
+        }
+        .badge-desktop {
+            background-color: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #dbeafe;
+        }
+        .text-muted {
+            color: #64748b;
+            font-size: 12px;
+            font-family: monospace;
+        }
+        .text-truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
 
-<div class="layui-fluid">
+<div class="monitor-container">
 
     <!-- 📈 模块一：全局会话瞬时动态看板 -->
-    <div class="stat-grid">
-        <div class="stat-card">
-            <div class="stat-label">🟢 当前在线总会话 (Active)</div>
-            <div class="stat-value" id="stat-total">0</div>
+    <div class="layui-row layui-col-space12">
+        <div class="layui-col-xs12 layui-col-sm4">
+            <div class="stat-card">
+                <span class="stat-card-title">🟢 当前在线总会话 (Active)</span>
+                <span class="stat-card-value" id="stat-total">0</span>
+            </div>
         </div>
-        <div class="stat-card">
-            <div class="stat-label">💻 桌面控制端 (Desktop)</div>
-            <div class="stat-value" id="stat-desktop">0</div>
+        <div class="layui-col-xs12 layui-col-sm4">
+            <div class="stat-card">
+                <span class="stat-card-title">💻 桌面控制端 (Desktop)</span>
+                <span class="stat-card-value" id="stat-desktop">0</span>
+            </div>
         </div>
-        <div class="stat-card">
-            <div class="stat-label">📱 移动授信终端 (Mobile)</div>
-            <div class="stat-value" id="stat-mobile">0</div>
+        <div class="layui-col-xs12 layui-col-sm4">
+            <div class="stat-card">
+                <span class="stat-card-title">📱 移动授信终端 (Mobile)</span>
+                <span class="stat-card-value" id="stat-mobile">0</span>
+            </div>
         </div>
     </div>
 
     <!-- 🔍 过滤、精准狙击检索舱 -->
-    <div class="search-panel layui-form">
-        <div class="layui-row layui-col-space10">
-            <div class="layui-col-md3">
-                <input type="text" name="username" placeholder="👤 检索在线用户账号 / 令牌..." class="layui-input">
+    <div class="content-panel layui-form">
+        <div class="search-row">
+            <!-- 搜索输入组 -->
+            <div class="search-inputs">
+                <div>
+                    <input type="text" name="username" placeholder="👤 检索在线用户账号 / 令牌..." class="layui-input">
+                </div>
+                <div>
+                    <input type="text" name="ip" placeholder="🌐 锁定特定访问IP..." class="layui-input">
+                </div>
+                <div>
+                    <select name="device">
+                        <option value="">全部终端</option>
+                        <option value="desktop">桌面端</option>
+                        <option value="mobile">移动端</option>
+                    </select>
+                </div>
             </div>
-            <div class="layui-col-md3">
-                <input type="text" name="ip" placeholder="🌐 锁定特定访问IP..." class="layui-input">
-            </div>
-            <div class="layui-col-md3">
-                <select name="device" class="layui-input">
-                    <option value="">全部终端</option>
-                    <option value="desktop">桌面端</option>
-                    <option value="mobile">移动端</option>
-                </select>
-            </div>
-            <div class="layui-col-md3">
-                <button class="layui-btn btn-search-theme" lay-submit lay-filter="search-submit">过滤会话</button>
-            </div>
-            <div class="layui-col-md3">
-                <button class="layui-btn layui-btn-danger" id="btn-batch-revoke">批量下线</button>
-            </div>
-            <div class="layui-col-md3">
-                <button class="layui-btn layui-btn-danger" id="btn-revoke-all">全部下线</button>
+
+            <!-- 动作按钮组（已全面升维高级质感） -->
+            <div class="action-buttons">
+                <button class="layui-btn btn-theme-gradient" lay-submit lay-filter="search-submit">
+                    过滤会话
+                </button>
+                <button type="button" id="btn-batch-revoke" class="layui-btn btn-danger-ghost">
+                    批量下线
+                </button>
+                <button type="button" id="btn-revoke-all" class="layui-btn btn-danger-gradient">
+                    全部下线
+                </button>
             </div>
         </div>
     </div>
 
     <!-- 📊 会话流阵列矩阵 -->
-    <div class="layui-card">
-        <div class="layui-card-header">👥 实时在线会话审查舱 (Active Sessions)</div>
-        <div class="layui-card-body">
+    <div class="content-panel" style="padding: 0;">
+        <div class="panel-title" style="padding: 16px 20px 4px 20px;">
+            👥 实时在线会话审查舱 (Active Sessions)
+        </div>
+        <div style="padding: 0 20px 15px 20px;">
             <table id="session-table" lay-filter="session-table"></table>
         </div>
     </div>
@@ -173,29 +348,34 @@
 {% raw %}
 <!-- 终端环境加工模板 -->
 <script type="text/html" id="tpl-client">
-    <div style="display: flex; align-items: center; gap: 4px;">
+    <div style="display: flex; align-items: center; gap: 8px; height: 100%;">
         {{# if(d.is_mobile){ }}
-            <span class="client-badge client-mobile">MOBILE</span>
+            <span class="client-badge badge-mobile">MOBILE</span>
         {{# } else { }}
-            <span class="client-badge client-desktop">DESKTOP</span>
+            <span class="client-badge badge-desktop">DESKTOP</span>
         {{# } }}
-        <span style="color: #64748b; font-size: 12px; font-family: monospace;">{{ d.browser || 'Unknown' }} · {{ d.os || 'Unknown' }}</span>
+        <span class="text-muted text-truncate" style="max-width: 180px;">{{ d.browser || 'Unknown' }} · {{ d.os || 'Unknown' }}</span>
     </div>
 </script>
 
 <script type="text/html" id="tpl-ua">
-    <span class="ua-text" title="{{ d.ua || '' }}">{{ (d.ua || '-').slice(0, 28) }}...</span>
+    <span class="text-muted" style="cursor: help;" title="{{ d.ua || '' }}">{{ (d.ua || '-').slice(0, 28) }}...</span>
 </script>
 
 <!-- 会话锁定状态 -->
 <script type="text/html" id="tpl-status">
-    <span class="status-pulse"></span><span style="font-size: 13px; color: #1e293b;">在线活跃</span>
+    <div class="status-container">
+        <span class="status-pulse"></span>
+        <span style="font-size: 12px; font-weight: 500;">在线活跃</span>
+    </div>
 </script>
 
-<!-- 强熔断斩断链 -->
+<!-- 强熔断斩断链（细化至高级胶囊级） -->
 <script type="text/html" id="tpl-ops">
     <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
-        <button class="layui-btn layui-btn-xs btn-action-revoke" lay-event="revoke">强制下线</button>
+        <button class="layui-btn layui-btn-xs btn-table-revoke" lay-event="revoke">
+            强制下线
+        </button>
     </div>
 </script>
 {% endraw %}
@@ -218,34 +398,39 @@ layui.use(['table', 'form', 'layer'], function(){
         }),
         cols: [[
             {type: 'checkbox', fixed: 'left'},
-            {field: 'token_id', title: '会话令牌快照', width: 180, align: 'center', fontStyle: 'monospace'},
+            {field: 'token_id', title: '会话令牌快照', width: 180, align: 'center'},
             {field: 'username', title: '授信账号', width: 130, align: 'center', sort: true},
             {field: 'ip', title: '登录源IP', width: 130, align: 'center'},
             {field: 'location', title: '物理归属地', width: 160},
-            {field: 'client', title: '客端物理环境', minWidth: 220, templet: '#tpl-client'},
+            {field: 'client', title: '客端物理环境', minWidth: 240, templet: '#tpl-client'},
             {field: 'login_time', title: '握手登录时间', width: 170, align: 'center', sort: true},
             {field: 'ua', title: 'UA 摘要', width: 200, templet: '#tpl-ua'},
             {field: 'status', title: '当前态', width: 100, align: 'center', templet: '#tpl-status'},
             {title: '风控指令', width: 100, toolbar: '#tpl-ops', align: 'center', fixed: 'right'}
         ]],
         done: function(res) {
-            // 每次表格数据重载完成，动态提取并刷新顶部看板指标
             if (res.data) {
                 let total = res.data.length || 0;
                 let mobile = res.data.filter(item => item.is_mobile).length;
                 let desktop = total - mobile;
 
-                // 给顶部统计牌注水渲染
                 $('#stat-total').text(total);
                 $('#stat-desktop').text(desktop);
                 $('#stat-mobile').text(mobile);
             }
+            // 针对弹窗按钮的高级化渲染同步
+            $('.layui-layer-btn0').css({
+                'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                'border-color': '#2563eb',
+                'border-radius': '6px'
+            });
         },
         error: function() {
             layer.msg('会话数据拉取失败，请检查后端服务与权限', {icon: 2});
         }
     });
 
+    // 批量下线逻辑
     $('#btn-batch-revoke').on('click', function(){
         const checkStatus = table.checkStatus('session-table');
         const rows = checkStatus.data || [];
@@ -308,10 +493,14 @@ layui.use(['table', 'form', 'layer'], function(){
                         layer.msg('会话阻断失败', {icon: 2});
                     }
                 });
+                // 对弹窗里的确认按钮进行皮肤微调
+                $('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-radius': '6px'});
             });
+            $('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-radius': '6px'});
         }
     });
 
+    // 全部下线
     $('#btn-revoke-all').on('click', function(){
         layer.prompt({
             title: '全部下线原因（默认保留当前登录）',
@@ -334,7 +523,9 @@ layui.use(['table', 'form', 'layer'], function(){
                     layer.msg('全部下线失败', {icon: 2});
                 }
             });
+            $('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-radius': '6px'});
         });
+        $('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-radius': '6px'});
     });
 });
 </script>

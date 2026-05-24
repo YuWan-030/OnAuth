@@ -1,0 +1,4 @@
+alembic>=1.14.0
+pytest>=8.3.0
+httpx>=0.28.0
+

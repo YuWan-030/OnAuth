@@ -38,7 +38,6 @@
         <div class="layui-form-item">
             <div class="layui-input-block">
                 <button class="layui-btn btn-theme" lay-submit lay-filter="submitApply">提交申请</button>
-                <a class="layui-btn layui-btn-primary" href="/tenant/error">查看空间状态</a>
             </div>
         </div>
     </form>
@@ -49,9 +48,42 @@
 layui.use(['form','layer'], function(){
     const form = layui.form, layer = layui.layer, $ = layui.$;
 
+    function extractErrorMessage(xhr, fallback) {
+        const res = xhr && xhr.responseJSON ? xhr.responseJSON : null;
+        if (!res) {
+            const text = (xhr && xhr.responseText ? String(xhr.responseText) : '').trim();
+            return text || fallback || '申请失败';
+        }
+
+        if (typeof res.detail === 'string' && res.detail.trim()) {
+            return res.detail.trim();
+        }
+
+        if (Array.isArray(res.detail) && res.detail.length) {
+            const first = res.detail[0] || {};
+            const loc = Array.isArray(first.loc) ? first.loc.join('.') : '';
+            const msg = first.msg || first.message || '';
+            return [loc, msg].filter(Boolean).join(': ') || fallback || '申请失败';
+        }
+
+        if (typeof res.message === 'string' && res.message.trim()) {
+            return res.message.trim();
+        }
+
+        if (typeof res.msg === 'string' && res.msg.trim()) {
+            return res.msg.trim();
+        }
+
+        if (typeof res.detail === 'number' || typeof res.detail === 'boolean') {
+            return String(res.detail);
+        }
+
+        return fallback || '申请失败';
+    }
+
     $.ajaxSetup({
         complete: function(xhr) {
-            const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
+            const detail = extractErrorMessage(xhr, '');
             if (xhr.status === 401) {
                 window.top.location.href = '/login';
                 return;
@@ -82,11 +114,11 @@ layui.use(['form','layer'], function(){
                         window.location.href = '/tenant/error';
                     });
                 } else {
-                    layer.msg(res.message || '申请失败', {icon: 2});
+                    layer.msg(res.message || res.detail || '申请失败', {icon: 2});
                 }
             },
             error: function(xhr){
-                layer.msg(xhr.responseJSON?.detail || '申请失败', {icon: 2});
+                layer.msg(extractErrorMessage(xhr, '申请失败'), {icon: 2});
             }
         });
         return false;

@@ -7,10 +7,14 @@ from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Foreign
 import config
 
 DATABASE_URL = config.DATABASE_URL
-connect_args = {"check_same_thread": False}
 
+
+connect_args = {"check_same_thread": False}
+# 使用 MySQL 时，connect_args 可以留空或删除，因为它们是 SQLite 特有的参数
+# engine = create_engine(DATABASE_URL)
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 Base = declarative_base()
 
 # ==================== 🔐 RBAC 多对多关联中间表 ====================
@@ -53,7 +57,7 @@ class WebhookConfig(Base):
     is_active = Column(Boolean, default=True)
 
     # 🌟 必须添加这一行，并保存文件
-    creator_id = Column(Integer, nullable=False, index=True)
+    creator_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     created_at = Column(DateTime, default=datetime.datetime.now)
 
@@ -81,7 +85,7 @@ class DeveloperGroup(Base):
     owner = Column(String(64), default="admin")
     owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(String(20), default="pending", index=True, comment="租户空间状态: pending/approved/rejected")
-    review_note = Column(String(255), nullable=True, comment="���批备注")
+    review_note = Column(String(255), nullable=True, comment="审批备注")
     reviewed_at = Column(DateTime, nullable=True, comment="审批时间")
     expire_at = Column(DateTime, nullable=True, comment="空间到期时间")
     is_active = Column(Boolean, default=True)
@@ -124,7 +128,7 @@ class AppCredential(Base):
     expire_at = Column(DateTime, nullable=True)
 
     app = relationship("App", back_populates="credentials")
-    devices = relationship("AppDevice", back_populates="credential", cascade="all, delete-orphan")
+    devices = relationship("AppDevice", back_populates="credential", cascade="all, delete-orphan", lazy="selectin")
 
 
 class AppDevice(Base):
@@ -134,6 +138,10 @@ class AppDevice(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     credential_id = Column(Integer, ForeignKey("app_credentials.id", ondelete="CASCADE"), nullable=False)
     device_id = Column(String(64), index=True, nullable=False)
+    is_revoked = Column(Boolean, default=False, index=True)
+    revoked_at = Column(DateTime, nullable=True)
+    revoke_reason = Column(String(255), nullable=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
     activated_at = Column(DateTime, default=datetime.datetime.now)
     last_seen_at = Column(DateTime, default=datetime.datetime.now)
 
@@ -185,7 +193,7 @@ class Role(Base):
     is_active = Column(Boolean, default=True, comment="角色是否启用，False 代表冻结状态，不再授予权限")
 
     # 关联多个权限节点
-    permissions = relationship("Permission", secondary=role_permission_association)
+    permissions = relationship("Permission", secondary=role_permission_association, lazy="selectin")
 
 
 class User(Base):
@@ -196,33 +204,34 @@ class User(Base):
     username = Column(String(64), unique=True, index=True, nullable=False, comment="登录用户名")
     nickname = Column(String(64), nullable=True, comment="用户昵称")
     password_hash = Column(String(128), nullable=False, comment="密码哈希值")
-    email = Column(String(128), nullable=True, comment="用户邮箱")
+    email = Column(String(128), unique=True, index=True, nullable=True, comment="用户邮箱")
     group_id = Column(Integer, ForeignKey("developer_groups.id", ondelete="SET NULL"), nullable=True, index=True)
 
     is_active = Column(Boolean, default=True, comment="账户是否激活，False 代表被冻结")
     created_at = Column(DateTime, default=datetime.datetime.now, comment="账户创建时间")
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now, comment="账户更新时间")
 
     group = relationship("DeveloperGroup", back_populates="users", foreign_keys=[group_id])
     # 多对多关联：角色组
-    roles = relationship("Role", secondary=user_role_association)
+    roles = relationship("Role", secondary=user_role_association, lazy="selectin")
     # 多对多关联：额外独立赋权
-    extra_permissions = relationship("Permission", secondary=user_permission_association)
+    extra_permissions = relationship("Permission", secondary=user_permission_association, lazy="selectin")
 
     # 🌟 核心高光：动态合并计算出该用户的所有底层权限节点标识（去重）
     @property
     def all_permissions(self) -> set[str]:
-        permissions_set = set()
-
-        # 1. 提取角色组里的所有权限
-        for role in self.roles:
-            if getattr(role, 'is_active', True):
-                for perm in role.permissions:
-                    permissions_set.add(perm.name)
-
-        # 2. 提取用户身上多带带赋予的独立权限
-        for perm in self.extra_permissions:
-            permissions_set.add(perm.name)
-
+        permissions_set = {
+            perm.name
+            for role in self.roles
+            if getattr(role, "is_active", True)
+            for perm in role.permissions
+            if getattr(perm, "name", None)
+        }
+        permissions_set.update({
+            perm.name
+            for perm in self.extra_permissions
+            if getattr(perm, "name", None)
+        })
         return permissions_set
 
 

@@ -1,11 +1,6 @@
-from pydantic import BaseModel, Field
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
 from typing import Optional, List
-from sqlalchemy.orm import Session
-from database import get_db, Role, Permission, User
-from middlewares.rbac import RBACChecker
+
+from pydantic import BaseModel, Field
 
 class UserPermissionUpdateSchema(BaseModel):
     user_id: int = Field(..., description="目标用户 ID")

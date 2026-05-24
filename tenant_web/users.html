@@ -61,6 +61,7 @@
 
 <div id="inviteFormTpl" style="display:none;">
     <div class="layui-form form-box" lay-filter="inviteFormFilter">
+        <input type="hidden" name="group_code">
         <div class="layui-form-item">
             <label class="layui-form-label">用户名</label>
             <div class="layui-input-block"><input type="text" name="username" required lay-verify="required" placeholder="请输入用户名" class="layui-input"></div>
@@ -93,6 +94,17 @@ layui.use(['layer','form'], function(){
         }
     });
 
+    function loadGroupCode() {
+        $.get('/auth/me', function(res){
+            if (res.status === 'success') {
+                const data = res.data || {};
+                $('input[name="group_code"]').val(data.group_code || '');
+            }
+        });
+    }
+
+    loadGroupCode();
+
     $('#btn-invite-user').on('click', function(){
         layer.open({
             type: 1,
@@ -104,13 +116,14 @@ layui.use(['layer','form'], function(){
                 const username = layero.find('input[name="username"]').val();
                 const password = layero.find('input[name="password"]').val();
                 const nickname = layero.find('input[name="nickname"]').val();
+                const groupCode = layero.find('input[name="group_code"]').val();
                 if (!username || !password) {
                     return layer.msg('用户名和密码不能为空', {icon: 2});
                 }
                 $.ajax({
                     url: '/tenant/users/invite',
                     type: 'POST',
-                    data: JSON.stringify({ username: username, password: password, nickname: nickname }),
+                    data: JSON.stringify({ username: username, password: password, nickname: nickname, group_code: groupCode }),
                     contentType: 'application/json',
                     success: function(res){
                         if (res.status === 'success') {

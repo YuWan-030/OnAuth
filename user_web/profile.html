@@ -4,127 +4,293 @@
     <meta charset="UTF-8">
     <title>用户中心 - OnAuth</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
     <style>
         body {
-            background-color: #f3f4f6;
-            padding: 18px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f4f5f7; /* 对齐参考文件的底色 */
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             color: #334155;
             -webkit-font-smoothing: antialiased;
         }
-        .card {
+
+        /* ==========================================================================
+           1. 顶部页头卡片 (完全继承参考文件的现代卡片组件封装)
+           ========================================================================== */
+        .page-header-card {
             background: #fff;
             border-radius: 8px;
-            border: 1px solid #ebeef5;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            padding: 16px;
+            padding: 20px 24px;
             margin-bottom: 16px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        .page-title-area {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
         }
         .card-title {
-            font-size: 14px;
-            font-weight: 600;
+            font-size: 16px;
+            font-weight: 700;
             color: #0f172a;
-            margin-bottom: 10px;
+            margin: 0;
         }
-        .info-row { display: flex; gap: 12px; margin-bottom: 8px; }
-        .info-label { width: 90px; color: #64748b; }
-        .info-value { color: #111827; font-weight: 600; }
-        .btn-theme {
+        .tip {
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 400;
+        }
+
+        /* ==========================================================================
+           2. 主体栅格及卡片风格 (延续参考文件的扁平现代化中台质感)
+           ========================================================================== */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr; /* 左右两栏对等分布 */
+            gap: 16px;
+            align-items: start;
+        }
+
+        .main-card {
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+            padding: 24px;
+        }
+
+        .card-head-area {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .card-hint {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        /* ==========================================================================
+           3. 数据属性行精细化排版
+           ========================================================================== */
+        .info-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .info-row {
+            display: flex;
+            align-items: center;
+            padding: 10px 14px;
+            background: #f8fafc;
+            border-radius: 6px;
+            border: 1px solid #f1f5f9;
+        }
+        .info-label {
+            width: 100px;
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .info-value {
+            flex: 1;
+            color: #0f172a;
+            font-weight: 600;
+            font-size: 13px;
+            word-break: break-all;
+            text-align: right;
+        }
+
+        /* 状态条横幅 */
+        .status-banner {
+            padding: 10px 14px;
+            border-radius: 6px;
+            background-color: #f0fdf4;
+            color: #16a34a;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 14px;
+            border: 1px solid #dcfce7;
+        }
+        .status-banner.no-group {
+            background-color: #fef2f2;
+            color: #ef4444;
+            border-color: #fee2e2;
+        }
+
+        /* ==========================================================================
+           4. 按钮控制集群 (继承自参考文件的全套按钮设计规范)
+           ========================================================================== */
+        .table-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        /* 科技蓝主按钮 */
+        .btn-prime {
             background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
             color: #fff !important;
-            border: none !important;
             border-radius: 6px !important;
             height: 36px !important;
             line-height: 36px !important;
-            padding: 0 16px !important;
             font-size: 13px !important;
-            font-weight: 500;
+            font-weight: 600 !important;
+            padding: 0 16px !important;
+            border: none !important;
             box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
         }
-        .btn-secondary {
+        .btn-prime:hover { opacity: 0.95; }
+
+        /* 边框次要按钮 */
+        .btn-sec {
             border: 1px solid #d1d5db !important;
             background-color: #fff !important;
-            color: #374151 !important;
+            color: #4b5563 !important;
             border-radius: 6px !important;
             height: 36px !important;
             line-height: 34px !important;
-            padding: 0 14px !important;
             font-size: 13px !important;
+            padding: 0 14px !important;
+            font-weight: 500;
         }
-        .btn-danger {
-            border: 1px solid rgba(239, 68, 68, 0.3) !important;
-            background-color: #fff !important;
+        .btn-sec:hover { border-color: #9ca3af !important; background-color: #f9fafb !important; color: #111827 !important; }
+
+        /* 镂空高危警示按钮 */
+        .btn-outline-danger {
+            border: 1px solid rgba(239, 68, 68, 0.2) !important;
+            background-color: rgba(239, 68, 68, 0.01) !important;
             color: #ef4444 !important;
             border-radius: 6px !important;
             height: 36px !important;
             line-height: 34px !important;
-            padding: 0 14px !important;
             font-size: 13px !important;
+            padding: 0 14px !important;
+            font-weight: 600;
         }
-        .form-row { margin-bottom: 12px; }
-        .layui-input {
-            border-radius: 6px !important;
-            border-color: #d1d5db !important;
-            height: 36px;
+        .btn-outline-danger:hover { background-color: #ef4444 !important; color: #fff !important; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15); }
+
+        /* ==========================================================================
+           5. 徽章（Badges）组件规范
+           ========================================================================== */
+        .group-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+        .session-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .session-badge.status-current { background-color: #dcfce7; color: #16a34a; }
+        .session-badge.status-other { background-color: #fef3c7; color: #d97706; }
+        .session-badge.status-danger { background-color: #fee2e2; color: #dc2626; }
+        .session-badge.status-neutral { background-color: #f1f5f9; color: #475569; }
+
+        .inline-tip { color: #94a3b8; font-size: 12px; margin-top: 12px; line-height: 1.5; }
+
+        @media (max-width: 1024px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
         }
-        .inline-actions { display: flex; gap: 10px; margin-top: 10px; }
-        .inline-tip { color: #94a3b8; font-size: 12px; margin-top: 8px; }
-        .group-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
-        .group-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
-        .group-badge.ok { background: #dcfce7; color: #15803d; }
-        .group-badge.warn { background: #fef3c7; color: #b45309; }
-        .group-badge.bad { background: #fee2e2; color: #b91c1c; }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <div class="card-title">账户信息</div>
-    <div class="info-row"><div class="info-label">用户名</div><div class="info-value" id="profile-username">-</div></div>
-    <div class="info-row"><div class="info-label">昵称</div><div class="info-value" id="profile-nickname">-</div></div>
-</div>
-
-<div class="card">
-    <div class="card-title">租户空间</div>
-    <div class="info-row"><div class="info-label">空间名称</div><div class="info-value" id="profile-group-name">-</div></div>
-    <div class="info-row"><div class="info-label">空间识别码</div><div class="info-value" id="profile-group-code">-</div></div>
-    <div class="info-row"><div class="info-label">空间状态</div><div class="info-value"><span id="profile-group-status" class="group-badge warn">WAITING</span></div></div>
-    <div class="group-meta">
-        <span class="group-badge warn" id="profile-group-expire-pill">待审批/待续期</span>
-        <span class="group-badge" id="profile-role-pill" style="background:#eef2ff;color:#4338ca;">USER</span>
-    </div>
-    <div class="inline-actions">
-        <button class="layui-btn btn-secondary" id="btn-copy-group">复制识别码</button>
+<div class="page-header-card">
+    <div class="page-title-area">
+        <h2 class="card-title">个人控制中心</h2>
+        <span class="tip">查看当前账户核心标识属性、多租户关联空间底座以及安全生命周期管控。</span>
     </div>
 </div>
 
-<div class="card">
-    <div class="card-title">修改密码</div>
-    <form class="layui-form" lay-filter="pwdForm">
-        <div class="form-row">
-            <input type="password" name="current_password" lay-verify="required" placeholder="当前密码" class="layui-input" autocomplete="off">
+<div class="dashboard-grid">
+    <div class="main-card">
+        <div class="card-head-area">
+            <h3 class="card-title">凭证与账户信息</h3>
+            <span class="card-hint">账号基础身份映射</span>
         </div>
-        <div class="form-row">
-            <input type="password" name="new_password" lay-verify="required" placeholder="新密码（至少6位）" class="layui-input" autocomplete="off">
+        <div class="info-list">
+            <div class="info-row"><div class="info-label">用户名</div><div class="info-value" id="profile-username">-</div></div>
+            <div class="info-row"><div class="info-label">用户昵称</div><div class="info-value" id="profile-nickname">-</div></div>
+            <div class="info-row">
+                <div class="info-label">系统角色</div>
+                <div class="info-value" style="display:flex; justify-content:flex-end;">
+                    <span id="profile-roles" class="session-badge status-neutral">-</span>
+                </div>
+            </div>
         </div>
-        <button class="layui-btn btn-theme" lay-submit lay-filter="change-password">提交修改</button>
-    </form>
-</div>
 
-<div class="card">
-    <div class="card-title">会话与注销</div>
-    <div class="inline-actions">
-        <button class="layui-btn btn-secondary" id="btn-logout">退出登录</button>
-        <button class="layui-btn btn-danger" id="btn-unregister">注销账户</button>
+        <div class="card-head-area" style="margin-top: 32px;">
+            <h3 class="card-title">会话与高危安全控制</h3>
+            <span class="card-hint">账户生命周期自毁</span>
+        </div>
+        <div class="table-actions">
+            <button class="layui-btn btn-sec" id="btn-logout">
+                <i class="layui-icon layui-icon-logout"></i> 退出系统
+            </button>
+            <button class="layui-btn btn-outline-danger" id="btn-unregister">
+                <i class="layui-icon layui-icon-delete"></i> 申请注销账户
+            </button>
+        </div>
+        <div class="inline-tip">警告：注销操作将会永久粉碎当前绑定的账户和会话令牌，且该行为不可逆。</div>
     </div>
-    <div class="inline-tip">注销需要验证当前密码，账户将被永久删除。</div>
+
+    <div class="main-card">
+        <div class="card-head-area">
+            <h3 class="card-title">关联租户空间</h3>
+            <span class="card-hint">多租户隔离架构</span>
+        </div>
+
+        <div id="group-note" class="status-banner">空间信息加载中...</div>
+
+        <div class="info-list">
+            <div class="info-row"><div class="info-label">空间名称</div><div class="info-value" id="profile-group-name">-</div></div>
+            <div class="info-row"><div class="info-label">空间识别码</div><div class="info-value" id="profile-group-code" style="font-family: monospace; color: #2563eb;">-</div></div>
+            <div class="info-row">
+                <div class="info-label">空间状态</div>
+                <div class="info-value" style="display:flex; justify-content:flex-end;">
+                    <span id="profile-group-status" class="session-badge status-other">WAITING</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="group-meta">
+            <span class="session-badge status-other" id="profile-group-expire-pill">待审批/待续期</span>
+            <span class="session-badge status-neutral" id="profile-role-pill">USER</span>
+        </div>
+
+        <div class="table-actions" style="margin-top: 24px; padding-top: 18px; border-top: 1px dashed #e2e8f0;">
+            <button class="layui-btn btn-prime" id="btn-copy-group">
+                <i class="layui-icon layui-icon-file"></i> 复制识别码
+            </button>
+            <button class="layui-btn btn-sec" id="btn-open-sessions">
+                <i class="layui-icon layui-icon-username"></i> 在线会话管理
+            </button>
+        </div>
+    </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
 <script>
-layui.use(['form', 'layer'], function(){
-    const form = layui.form, layer = layui.layer, $ = layui.$;
+layui.use(['layer'], function(){
+    const layer = layui.layer, $ = layui.$;
+
+    function extractErrorMessage(xhr, fallback) {
+        const res = xhr && xhr.responseJSON ? xhr.responseJSON : null;
+        if (!res) {
+            const text = (xhr && xhr.responseText ? String(xhr.responseText) : '').trim();
+            return text || fallback || '请求失败';
+        }
+        if (typeof res.detail === 'string' && res.detail.trim()) return res.detail.trim();
+        if (Array.isArray(res.detail) && res.detail.length) {
+            const first = res.detail[0] || {};
+            return (first.msg || first.message || fallback || '请求失败');
+        }
+        if (typeof res.message === 'string' && res.message.trim()) return res.message.trim();
+        return fallback || '请求失败';
+    }
 
     $.ajaxSetup({
         complete: function(xhr) {
@@ -140,22 +306,21 @@ layui.use(['form', 'layer'], function(){
     });
 
     function setStatusBadge(status) {
-        const el = $('#profile-group-status');
-        const pill = $('#profile-group-expire-pill');
-        const s = (status || 'unknown').toLowerCase();
-        el.removeClass('ok warn bad').addClass(s === 'approved' ? 'ok' : (s === 'rejected' ? 'bad' : 'warn'));
-        if (s === 'approved') {
-            el.text('APPROVED');
-            pill.text('已通过审核').css({background:'#dcfce7', color:'#15803d'});
-        } else if (s === 'rejected') {
-            el.text('REJECTED');
-            pill.text('审核已拒绝').css({background:'#fee2e2', color:'#b91c1c'});
-        } else if (s === 'pending') {
-            el.text('PENDING');
-            pill.text('待超级管理员审核').css({background:'#fef3c7', color:'#b45309'});
+        const badge = $('#profile-group-status');
+        const note = $('#group-note');
+        const normalized = (status || 'unknown').toLowerCase();
+
+        badge.removeClass('status-current status-other status-danger');
+        note.removeClass('no-group');
+
+        if (normalized === 'pending') {
+            badge.addClass('status-other').text('PENDING');
+        } else if (normalized === 'approved') {
+            badge.addClass('status-current').text('APPROVED');
+        } else if (normalized === 'rejected') {
+            badge.addClass('status-danger').text('REJECTED');
         } else {
-            el.text(s.toUpperCase());
-            pill.text('待创建/待绑定').css({background:'#e2e8f0', color:'#334155'});
+            badge.addClass('status-other').text(normalized.toUpperCase());
         }
     }
 
@@ -166,15 +331,23 @@ layui.use(['form', 'layer'], function(){
                 return;
             }
             const data = res.data || {};
+
+            if(data.group_name) {
+                $('#group-note').removeClass('no-group').text('✨ 空间已绑定，可使用左侧或下方的入口进行独立会话管理');
+            } else {
+                $('#group-note').addClass('no-group').text('💡 当前账号尚未创建空间，请先申请创建空间底座');
+            }
+
             $('#profile-username').text(data.username || '-');
             $('#profile-nickname').text(data.nickname || '-');
+            $('#profile-roles').text((data.roles || []).join(' / ') || '-');
             $('#profile-group-name').text(data.group_name || '-');
             $('#profile-group-code').text(data.group_code || '-');
-            $('#profile-role-pill').text((data.roles || []).join(' / ') || 'USER');
             $('#profile-group-expire-pill').text(data.group_expire_at || '待审批/待续期');
+            $('#profile-role-pill').text((data.roles || []).join(' / ') || 'USER');
             setStatusBadge(data.group_status);
-        }).fail(function(){
-            layer.msg('用户画像加载失败', {icon: 2});
+        }).fail(function(xhr){
+            layer.msg(extractErrorMessage(xhr, '用户画像加载失败'), {icon: 2});
         });
     }
 
@@ -188,50 +361,29 @@ layui.use(['form', 'layer'], function(){
         }
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(code).then(() => {
-                layer.msg('识别码已复制', {icon: 1});
+                layer.msg('识别码已成功复制', {icon: 1});
             }).catch(() => {
-                layer.msg('复制失败，请手动复制', {icon: 2});
+                layer.msg('复制失败，请手动选择复制', {icon: 2});
             });
         } else {
             window.prompt('复制以下识别码：', code);
         }
     });
 
-    form.on('submit(change-password)', function(data){
-        if (!data.field.new_password || data.field.new_password.length < 6) {
-            layer.msg('新密码至少6位', {icon: 2});
-            return false;
-        }
-        const loading = layer.load(2);
-        $.ajax({
-            url: '/auth/change_password',
-            type: 'POST',
-            data: data.field,
-            success: function(res){
-                layer.close(loading);
-                if (res.status === 'success') {
-                    layer.msg(res.message || '密码修改成功', {icon: 1});
-                    form.val('pwdForm', {current_password: '', new_password: ''});
-                } else {
-                    layer.msg(res.message || '密码修改失败', {icon: 2});
-                }
-            },
-            error: function(xhr){
-                layer.close(loading);
-                layer.msg(xhr.responseJSON?.detail || '密码修改失败', {icon: 2});
-            }
-        });
-        return false;
+    $('#btn-open-sessions').on('click', function(){
+        window.location.href = '/user/sessions';
     });
 
     $('#btn-logout').on('click', function(){
-        const loading = layer.load(2);
-        $.post('/auth/logout', function(){
-            layer.close(loading);
-            window.location.href = '/login';
-        }).fail(function(xhr){
-            layer.close(loading);
-            layer.msg(xhr.responseJSON?.detail || '退出失败', {icon: 2});
+        layer.confirm('确定要退出当前管理系统吗？', {icon: 3, title: '安全提示'}, function(){
+            const loading = layer.load(2);
+            $.post('/auth/logout', function(){
+                layer.close(loading);
+                window.location.href = '/login';
+            }).fail(function(xhr){
+                layer.close(loading);
+                layer.msg(extractErrorMessage(xhr, '退出失败'), {icon: 2});
+            });
         });
     });
 
@@ -240,34 +392,45 @@ layui.use(['form', 'layer'], function(){
             title: '请输入当前密码以确认注销',
             formType: 1,
             success: function(layero) {
-                layero.find('.layui-layer-btn0').css({'background': '#ef4444', 'border-color': '#ef4444'});
+                layero.find('.layui-layer-btn0').css({
+                    'background': '#ef4444',
+                    'border-color': '#ef4444',
+                    'box-shadow': '0 4px 12px rgba(239, 68, 68, 0.15)'
+                });
             }
         }, function(value, index){
-            if (!value) {
+            const passwordVal = (value || '').trim();
+            if (!passwordVal) {
                 layer.msg('密码不能为空', {icon: 2});
-                return;
+                return false;
             }
+
             const loading = layer.load(2);
             $.ajax({
                 url: '/auth/unregister',
                 type: 'DELETE',
-                data: { confirm_password: value },
+                contentType: 'application/x-www-form-urlencoded',
+                data: { confirm_password: passwordVal },
                 success: function(res){
                     layer.close(loading);
-                    layer.msg(res.message || '账户已注销', {icon: 1}, function(){
+                    layer.close(index);
+                    layer.alert(res.message || '账户已成功注销', {
+                        icon: 1,
+                        title: '注销成功',
+                        closeBtn: 0
+                    }, function(){
+                        layer.load(2);
                         window.location.href = '/login';
                     });
                 },
                 error: function(xhr){
                     layer.close(loading);
-                    layer.msg(xhr.responseJSON?.detail || '注销失败', {icon: 2});
+                    layer.msg(extractErrorMessage(xhr, '注销失败'), {icon: 2, time: 3000});
                 }
             });
-            layer.close(index);
         });
     });
 });
 </script>
 </body>
 </html>
-

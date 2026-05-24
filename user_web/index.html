@@ -4,9 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OnAuth - 用户中心</title>
+
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+
     <style>
         * { box-sizing: border-box; }
+
         body {
             margin: 0;
             padding: 0;
@@ -14,6 +17,10 @@
             background: #f5f7fb;
             font-family: "Microsoft YaHei", sans-serif;
         }
+
+        /* ==========================================================================
+           顶部 Header
+           ========================================================================== */
         .header {
             height: 60px;
             background: #111827;
@@ -29,6 +36,7 @@
             z-index: 999;
             box-shadow: 0 1px 4px rgba(0,0,0,.08);
         }
+
         .logo-area {
             display: flex;
             align-items: center;
@@ -36,6 +44,7 @@
             font-weight: 600;
             letter-spacing: .5px;
         }
+
         .logo-icon {
             width: 34px;
             height: 34px;
@@ -48,6 +57,70 @@
             font-size: 18px;
             box-shadow: 0 4px 12px rgba(37,99,235,.35);
         }
+
+        .header-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .pill {
+            padding: 4px 12px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.08);
+            font-size: 12px;
+            font-weight: 500;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .pill.ok { background: rgba(34,197,94,.16); color: #4ade80; }
+        .pill.warn { background: rgba(245,158,11,.16); color: #fcd34d; }
+        .pill.muted { background: rgba(148,163,184,.16); color: #cbd5e1; }
+
+        .user-info-area .layui-nav { background: transparent; padding: 0; }
+        .user-info-area .layui-nav-item { line-height: 60px; display: inline-block; vertical-align: middle; }
+        .user-info-area .layui-nav-item > a {
+            color: #fff !important;
+            padding: 0 28px 0 10px !important;
+            font-size: 14px;
+            display: flex !important;
+            align-items: center;
+            justify-content: flex-start;
+            height: 60px;
+            max-width: 220px;
+        }
+
+        .user-info-area .layui-nav-item > a span#current-user {
+            display: inline-block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 140px;
+        }
+
+        .user-info-area .layui-nav-item > a i.layui-icon-username { margin-right: 6px; font-size: 16px; }
+        .user-info-area .layui-nav-child a { color: #333 !important; }
+
+        .user-info-area .layui-nav .layui-nav-more {
+            position: absolute !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+            margin-top: -2px !important;
+            right: 8px !important;
+            border-top-color: rgba(255, 255, 255, 0.7) !important;
+        }
+
+        .user-info-area .layui-nav .layui-nav-mored {
+            margin-top: -8px !important;
+            border-top-color: transparent !important;
+            border-bottom-color: rgba(255, 255, 255, 0.7) !important;
+        }
+
+        /* ==========================================================================
+           左侧侧边栏菜单
+           ========================================================================== */
         .side {
             position: fixed;
             top: 60px;
@@ -58,14 +131,13 @@
             overflow-y: auto;
             overflow-x: hidden;
             border-right: 1px solid rgba(255,255,255,.04);
+            z-index: 100;
         }
+
         .side::-webkit-scrollbar { width: 5px; }
         .side::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 10px; }
-        .side-menu {
-            width: 220px;
-            background: transparent !important;
-            padding-top: 10px;
-        }
+
+        .side-menu { width: 220px; background: transparent !important; padding-top: 10px; }
         .side-menu .layui-nav-item > a {
             height: 48px;
             line-height: 48px;
@@ -74,8 +146,10 @@
             color: rgba(255,255,255,.82) !important;
             transition: all .2s ease;
         }
+
         .side-menu .layui-nav-item > a:hover { background: rgba(255,255,255,.04); }
         .side-menu .layui-nav-item i { margin-right: 12px; font-size: 16px; }
+
         .side-menu .layui-nav-child { background: rgba(0,0,0,.18) !important; }
         .side-menu .layui-nav-child dd a {
             padding-left: 52px !important;
@@ -84,190 +158,518 @@
             line-height: 42px;
         }
         .side-menu .layui-nav-child dd a:hover { background: rgba(255,255,255,.03); }
+
         .side-menu .layui-this > a,
         .side-menu .layui-nav-child dd.layui-this a {
             background: linear-gradient(90deg,#2563eb,#1d4ed8) !important;
             color: #fff !important;
         }
-        .main {
+
+        /* ==========================================================================
+           RuoYi 风格：多标签卡片导航架构区
+           ========================================================================== */
+        .main-body {
             position: fixed;
             left: 220px;
             top: 60px;
             right: 0;
             bottom: 0;
+            display: flex;
+            flex-direction: column;
             background: #f3f4f6;
+            z-index: 90;
         }
-        .user-iframe {
+
+        .ruoyi-tab-container {
+            height: 40px;
+            background: #fff;
+            border-bottom: 1px solid #e5e7eb;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+            position: relative;
+        }
+
+        .ruoyi-tab-container .layui-tab {
+            margin: 0 !important;
+            border: none !important;
+        }
+        .ruoyi-tab-container .layui-tab-title {
+            height: 40px !important;
+            border: none !important;
+            background: #fafafa !important;
+            padding-right: 60px;
+        }
+        .ruoyi-tab-container .layui-tab-title li {
+            height: 40px !important;
+            line-height: 40px !important;
+            border-right: 1px solid #f3f4f6 !important;
+            border-bottom: none !important;
+            color: #4b5563 !important;
+            font-size: 13px;
+            padding: 0 16px !important;
+            transition: all 0.15s ease;
+        }
+        .ruoyi-tab-container .layui-tab-title li:hover {
+            background: #f1f5f9;
+            color: #111827 !important;
+        }
+        .ruoyi-tab-container .layui-tab-title .layui-this {
+            background: #fff !important;
+            color: #2563eb !important;
+            font-weight: 600;
+        }
+        .ruoyi-tab-container .layui-tab-title .layui-this:after {
+            height: 3px !important;
+            background-color: #2563eb !important;
+            top: 0 !important;
+            border: none !important;
+        }
+        .ruoyi-tab-container .layui-tab-title li .layui-tab-close {
+            font-size: 12px;
+            margin-left: 6px;
+            color: #9ca3af;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+        .ruoyi-tab-container .layui-tab-title li .layui-tab-close:hover {
+            background-color: #ef4444 !important;
+            color: #fff !important;
+        }
+
+        .ruoyi-tab-content-wrapper {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .admin-iframe {
+            position: absolute;
             width: 100%;
             height: 100%;
             border: none;
             background: #fff;
+            display: none;
         }
-        .user-info-area .layui-nav {
-            background: transparent;
-            padding: 0;
+        .admin-iframe.active {
+            display: block;
         }
-        .user-info-area .layui-nav-item { line-height: 60px; }
-        .user-info-area .layui-nav-item > a {
-            color: #fff !important;
-            padding: 0 12px !important;
-            font-size: 14px;
+
+        /* ==========================================================================
+           右键上下文菜单
+           ========================================================================== */
+        .ruoyi-context-menu {
+            position: absolute;
+            background: #fff;
+            border: 1px solid #dcdfe6;
+            box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1);
+            border-radius: 4px;
+            padding: 5px 0;
+            z-index: 2000;
+            display: none;
+            min-width: 110px;
         }
-        .user-info-area .layui-nav-child a { color: #333 !important; }
-        .meta-pill {
-            background: rgba(255,255,255,.1);
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 12px;
-            margin-left: 10px;
+        .ruoyi-context-menu li {
+            list-style: none;
+            padding: 8px 16px;
+            color: #606266;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        .meta-pill.status-ok { background: rgba(34,197,94,.16); color: #86efac; }
-        .meta-pill.status-warn { background: rgba(245,158,11,.16); color: #fde68a; }
-        .meta-pill.status-muted { background: rgba(148,163,184,.16); color: #cbd5e1; }
+        .ruoyi-context-menu li:hover {
+            background-color: #f5f7fa;
+            color: #2563eb;
+        }
+        .ruoyi-context-menu li i { font-size: 14px; }
+
+        /* ==========================================================================
+           修改密码弹窗定制排版
+           ========================================================================== */
+        .pwd-dialog-body { padding: 25px 30px 15px 15px; }
+        .pwd-btn-group { display: flex; justify-content: flex-end; gap: 10px; padding-top: 10px; }
     </style>
 </head>
+
 <body>
 
 <div class="header">
     <div class="logo-area">
         <div class="logo-icon">🔐</div>
-        OnAuth 用户中心
-        <span class="meta-pill" id="tenant-pill">租户未绑定</span>
+        <div>OnAuth · 用户中心</div>
     </div>
-    <div class="user-info-area">
-        <ul class="layui-nav">
-            <li class="layui-nav-item">
-                <a href="javascript:;" id="current-user">未登录</a>
-                <dl class="layui-nav-child">
-                    <dd><a href="javascript:;" id="btn-profile">个人中心</a></dd>
-                    <dd><a href="javascript:;" id="btn-unregister" style="color:#ef4444;">注销账户</a></dd>
-                    <dd><a href="javascript:;" id="btn-logout">退出登录</a></dd>
-                </dl>
-            </li>
-        </ul>
+
+    <div class="header-meta">
+        <span class="pill status-muted" id="tenant-pill">正在载入...</span>
+
+        <div class="user-info-area">
+            <ul class="layui-nav" lay-filter="headerNav">
+                <li class="layui-nav-item">
+                    <a href="javascript:;">
+                        <i class="layui-icon layui-icon-username"></i>
+                        <span id="current-user">加载中...</span>
+                    </a>
+                    <dl class="layui-nav-child">
+                        <dd><a href="javascript:;" id="btn-profile"><i class="layui-icon layui-icon-set-sm" style="margin-right:5px;color:#1e9fff;"></i>个人中心</a></dd>
+                        <dd><a href="javascript:;" id="btn-change-pwd"><i class="layui-icon layui-icon-password" style="margin-right:5px;color:#ffb800;"></i>修改密码</a></dd>
+                        <dd><a href="javascript:;" id="btn-unregister" style="color:#ef4444;"><i class="layui-icon layui-icon-close-fill" style="margin-right:5px;color:#ef4444;"></i>注销账户</a></dd>
+                        <hr>
+                        <dd><a href="javascript:;" id="btn-logout"><i class="layui-icon layui-icon-logout" style="margin-right:5px;color:#ff5722;"></i>退出登录</a></dd>
+                    </dl>
+                </li>
+            </ul>
+        </div>
     </div>
 </div>
 
 <div class="side">
     <ul class="layui-nav layui-nav-tree side-menu" lay-filter="sideNav">
         <li class="layui-nav-item layui-this">
-            <a href="javascript:;" data-src="/user/profile"><i class="layui-icon layui-icon-user"></i>用户中心</a>
+            <a href="javascript:;" data-id="profile" data-src="/user/profile">
+                <i class="layui-icon layui-icon-user"></i><span>用户中心</span>
+            </a>
+        </li>
+        <li class="layui-nav-item">
+            <a href="javascript:;" data-id="sessions" data-src="/user/sessions">
+                <i class="layui-icon layui-icon-tabs"></i><span>在线会话</span>
+            </a>
         </li>
         <li class="layui-nav-item tenant-only" style="display: none;">
-            <a href="javascript:;"><i class="layui-icon layui-icon-group"></i>租户管理</a>
+            <a href="javascript:;">
+                <i class="layui-icon layui-icon-group"></i><span>租户管理</span>
+            </a>
             <dl class="layui-nav-child">
-                <dd><a href="javascript:;" data-src="/user/invite">成员邀请</a></dd>
+                <dd>
+                    <a href="javascript:;" data-id="invite" data-src="/user/invite">
+                        <i class="layui-icon layui-icon-add-1" style="font-size:14px;margin-right:8px;"></i>成员邀请
+                    </a>
+                </dd>
             </dl>
         </li>
     </ul>
 </div>
 
-<div class="main">
-    <iframe id="main-iframe" class="user-iframe" src="/user/profile"></iframe>
+<div class="main-body">
+    <div class="ruoyi-tab-container">
+        <div class="layui-tab" lay-filter="ruoyiTabs" lay-allowclose="true">
+            <ul class="layui-tab-title">
+                <li lay-id="profile" class="layui-this" lay-allowclose="false">用户中心</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="ruoyi-tab-content-wrapper" id="iframe-viewport">
+        <iframe data-id="profile" class="admin-iframe active" src="/user/profile"></iframe>
+    </div>
+</div>
+
+<ul class="ruoyi-context-menu" id="tab-context-menu">
+    <li id="m-refresh"><i class="layui-icon layui-icon-refresh"></i>刷新当前</li>
+    <li id="m-close-current"><i class="layui-icon layui-icon-close"></i>关闭当前</li>
+    <li id="m-close-others"><i class="layui-icon layui-icon-subtraction"></i>关闭其他</li>
+    <li id="m-close-all"><i class="layui-icon layui-icon-clear"></i>关闭全部</li>
+</ul>
+
+<div id="pwd-dialog-template" style="display: none;">
+    <div class="pwd-dialog-body">
+        <form class="layui-form" lay-filter="pwdForm">
+            <div class="layui-form-item">
+                <label class="layui-form-label"><span style="color:#ef4444;">*</span> 当前密码</label>
+                <div class="layui-input-block">
+                    <input type="password" name="current_password" placeholder="请输入当前旧密码" autocomplete="off" lay-verify="required" class="layui-input">
+                </div>
+            </div>
+            <div class="layui-form-item">
+                <label class="layui-form-label"><span style="color:#ef4444;">*</span> 新密码</label>
+                <div class="layui-input-block">
+                    <input type="password" name="new_password" placeholder="建议包含字母与数字组合" autocomplete="off" lay-verify="required" class="layui-input">
+                </div>
+            </div>
+            <div class="layui-form-item pwd-btn-group">
+                <button type="button" class="layui-btn layui-btn-primary btn-pwd-cancel">取消</button>
+                <button type="submit" class="layui-btn" style="background:#2563eb;" lay-submit lay-filter="submitPwd">确认修改</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
-<script>
-layui.use(['element', 'layer'], function(){
-    const element = layui.element, layer = layui.layer, $ = layui.$;
 
+<script>
+layui.use(['element', 'jquery', 'layer', 'form'], function(){ // 引入 form 模块支持
+    const element = layui.element;
+    const layer = layui.layer;
+    const $ = layui.$;
+    const form = layui.form;
+
+    let contextMenuTargetId = null;
+
+    // ==========================================================================
+    // 全局 AJAX 控制拦截
+    // ==========================================================================
     $.ajaxSetup({
         complete: function(xhr) {
             const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
-            if (xhr.status === 401) {
-                window.top.location.href = '/login';
-                return;
-            }
-            if (xhr.status === 403 && detail) {
-                layer.msg(detail, {icon: 2, time: 2500});
-            }
+            if (xhr.status === 401) { window.top.location.href = '/login'; return; }
+            if (xhr.status === 403 && detail) { layer.msg(detail, {icon: 2, time: 2500}); }
         }
     });
 
     function setTenantBadge(text, cls) {
-        $('#tenant-pill').removeClass('status-ok status-warn status-muted').addClass(cls || 'status-muted').text(text);
+        $('#tenant-pill').removeClass('status-ok status-warn status-muted ok warn muted').addClass(cls || 'muted').text(text);
     }
 
+    // ==========================================================================
+    // 异步拉取真实账户画像数据
+    // ==========================================================================
     function loadProfile() {
-        $.get('/auth/me', function(res){
-            if (res.status !== 'success') {
-                layer.msg(res.message || '获取用户信息失败', {icon: 2});
-                return;
+        $.ajax({
+            url: '/auth/me',
+            type: 'GET',
+            success: function(res){
+                if (res.status !== 'success') {
+                    layer.msg(res.message || '获取用户信息失败', {icon: 2});
+                    $('#current-user').text('未登录');
+                    return;
+                }
+                const data = res.data || {};
+
+                $('#current-user').text(data.nickname || data.username || '未知用户');
+                element.render('nav', 'headerNav');
+
+                if (data.group_name) {
+                    $('#tenant-pill').text(data.group_name);
+                    if (data.group_status === 'approved') {
+                        setTenantBadge(data.group_name, 'ok');
+                    } else {
+                        setTenantBadge(data.group_name, 'warn');
+                    }
+                } else {
+                    setTenantBadge('未绑定空间', 'muted');
+                }
+
+                if (data.is_tenant_admin) {
+                    $('.tenant-only').show();
+                    element.render('nav', 'sideNav');
+                }
+            },
+            error: function(){
+                layer.msg('获取用户信息失败', {icon: 2});
+                $('#current-user').text('未登录');
             }
-            const data = res.data || {};
-            $('#current-user').text(data.nickname || data.username || '用户');
-            if (data.group_name) {
-                $('#tenant-pill').text(data.group_name);
-                $('#tenant-pill').removeClass('status-muted').addClass(data.group_status === 'approved' ? 'status-ok' : 'status-warn');
-            } else {
-                setTenantBadge('未绑定空间', 'status-muted');
-            }
-            if (data.is_tenant_admin) {
-                $('.tenant-only').show();
-            }
-        }).fail(function(){
-            layer.msg('获取用户信息失败', {icon: 2});
         });
     }
 
     loadProfile();
 
+    // ==========================================================================
+    // RuoYi 多标签页路由控制链路
+    // ==========================================================================
     element.on('nav(sideNav)', function(elem){
+        const id = elem.attr('data-id');
         const src = elem.attr('data-src');
-        if (src) {
-            $('#main-iframe').attr('src', src);
+        const title = elem.find('span').text();
+
+        if (!src || !id) return;
+
+        const existTab = $(`.layui-tab-title li[lay-id="${id}"]`);
+        if (existTab.length === 0) {
+            element.tabAdd('ruoyiTabs', { title: title, id: id });
+            const newIframe = `<iframe data-id="${id}" class="admin-iframe" src="${src}"></iframe>`;
+            $('#iframe-viewport').append(newIframe);
+        }
+        element.tabChange('ruoyiTabs', id);
+    });
+
+    element.on('tab(ruoyiTabs)', function(data){
+        const layId = $(this).attr('lay-id');
+        $('#iframe-viewport iframe').removeClass('active');
+        $(`#iframe-viewport iframe[data-id="${layId}"]`).addClass('active');
+
+        $('.side-menu .layui-nav-item, .side-menu dd').removeClass('layui-this');
+        const currentMenu = $(`.side-menu a[data-id="${layId}"]`);
+        if (currentMenu.length > 0) {
+            currentMenu.parent().addClass('layui-this');
+            if(currentMenu.parents('.layui-nav-child').length > 0) {
+                currentMenu.parents('.layui-nav-item').addClass('layui-nav-itemed');
+            }
         }
     });
 
-    $('#btn-profile').on('click', function(){
-        $('#main-iframe').attr('src', '/user/profile');
+    element.on('tabDelete(ruoyiTabs)', function(data){
+        const layId = $(this).parent().attr('lay-id');
+        $(`#iframe-viewport iframe[data-id="${layId}"]`).remove();
     });
 
-    $('#btn-logout').on('click', function(){
-        const loading = layer.load(2);
-        $.post('/auth/logout', function(){
-            layer.close(loading);
-            window.location.href = '/login';
-        }).fail(function(xhr){
-            layer.close(loading);
-            layer.msg(xhr.responseJSON?.detail || '退出失败', {icon: 2});
+    // ==========================================================================
+    // RuoYi 右键菜单控制
+    // ==========================================================================
+    $(document).on('contextmenu', '.ruoyi-tab-title li', function(e){
+        e.preventDefault();
+        const layId = $(this).attr('lay-id');
+        contextMenuTargetId = layId;
+
+        if(layId === 'profile') {
+            $('#m-close-current').addClass('layui-disabled').css('color', '#c2c2c2');
+        } else {
+            $('#m-close-current').removeClass('layui-disabled').css('color', '');
+        }
+
+        $('#tab-context-menu').css({ left: e.clientX + 'px', top: e.clientY + 'px' }).fadeIn(150);
+    });
+
+    $(document).on('click', function(){ $('#tab-context-menu').fadeOut(100); });
+
+    $('#m-refresh').click(function(){
+        if (!contextMenuTargetId) return;
+        const targetIframe = $(`#iframe-viewport iframe[data-id="${contextMenuTargetId}"]`);
+        if (targetIframe.length) {
+            targetIframe.attr('src', targetIframe.attr('src'));
+            layer.msg('页面已局部刷新', {offset: 'b', id: 'refresh-tips', time: 1000});
+        }
+    });
+
+    $('#m-close-current').click(function(){
+        if (!contextMenuTargetId || contextMenuTargetId === 'profile') return;
+        element.tabDelete('ruoyiTabs', contextMenuTargetId);
+    });
+
+    $('#m-close-others').click(function(){
+        if (!contextMenuTargetId) return;
+        $('.ruoyi-tab-title li').each(function(){
+            const id = $(this).attr('lay-id');
+            if (id !== 'profile' && id !== contextMenuTargetId) { element.tabDelete('ruoyiTabs', id); }
+        });
+        element.tabChange('ruoyiTabs', contextMenuTargetId);
+    });
+
+    $('#m-close-all').click(function(){
+        $('.ruoyi-tab-title li').each(function(){
+            const id = $(this).attr('lay-id');
+            if (id !== 'profile') { element.tabDelete('ruoyiTabs', id); }
+        });
+        element.tabChange('ruoyiTabs', 'profile');
+    });
+
+    $('#btn-profile').on('click', function(e){
+        e.preventDefault();
+        const existTab = $(`.layui-tab-title li[lay-id="profile"]`);
+        if(existTab.length > 0){ element.tabChange('ruoyiTabs', 'profile'); }
+    });
+
+    // ==========================================================================
+    // 修改密码弹窗业务逻辑（完全对接参考文件）
+    // ==========================================================================
+    let pwdIndex = null;
+    $('#btn-change-pwd').click(function(e){
+        e.preventDefault();
+        pwdIndex = layer.open({
+            type: 1,
+            title: '安全中心 - 修改账户密码',
+            area: ['450px', '300px'],
+            content: $('#pwd-dialog-template').html(),
+            success: function(layero, index){
+                form.render('input'); // 重新渲染弹窗内表单
+                layero.find('.btn-pwd-cancel').click(function(){ layer.close(pwdIndex); });
+            }
         });
     });
 
-    $('#btn-unregister').on('click', function(){
+    form.on('submit(submitPwd)', function(data){
+        layer.load(2);
+        $.ajax({
+            url: '/auth/change_password',
+            type: 'POST',
+            data: { current_password: data.field.current_password, new_password: data.field.new_password },
+            success: function(res){
+                layer.closeAll('loading');
+                if(res.status === 'success') {
+                    layer.close(pwdIndex);
+                    layer.alert('密码修改成功，请重新登录', { icon: 1, title: '系统通知', closeBtn: 0 }, function(){
+                        layer.load(2);
+                        executeLogout(true); // 密码修改成功静默清退回到登录页
+                    });
+                } else { layer.msg(res.message || '修改失败', { icon: 2 }); }
+            },
+            error: function(xhr){
+                layer.closeAll('loading');
+                let errorMsg = xhr.responseJSON?.detail || '系统通信异常';
+                layer.msg('修改失败：' + errorMsg, { icon: 2, time: 3000 });
+            }
+        });
+        return false; // 拦截默认表单提交
+    });
+
+    // ==========================================================================
+    // 退出、销户基础核心事务
+    // ==========================================================================
+    function executeLogout(quietly, successMsg) {
+        $.ajax({
+            url: '/auth/logout',
+            type: 'POST',
+            complete: function(){
+                layer.closeAll('loading');
+                document.cookie = "sso_session_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+
+                if(!quietly) {
+                    layer.msg(successMsg || '已安全退出', { icon: 1, time: 1500 }, function(){ window.location.href = '/login'; });
+                } else {
+                    window.location.href = '/login';
+                }
+            }
+        });
+    }
+
+    $('#btn-logout').on('click', function(e){
+        e.preventDefault();
+        layer.confirm('确定退出当前系统吗？', { icon: 3, title: '系统提示' }, function(){
+            layer.load(2);
+            executeLogout(false, '退出成功');
+        });
+    });
+
+    $('#btn-unregister').on('click', function(e){
+        e.preventDefault();
         layer.prompt({
-            title: '请输入当前密码以确认注销',
+            title: '请输入当前密码以确认注销账户（危险操作）',
             formType: 1,
             success: function(layero) {
-                layero.find('.layui-layer-btn0').css({'background': '#ef4444', 'border-color': '#ef4444'});
+                layero.find('.layui-layer-btn0').css({
+                    'background': '#ef4444',
+                    'border-color': '#ef4444',
+                    'box-shadow': '0 4px 12px rgba(239,68,68,0.2)'
+                });
             }
         }, function(value, index){
-            if (!value) {
-                layer.msg('密码不能为空', {icon: 2});
-                return;
-            }
-            const loading = layer.load(2);
+            const passwordVal = value.trim();
+            if (!passwordVal) { layer.msg('密码不能为空', {icon: 2}); return false; }
+
+            layer.load(2);
             $.ajax({
                 url: '/auth/unregister',
                 type: 'DELETE',
-                data: { confirm_password: value },
+                contentType: 'application/x-www-form-urlencoded',
+                data: { confirm_password: passwordVal },
                 success: function(res){
-                    layer.close(loading);
-                    layer.msg(res.message || '账户已注销', {icon: 1}, function(){
-                        window.location.href = '/login';
-                    });
+                    layer.closeAll('loading');
+                    layer.close(index);
+                    if (res.status === 'success' || !res.status) {
+                        layer.alert(res.message || '账户已成功注销', { icon: 1, title: '注销成功', closeBtn: 0 }, function(){
+                            layer.load(2);
+                            executeLogout(true);
+                        });
+                    } else { layer.msg(res.message || '注销失败', {icon: 2}); }
                 },
                 error: function(xhr){
-                    layer.close(loading);
-                    layer.msg(xhr.responseJSON?.detail || '注销失败', {icon: 2});
+                    layer.closeAll('loading');
+                    let errorMsg = xhr.responseJSON?.detail || '注销失败';
+                    layer.msg(errorMsg, {icon: 2, time: 3000});
                 }
             });
-            layer.close(index);
         });
     });
 });
 </script>
 </body>
 </html>
-
-

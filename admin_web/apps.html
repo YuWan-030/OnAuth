@@ -11,9 +11,10 @@
            ========================================================================== */
         body {
             background-color: #f3f4f6;
-            padding: 15px; /* 作为 iframe 嵌入时，15px 的内衬最合适，不会产生视觉压迫 */
-            font-family: "Microsoft YaHei", sans-serif;
+            padding: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             -webkit-font-smoothing: antialiased;
+            color: #334155;
         }
 
         .layui-fluid { padding: 0; }
@@ -38,17 +39,21 @@
             color: #fff !important;
             border: none !important;
             border-radius: 6px !important;
-            padding: 0 16px !important;
+            padding: 0 18px !important;
             height: 36px !important;
             line-height: 36px !important;
             font-size: 13px !important;
             font-weight: 500;
             box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
-            transition: all 0.2s ease;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .btn-theme-gradient:hover {
-            opacity: 0.9;
+            opacity: 0.95;
+            transform: translateY(-1px);
             box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+        }
+        .btn-theme-gradient:active {
+            transform: translateY(0);
         }
 
         /* 顶部按钮容器间距 */
@@ -71,14 +76,17 @@
             border: 1px solid #ebeef5 !important;
             border-radius: 6px !important;
             overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
         }
         .layui-table th {
             background-color: #f8fafc !important;
             color: #475569 !important;
             font-weight: 600;
             height: 44px;
+            border-bottom: 1px solid #ebeef5 !important;
         }
         .layui-table td {
+            border-bottom: 1px solid #f1f5f9 !important;
             color: #334155;
             height: 48px;
         }
@@ -90,22 +98,26 @@
             background-color: #2563eb !important;
         }
 
-        /* 表格内微型操作按钮美化 */
+        /* 🛑 表格内微型操作按钮美化（高级幽灵赤红胶囊） */
         .btn-table-del {
             color: #ef4444 !important;
             background: transparent !important;
             border: 1px solid rgba(239, 68, 68, 0.2) !important;
             border-radius: 4px !important;
             padding: 0 10px !important;
-            transition: all 0.2s;
+            height: 24px !important;
+            line-height: 22px !important;
+            font-size: 12px !important;
+            transition: all 0.2s ease;
         }
         .btn-table-del:hover {
             background: #fef2f2 !important;
             border-color: #ef4444 !important;
+            transform: translateY(-0.5px);
         }
 
         /* ==========================================================================
-           弹窗表单样式
+           弹窗表单与高级化上传控件
            ========================================================================== */
         .pwd-form-wrapper { padding: 25px 30px 10px 10px; }
         .layui-form-label {
@@ -131,12 +143,39 @@
             gap: 10px;
         }
 
-        .logo-preview-box {
-            min-height: 80px;
+        /* 🚀 全新重构：高级微光拖拽/点击上传舱 */
+        .upload-zone-trigger {
             border: 1px dashed #cbd5e1;
-            border-radius: 8px;
             background: #f8fafc;
-            padding: 12px;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #64748b;
+        }
+        .upload-zone-trigger:hover {
+            border-color: #2563eb;
+            background: #eff6ff;
+            color: #1e40af;
+        }
+        .upload-zone-trigger i {
+            font-size: 24px;
+            color: #94a3b8;
+            display: block;
+            margin-bottom: 4px;
+            transition: color 0.2s;
+        }
+        .upload-zone-trigger:hover i {
+            color: #2563eb;
+        }
+
+        .logo-preview-box {
+            min-height: 76px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 10px;
             display: flex;
             align-items: center;
             gap: 12px;
@@ -145,19 +184,19 @@
         }
 
         .logo-preview-img {
-            width: 56px;
-            height: 56px;
-            border-radius: 12px;
+            width: 48px;
+            height: 48px;
+            border-radius: 10px;
             object-fit: cover;
             background: #fff;
             border: 1px solid #e2e8f0;
-            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
         }
 
         .logo-hint {
             font-size: 12px;
-            color: #64748b;
-            line-height: 1.6;
+            color: #94a3b8;
+            line-height: 1.5;
         }
 
         /* 防止下拉框在弹出层内溢出被裁切 */
@@ -168,7 +207,6 @@
 
 <div class="layui-fluid">
     <div class="layui-card">
-        <!-- 🛠️ 已彻底清空标题栏，页面顶部直接由操作按钮开始，实现内页无缝嵌套 -->
         <div class="layui-card-body">
             <div class="layui-btn-container">
                 <button class="layui-btn btn-theme-gradient" id="btn-add-app">
@@ -200,10 +238,12 @@
 
 <script type="text/html" id="barDemo">
     {% raw %}
+    <a class="layui-btn layui-btn-xs layui-btn-primary" lay-event="devices">设备</a>
     <a class="layui-btn layui-btn-xs btn-table-del" lay-event="del">物理下线</a>
     {% endraw %}
 </script>
 
+<!-- 弹窗资产容器 -->
 <div id="addAppModal" style="display: none;">
     <div class="pwd-form-wrapper">
         <form class="layui-form" id="appForm" lay-filter="appForm">
@@ -226,9 +266,16 @@
                 <div class="layui-input-block">
                     <input type="hidden" name="app_logo" id="appLogoValue">
                     <div class="logo-upload-box">
-                        <input type="file" id="appLogoFile" accept="image/png,image/jpeg,image/webp" class="layui-input">
-                        <div class="logo-hint">仅支持 PNG / JPEG / WebP，单文件不超过 2MB；上传后会自动重编码为 PNG，禁止直接填写 URL。</div>
-                        <div class="logo-preview-box" id="appLogoPreview">尚未上传图标，创建后将使用默认图标。</div>
+                        <!-- 隐藏原生输入框，通过美化舱联动触发 -->
+                        <input type="file" id="appLogoFile" accept="image/png,image/jpeg,image/webp" style="display: none;">
+
+                        <div class="upload-zone-trigger" id="uploadZone">
+                            <i class="layui-icon layui-icon-upload-drag"></i>
+                            <span>点击或将图标拖拽至此处上传</span>
+                        </div>
+
+                        <div class="logo-hint">支持 PNG / JPEG / WebP，单文件不超过 2MB。上传后将由中台统一重编码托管。</div>
+                        <div class="logo-preview-box" id="appLogoPreview">尚未上传图标，创建后将使用默认系统占位符。</div>
                     </div>
                 </div>
             </div>
@@ -243,18 +290,18 @@ layui.use(['table', 'form', 'layer'], function(){
     function resetLogoPreview($scope) {
         $scope.find('input[name="app_logo"]').val('');
         $scope.find('#appLogoFile').val('');
-        $scope.find('#appLogoPreview').html('尚未上传图标，创建后将使用默认图标。');
+        $scope.find('#appLogoPreview').html('尚未上传图标，创建后将使用默认系统占位符。');
     }
 
     function setLogoPreview($scope, url) {
         var $box = $scope.find('#appLogoPreview');
         $box.empty();
         if (!url) {
-            $box.text('尚未上传图标，创建后将使用默认图标。');
+            $box.text('尚未上传图标，创建后将使用默认系统占位符。');
             return;
         }
         var $img = $('<img>').addClass('logo-preview-img').attr('src', url).attr('alt', 'logo');
-        var $text = $('<div>').css({ 'word-break': 'break-all', 'line-height': '1.6' }).text(url);
+        var $text = $('<div>').css({ 'word-break': 'break-all', 'line-height': '1.6', 'color': '#475569' }).text(url);
         $box.append($img).append($text);
     }
 
@@ -270,50 +317,75 @@ layui.use(['table', 'form', 'layer'], function(){
         });
     }
 
+    // 点击上传舱触发隐藏的文件选择器
+    $(document).on('click', '#uploadZone', function() {
+        $(this).siblings('#appLogoFile').trigger('click');
+    });
+
+    // 处理拖拽逻辑
+    $(document).on('dragover', '#uploadZone', function(e) {
+        e.preventDefault();
+        $(this).css({'border-color': '#2563eb', 'background': '#eff6ff'});
+    }).on('dragleave', '#uploadZone', function(e) {
+        e.preventDefault();
+        $(this).css({'border-color': '#cbd5e1', 'background': '#f8fafc'});
+    }).on('drop', '#uploadZone', function(e) {
+        e.preventDefault();
+        $(this).css({'border-color': '#cbd5e1', 'background': '#f8fafc'});
+        var files = e.originalEvent.dataTransfer.files;
+        if(files && files.length) {
+            var fileInput = $(this).siblings('#appLogoFile')[0];
+            fileInput.files = files;
+            $(fileInput).trigger('change');
+        }
+    });
+
+    // 监听选择文件动作
     $(document).on('change', '#appLogoFile', function(){
         var $scope = $(this).closest('.layui-layer');
         var file = this.files && this.files[0];
-        if (!file) {
-            return;
-        }
+        if (!file) return;
+
         if (!/^image\/(png|jpeg|webp)$/i.test(file.type)) {
-            layer.msg('仅支持 PNG、JPEG 或 WebP 图片', {icon: 2});
+            layer.msg('仅支持 PNG、JPEG 或 WebP 图片格式', {icon: 2});
             this.value = '';
             return;
         }
         if (file.size > 2 * 1024 * 1024) {
-            layer.msg('图片大小不能超过 2MB', {icon: 2});
+            layer.msg('图片体积过大，请控制在 2MB 以内', {icon: 2});
             this.value = '';
             return;
         }
 
-        var loading = layer.msg('图标上传中，请稍候...', {icon: 16, shade: 0.2, time: 0});
+        var loading = layer.msg('云端转码托管中...', {icon: 16, shade: 0.2, time: 0});
         uploadAppLogo(file).done(function(res){
             layer.close(loading);
             var logo = res?.data?.app_logo || '';
             if (!logo) {
-                layer.msg('图标上传失败', {icon: 2});
+                layer.msg('图标解析失败', {icon: 2});
                 resetLogoPreview($scope);
                 return;
             }
             $scope.find('input[name="app_logo"]').val(logo);
             setLogoPreview($scope, logo);
-            layer.msg('图标上传成功', {icon: 1});
+            layer.msg('图标挂载成功', {icon: 1});
         }).fail(function(xhr){
             layer.close(loading);
             resetLogoPreview($scope);
             if(xhr.status === 401){
-                layer.msg('会话已失效，请重新登录', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                layer.msg('登录凭证已过期', {icon: 2}, function(){ window.top.location.href = '/login'; });
             } else {
-                layer.msg(xhr.responseJSON?.detail || '图标上传失败', {icon: 2});
+                layer.msg(xhr.responseJSON?.detail || '通信故障，上传失败', {icon: 2});
             }
         });
     });
 
-    // 1. 初始化表格
+    // 1. 初始化数据网格矩阵
     table.render({
         elem: '#appTable',
         url: '/admin/apps/flat_list',
+        page: true,
+        limit: 20,
         cols: [[
             {field: 'id', title: '应用编号', width: 90, sort: true, align: 'center'},
             {field: 'app_logo', title: '图标', width: 80, templet: '#logoTpl', align: 'center'},
@@ -322,19 +394,22 @@ layui.use(['table', 'form', 'layer'], function(){
             {field: 'owner', title: '负责人', width: 120},
             {field: 'created_at', title: '创建时间', width: 180},
             {field: 'is_active', title: '中台熔断状态', width: 130, templet: '#switchTpl', align: 'center'},
-            {fixed: 'right', title: '资产操作', toolbar: '#barDemo', width: 120, align: 'center'}
+            {fixed: 'right', title: '资产操作', toolbar: '#barDemo', width: 180, align: 'center'}
         ]],
-        parseData: function(res){ return { "code": 0, "msg": "", "count": res.length, "data": res }; },
+        parseData: function(res){
+            var rows = Array.isArray(res) ? res : (res.data || []);
+            return { "code": 0, "msg": "", "count": res.count || rows.length, "data": rows };
+        },
         error: function(res){
             if(res.status === 401){
-                layer.msg('会话已失效或您尚未登录，请重新验证管理员身份！', {icon: 2, time: 1500}, function(){
+                layer.msg('管理员验证失效，请重新登录！', {icon: 2, time: 1500}, function(){
                     window.top.location.href = '/login';
                 });
             }
         }
     });
 
-    // 2. 监听应用级熔断开关
+    // 2. 监听全局安全熔断
     form.on('switch(appActiveSwitch)', function(obj){
         var appId = this.value;
         var isActive = obj.elem.checked;
@@ -343,21 +418,80 @@ layui.use(['table', 'form', 'layer'], function(){
             type: 'PUT',
             data: JSON.stringify({ is_active: isActive }),
             contentType: 'application/json',
-            success: function(res){ layer.msg(res.msg || '应用防线已更新！', {icon: 1}); },
+            success: function(res){ layer.msg(res.msg || '应用防线已实时更新！', {icon: 1}); },
             error: function(err){
                 obj.elem.checked = !isActive;
                 form.render('checkbox');
                 if(err.status === 401){
-                    layer.msg('鉴权阻断，请登录后重试！', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                    layer.msg('权限认证阻断！', {icon: 2}, function(){ window.top.location.href = '/login'; });
                 } else {
-                    layer.msg('中台通信故障', {icon: 2});
+                    layer.msg('底层授信通信故障', {icon: 2});
                 }
             }
         });
     });
 
-    // 3. 物理下线与粉碎应用
+    function openAppDevicesDialog(appRow) {
+        const deviceTableId = 'adminDeviceTable';
+        const panel = '<div style="padding:12px;"><table class="layui-hide" id="' + deviceTableId + '"></table></div>';
+
+        layer.open({
+            type: 1,
+            title: '设备列表 - ' + appRow.app_name,
+            area: ['980px', '560px'],
+            content: panel,
+            success: function(){
+                table.render({
+                    elem: '#' + deviceTableId,
+                    id: deviceTableId,
+                    url: '/admin/apps/' + appRow.id + '/devices',
+                    page: true,
+                    limit: 20,
+                    cols: [[
+                        {field:'id', title:'ID', width:80, sort:true},
+                        {field:'device_id', title:'设备ID', minWidth:220},
+                        {field:'credential_name', title:'凭证名称', minWidth:160},
+                        {field:'client_id', title:'Client ID', minWidth:200},
+                        {field:'last_seen_at', title:'最近活跃', width:170},
+                        {field:'is_revoked', title:'状态', width:100, templet: function(d){ return d.is_revoked ? '<span style="color:#b91c1c;">已解绑</span>' : '<span style="color:#15803d;">已绑定</span>'; }},
+                        {fixed:'right', title:'操作', width:110, templet: function(d){
+                            if (d.is_revoked) return '<span style="color:#94a3b8;">-</span>';
+                            return '<button class="layui-btn layui-btn-xs layui-btn-danger js-admin-unbind" data-device-id="' + d.device_id + '">解绑</button>';
+                        }}
+                    ]],
+                    parseData: function(res){
+                        const data = Array.isArray(res) ? res : (res.data || []);
+                        return {code: 0, msg: '', count: res.count || data.length, data: data};
+                    }
+                });
+            }
+        });
+
+        $(document).off('click.adminUnbind').on('click.adminUnbind', '.js-admin-unbind', function(){
+            const deviceId = $(this).data('device-id');
+            layer.confirm('确认解绑设备 [' + deviceId + '] ?', {icon: 3, title: '解绑确认'}, function(confirmIndex){
+                $.ajax({
+                    url: '/admin/apps/' + appRow.id + '/devices/' + encodeURIComponent(deviceId) + '/unbind',
+                    type: 'POST',
+                    success: function(res){
+                        layer.msg(res.message || '解绑成功', {icon: 1});
+                        table.reload(deviceTableId, {page: {curr: 1}});
+                    },
+                    error: function(xhr){
+                        layer.msg(xhr.responseJSON?.detail || '解绑失败', {icon: 2});
+                    }
+                });
+                layer.close(confirmIndex);
+            });
+        });
+    }
+
+    // 3. 拦截粉碎资产动作
     table.on('tool(appTable)', function(obj){
+        if(obj.event === 'devices'){
+            openAppDevicesDialog(obj.data);
+            return;
+        }
         if(obj.event === 'del'){
             layer.confirm('确定彻底物理粉碎该应用？名下所有开出的激活码、License 将瞬间失效灰飞烟灭！', {
                 icon: 3,
@@ -367,30 +501,34 @@ layui.use(['table', 'form', 'layer'], function(){
                     url: '/admin/apps/' + obj.data.id,
                     type: 'DELETE',
                     success: function(res){
-                        layer.msg(res.msg || '物理下线成功', {icon: 1});
+                        layer.msg(res.msg || '资产已被彻底剥离抹除', {icon: 1});
                         obj.del();
                         layer.close(index);
                     },
                     error: function(err) {
                         if(err.status === 401){
-                            layer.msg('越权操作！请登录管理员账号', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                            layer.msg('鉴权失败，拒绝熔断！', {icon: 2}, function(){ window.top.location.href = '/login'; });
                         } else {
-                            layer.msg('物理下线请求未通过鉴权', {icon: 2});
+                            layer.msg('资产物理粉碎请求未获批准', {icon: 2});
                         }
                     }
                 });
+                // 同步确认框按钮样式
+                $('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-radius': '6px'});
             });
+            $('.layui-layer-btn0').css({'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)', 'border-radius': '6px'});
         }
     });
 
-    // 4. 动态弹窗并拉取数据
+    // 4. 激活挂载面板
     $('#btn-add-app').on('click', function(){
         $.ajax({
-            url: '/admin/groups/list',
+            url: '/admin/groups/list?page=1&limit=200',
             type: 'GET',
             success: function(res){
+                var rows = Array.isArray(res) ? res : (res.data || []);
                 var groupOptions = '<option value="">-- 请选择所属组织空间 --</option>';
-                $.each(res, function(index, item){
+                $.each(rows, function(index, item){
                     if(item.is_active) {
                         groupOptions += '<option value="' + item.id + '">' + item.group_name + '</option>';
                     }
@@ -406,9 +544,11 @@ layui.use(['table', 'form', 'layer'], function(){
                         resetLogoPreview(layero);
                         layero.find('select[name="group_id"]').html(groupOptions);
                         form.render('select');
+                        // 弹窗主按钮样式深度同步
                         layero.find('.layui-layer-btn0').css({
                             'background': 'linear-gradient(135deg,#2563eb,#1d4ed8)',
-                            'border-color': '#2563eb'
+                            'border-color': '#2563eb',
+                            'border-radius': '6px'
                         });
                     },
                     yes: function(index, layero){
@@ -416,7 +556,7 @@ layui.use(['table', 'form', 'layer'], function(){
                         var appName = layero.find('input[name="app_name"]').val();
                         var appLogo = layero.find('input[name="app_logo"]').val();
                         if(!groupId || !appName) {
-                            layer.msg('请完整填写必填项');
+                            layer.msg('关键字段未就绪，请完整输入');
                             return false;
                         }
 
@@ -437,9 +577,9 @@ layui.use(['table', 'form', 'layer'], function(){
                             },
                             error: function(err){
                                 if(err.status === 401){
-                                    layer.msg('操作已被拦截，请重新登录！', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                                    layer.msg('操作会话已震荡，请重登验证！', {icon: 2}, function(){ window.top.location.href = '/login'; });
                                 } else {
-                                    layer.msg(err.responseJSON?.detail || '开通失败', {icon: 2});
+                                    layer.msg(err.responseJSON?.detail || '开通部署失败', {icon: 2});
                                 }
                             }
                         });
@@ -451,7 +591,9 @@ layui.use(['table', 'form', 'layer'], function(){
             },
             error: function(err){
                 if(err.status === 401){
-                    layer.msg('未授权或会话过期，请先登录！', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                    layer.msg('授信断开，请登录！', {icon: 2}, function(){ window.top.location.href = '/login'; });
+                } else {
+                    layer.msg(err.responseJSON?.detail || '组织空间数据加载失败，请稍后重试', {icon: 2});
                 }
             }
         });

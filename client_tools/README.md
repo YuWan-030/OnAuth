@@ -64,6 +64,25 @@ new_token = refresh_access_token(
 revoke_token(new_token["access_token"], token_type_hint="access_token")
 ```
 
+If your server enforces client authentication on revoke, pass `client_id` and `client_secret`:
+
+```python
+revoke_token(
+    token=new_token["access_token"],
+    token_type_hint="access_token",
+    client_id="your_client_id",
+    client_secret="your_client_secret",
+)
+```
+
+## Hardware fingerprint helper
+```python
+from client_tools import get_device_id
+
+device_id = get_device_id()
+print(device_id)  # Send as X-Device-ID
+```
+
 ## Capture callback code automatically
 ```python
 from client_tools import one_click_oauth_start

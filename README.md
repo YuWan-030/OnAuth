@@ -163,3 +163,45 @@ Fork 本仓库 ➔ 新建特性分支 (git checkout -b feature/AmazingFeature) �
 * **开源版本**：本项目遵循 **Apache License 2.0** 开源协议，允许自由使用、修改及分发。 
 
 ---
+
+## ❤️ 健康检查
+
+- 服务健康接口：`GET /health`
+- 返回内容包含 `database` 与 `redis` 连通状态。
+- 当依赖服务异常时返回 `503`，便于负载均衡与容器编排平台探活。
+
+---
+
+## 🧱 数据库迁移（Alembic）
+
+项目已加入 Alembic 基础骨架文件：`alembic.ini`、`alembic/env.py`、`alembic/versions/`。
+
+```bash
+# 安装迁移工具
+pip install -r requirements-dev.txt
+
+# 生成迁移脚本
+alembic revision --autogenerate -m "init migration"
+
+# 执行升级
+alembic upgrade head
+```
+
+---
+
+## ✅ 基础测试
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+当前仓库已提供基础安全与表达式引擎测试样例（`tests/test_crypto_and_risk.py`），建议在新增路由时同步补充 API 级测试。
+
+---
+
+## 📦 依赖说明（Flet）
+
+`flet` / `flet-desktop` 主要用于仓库中的桌面示例脚本（`Test_App_A.py`、`Test_App_B.py`、`Test.py`）。
+若你的部署不使用这些桌面示例，可在构建产物中将其作为可选依赖剥离。
+

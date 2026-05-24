@@ -120,9 +120,15 @@ layui.use(['table', 'form', 'layer'], function(){
         elem: '#perm-table',
         url: '/api/v1/permission/node.list',
         parseData: function(res) {
-            return { "code": res.status === "success" ? 0 : 500, "msg": res.message || "", "data": res.data || [] };
+            return {
+                "code": res.status === "success" ? 0 : 500,
+                "msg": res.message || "",
+                "count": res.count || 0,
+                "data": res.data || []
+            };
         },
-        page: false,
+        page: true,
+        limit: 20,
         escape: true,
         cols: [[
             {field: 'permission_id', title: '节点内部 ID', width: 120, sort: true, align: 'center'},
@@ -138,7 +144,8 @@ layui.use(['table', 'form', 'layer'], function(){
         $.ajax({
             url: url,
             type: method,
-            data: data,
+            data: JSON.stringify(data || {}),
+            contentType: 'application/json',
             dataType: 'json',
             success: function(res) {
                 layer.close(loading);
@@ -181,7 +188,7 @@ layui.use(['table', 'form', 'layer'], function(){
                 }
 
                 const queryData = { name: name, description: description };
-                executeAjax('/api/v1/permission/permission.create', 'GET', queryData, function(){
+                executeAjax('/api/v1/permission/permission.create', 'POST', queryData, function(){
                     layer.close(layerIndex);
                     table.reload('perm-table');
                 });

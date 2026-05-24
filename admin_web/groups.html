@@ -235,6 +235,8 @@ layui.use(['table', 'form', 'layer', 'util', 'laydate'], function(){
     table.render({
         elem: '#groupTable',
         url: '/admin/groups/list',
+        page: true,
+        limit: 20,
         cols: [[
             {field: 'id', title: '组织编号', width: 100, sort: true, align: 'center'},
             {field: 'group_name', title: '工作室/组织主体名称', width: 220, style: 'font-weight: bold; color: #2563eb;'},
@@ -246,10 +248,11 @@ layui.use(['table', 'form', 'layer', 'util', 'laydate'], function(){
                 {fixed: 'right', title: '多维资产配置', toolbar: '#barDemo', width: 260, align: 'center'}
         ]],
         parseData: function(res){
-            if (typeof res === 'string' || !Array.isArray(res)) {
+            if (typeof res === 'string') {
                 return { "code": 1, "msg": "认证会话震荡，正在同步凭证...", "count": 0, "data": [] };
             }
-            return { "code": 0, "msg": "", "count": res.length, "data": res };
+            var rows = Array.isArray(res) ? res : (res.data || []);
+            return { "code": 0, "msg": "", "count": res.count || rows.length, "data": rows };
         },
         error: function(xhr, ts){
             console.error("❌ 网格加载遭遇致命阻断: ", ts, xhr.status);

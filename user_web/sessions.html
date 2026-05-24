@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>在线会话管理 - OnAuth</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
+    <script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
+    <style>
+        body {
+            background-color: #f4f5f7;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* =========================
+           现代卡片组件封装
+        ========================= */
+        .page-header-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .page-title-area {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1e293b;
+            margin: 0;
+        }
+        .tip {
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        .main-card {
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+            padding: 20px;
+        }
+
+        /* =========================
+           高级双端对齐工具栏布局
+        ========================= */
+        .table-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .table-filters, .table-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        /* 表单输入框微美化 */
+        .session-filter-input {
+            height: 36px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 0 12px;
+            min-width: 180px;
+            color: #1e293b;
+            font-size: 13px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        .session-filter-input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+
+        /* =========================
+           定制化若依/中台按钮规范
+        ========================= */
+        .btn-prime {
+            background: #2563eb !important;
+            color: #fff !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 36px !important;
+            font-size: 13px !important;
+            padding: 0 16px !important;
+            border: none !important;
+            transition: all 0.2s;
+        }
+        .btn-prime:hover { opacity: 0.9; }
+
+        .btn-sec {
+            border: 1px solid #cbd5e1 !important;
+            background-color: #fff !important;
+            color: #475569 !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 34px !important;
+            font-size: 13px !important;
+            padding: 0 14px !important;
+            transition: all 0.2s;
+        }
+        .btn-sec:hover {
+            color: #2563eb !important;
+            border-color: #2563eb !important;
+            background-color: #f8fafc !important;
+        }
+
+        .btn-outline-danger {
+            border: 1px solid #fca5a5 !important;
+            background-color: #fff !important;
+            color: #dc2626 !important;
+            border-radius: 6px !important;
+            height: 36px !important;
+            line-height: 34px !important;
+            font-size: 13px !important;
+            padding: 0 14px !important;
+            transition: all 0.2s;
+        }
+        .btn-outline-danger:hover {
+            background-color: #fef2f2 !important;
+            border-color: #ef4444 !important;
+        }
+
+        /* =========================
+           Layui 表格现代呼吸感重塑
+        ========================= */
+        .layui-table-view {
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 8px !important;
+            overflow: hidden;
+        }
+        .layui-table th {
+            background-color: #f8fafc !important;
+            color: #475569 !important;
+            font-weight: 600;
+            height: 46px;
+            font-size: 13px;
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+        .layui-table td {
+            color: #334155;
+            font-size: 13px;
+            height: 48px;
+        }
+        .layui-table-cell .layui-form-checkbox[lay-skin=primary] {
+            padding-top: 0;
+            top: -1px;
+        }
+
+        /* =========================
+           高级状态标签（Badges）
+        ========================= */
+        .session-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .session-badge.status-current {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+        .session-badge.status-other {
+            background-color: #ffedd5;
+            color: #9a3412;
+        }
+        .session-badge i { font-size: 12px; }
+
+        .btn-table-del {
+            background-color: transparent !important;
+            color: #ef4444 !important;
+            border: 1px solid #fee2e2 !important;
+            border-radius: 4px !important;
+            padding: 0 10px !important;
+            height: 26px !important;
+            line-height: 24px !important;
+            font-size: 12px !important;
+        }
+        .btn-table-del:hover {
+            background-color: #dc2626 !important;
+            color: #fff !important;
+            border-color: #dc2626 !important;
+        }
+    </style>
+</head>
+<body>
+
+<div class="page-header-card">
+    <div class="page-title-area">
+        <h2 class="card-title">在线会话管理</h2>
+        <span class="tip"><i class="layui-icon layui-icon-about" style="font-size:13px;margin-right:4px;"></i>控制当前平台所有登录凭证的生命周期，支持批量强制下线或全局清退。</span>
+    </div>
+    <div>
+        <button class="layui-btn btn-sec" id="btn-back-profile">
+            <i class="layui-icon layui-icon-left" style="font-size:12px;"></i> 返回个人中心
+        </button>
+    </div>
+</div>
+
+<div class="main-card">
+    <div class="table-toolbar layui-form">
+        <div class="table-filters">
+            <input class="session-filter-input" id="filter-browser" type="text" placeholder="按浏览器筛选，如 Chrome">
+            <input class="session-filter-input" id="filter-device" type="text" placeholder="按设备系统，如 Windows">
+            <button class="layui-btn btn-prime" id="btn-filter-sessions">
+                <i class="layui-icon layui-icon-search"></i> 筛选
+            </button>
+            <button class="layui-btn btn-sec" id="btn-clear-session-filters">重置</button>
+        </div>
+        <div class="table-actions">
+            <button class="layui-btn btn-outline-danger" id="btn-batch-revoke">
+                <i class="layui-icon layui-icon-delete"></i> 批量注销
+            </button>
+            <button class="layui-btn btn-outline-danger" id="btn-revoke-all-keep-current">
+                <i class="layui-icon layui-icon-logout"></i> 清退其他设备（保留当前）
+            </button>
+        </div>
+    </div>
+
+    <table class="layui-hide" id="sessionTable" lay-filter="sessionTableFilter"></table>
+</div>
+
+<script type="text/html" id="statusTpl">
+    {% raw %}
+    {{# if(d.is_current){ }}
+        <span class="session-badge status-current">
+            <i class="layui-icon layui-icon-cellphone"></i> 当前设备
+        </span>
+    {{# } else { }}
+        <span class="session-badge status-other">
+            <i class="layui-icon layui-icon-key"></i> 其他终端
+        </span>
+    {{# } }}
+    {% endraw %}
+</script>
+
+<script type="text/html" id="toolTpl">
+    {% raw %}
+    {{# if(d.is_current){ }}
+        <button class="layui-btn layui-btn-xs layui-btn-disabled" disabled style="background-color: #f1f5f9 !important; color: #94a3b8 !important; border: 1px solid #e2e8f0 !important;">当前终端</button>
+    {{# } else { }}
+        <button class="layui-btn layui-btn-xs btn-table-del" lay-event="revoke">强制下线</button>
+    {{# } }}
+    {% endraw %}
+</script>
+
+<script>
+layui.use(['table', 'layer', 'form'], function(){
+    const table = layui.table, layer = layui.layer, form = layui.form, $ = layui.$;
+
+    function extractErrorMessage(xhr, fallback) {
+        const res = xhr && xhr.responseJSON ? xhr.responseJSON : null;
+        if (!res) {
+            const text = (xhr && xhr.responseText ? String(xhr.responseText) : '').trim();
+            return text || fallback || '请求失败';
+        }
+        if (typeof res.detail === 'string' && res.detail.trim()) return res.detail.trim();
+        if (Array.isArray(res.detail) && res.detail.length) {
+            const first = res.detail[0] || {};
+            return (first.msg || first.message || fallback || '请求失败');
+        }
+        if (typeof res.message === 'string' && res.message.trim()) return res.message.trim();
+        return fallback || '请求失败';
+    }
+
+    $.ajaxSetup({
+        complete: function(xhr) {
+            const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
+            if (xhr.status === 401) {
+                window.top.location.href = '/login';
+                return;
+            }
+            if (xhr.status === 403 && detail) {
+                layer.msg(detail, {icon: 2, time: 2500});
+            }
+        }
+    });
+
+    function loadTable() {
+        const browser = $('#filter-browser').val().trim();
+        const device = $('#filter-device').val().trim();
+
+        table.render({
+            elem: '#sessionTable',
+            id: 'sessionTable',
+            url: '/api/v1/user/sessions',
+            where: { browser: browser, device: device },
+            page: true,
+            limit: 20,
+            cols: [[
+                {type: 'checkbox', width: 50, fixed: 'left'},
+                {field: 'browser', title: '浏览器类型', minWidth: 140, style:'font-weight: 500; color:#1e293b;'},
+                {field: 'os', title: '操作系统 / 设备', minWidth: 160},
+                {field: 'ip', title: '登录IP地址', width: 150},
+                {field: 'location', title: '地理位置', minWidth: 140},
+                {field: 'login_time', title: '最近活跃时间', width: 170},
+                {field: 'is_current', title: '会话状态', width: 120, templet: '#statusTpl', align: 'center'},
+                {fixed: 'right', title: '安全操作', width: 110, toolbar: '#toolTpl', align: 'center'}
+            ]],
+            parseData: function(res){
+                const data = Array.isArray(res) ? res : (res.data || []);
+                return {code: 0, msg: '', count: res.count || data.length, data: data};
+            },
+            done: function(res) {
+                res.data.forEach(function (item, index) {
+                    if (item.is_current) {
+                        const $tr = $('.layui-table-view[lay-id="sessionTable"] .layui-table-body tr[data-index="' + index + '"]');
+                        $tr.find('input[name="layTableCheckbox"]').prop('disabled', true).next().addClass('layui-checkbox-disbaled layui-disabled');
+                    }
+                });
+            }
+        });
+    }
+
+    $('#btn-filter-sessions').click(function(){ loadTable(); });
+    $('#btn-clear-session-filters').click(function(){
+        $('#filter-browser').val('');
+        $('#filter-device').val('');
+        loadTable();
+    });
+
+    $('#btn-back-profile').click(function(){
+        window.location.href = '/user/profile';
+    });
+
+    function getSelectedTokens() {
+        const checkStatus = table.checkStatus('sessionTable');
+        return checkStatus.data.map(item => item.token_id).filter(Boolean);
+    }
+
+    $('#btn-batch-revoke').click(function(){
+        const tokenIds = getSelectedTokens();
+        if (!tokenIds.length) {
+            layer.msg('请勾选需要强制下线的其他设备会话', {icon: 0});
+            return;
+        }
+        layer.confirm('确认要强制踢出所选的终端设备吗？', {icon: 3, title: '安全警告'}, function(confirmIndex){
+            layer.load(2);
+            $.ajax({
+                url: '/api/v1/user/sessions/revoke_batch',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ token_ids: tokenIds }),
+                success: function(res){
+                    layer.closeAll('loading');
+                    layer.msg(res.message || '选定终端已被成功踢出', {icon: 1});
+                    loadTable();
+                },
+                error: function(xhr){
+                    layer.closeAll('loading');
+                    layer.msg(extractErrorMessage(xhr, '批量注销失败'), {icon: 2});
+                }
+            });
+            layer.close(confirmIndex);
+        });
+    });
+
+    $('#btn-revoke-all-keep-current').click(function(){
+        layer.confirm('确认将除当前终端外的所有其他在线设备全部清退？', {icon: 3, title: '强退确认'}, function(confirmIndex){
+            layer.load(2);
+            $.ajax({
+                url: '/api/v1/user/sessions/revoke_all',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ keep_current: true }),
+                success: function(res){
+                    layer.closeAll('loading');
+                    layer.msg('除当前设备外，其他终端会话已全部安全下线', {icon: 1});
+                    loadTable();
+                },
+                error: function(xhr){
+                    layer.closeAll('loading');
+                    layer.msg(extractErrorMessage(xhr, '全局清退失败'), {icon: 2});
+                }
+            });
+            layer.close(confirmIndex);
+        });
+    });
+
+    table.on('tool(sessionTableFilter)', function(obj){
+        const data = obj.data;
+        if(obj.event === 'revoke'){
+            if (!data.token_id) return;
+            layer.confirm('确定要强制注销这台登录设备吗？', {icon: 3, title: '安全提示'}, function(confirmIndex){
+                layer.load(2);
+                $.ajax({
+                    url: '/api/v1/user/sessions/revoke',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ token_id: data.token_id }),
+                    success: function(res){
+                        layer.closeAll('loading');
+                        layer.msg('该设备已强制注销下线', {icon: 1});
+                        loadTable();
+                    },
+                    error: function(xhr){
+                        layer.closeAll('loading');
+                        layer.msg(extractErrorMessage(xhr, '操作失败'), {icon: 2});
+                    }
+                });
+                layer.close(confirmIndex);
+            });
+        }
+    });
+
+    loadTable();
+});
+</script>
+</body>
+</html>

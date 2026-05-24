@@ -66,6 +66,16 @@
     <table id="webhook-table" lay-filter="webhookTable"></table>
 </div>
 
+<div class="card-wrapper">
+    <div class="action-bar" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <select id="log-webhook-filter" class="layui-input" style="width:280px;">
+            <option value="">全部 Webhook 日志</option>
+        </select>
+        <button class="layui-btn layui-btn-primary" id="btn-refresh-logs">刷新投递日志</button>
+    </div>
+    <table id="webhook-log-table"></table>
+</div>
+
 <script type="text/html" id="table-bar">
     {% raw %}
     <div style="display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
@@ -133,33 +143,72 @@
 
 <script src="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/layui.js"></script>
 <script>
-layui.use(['table', 'form', 'layer'], function(){
+layui.use(['table', 'form', 'layer', 'util'], function(){
     const table = layui.table;
     const form = layui.form;
     const layer = layui.layer;
+    const util = layui.util;
     const $ = layui.$;
 
-    // 1. 数据网格渲染
-    table.render({
-        elem: '#webhook-table',
-        url: '/api/v1/webhook/config.list',
-        parseData: function(res) {
-            return { "code": res.status === "success" ? 0 : 500, "msg": res.message || "", "data": res.data || [] };
-        },
-        page: false,
-        escape: true,
-        cols: [[
-            {field: 'id', title: '配置 ID', width: 80, sort: true, align: 'center'},
-            {field: 'name', title: '订阅端点名称', width: 180, style: 'font-weight: 600; color: #1e293b;'},
-            {field: 'url', title: '物理接收网关 URL (POST)', width: 280, style: 'font-family: monospace; color: #2563eb;'},
-            {field: 'events', title: '订阅的原子事件域', width: 260, templet: '#events-tpl', escape: false},
-            {field: 'creator_id', title: '所有权归属 (Creator)', width: 130, align: 'center', style: 'color: #64748b; font-family: monospace;'},
-            {field: 'is_active', title: '服务状态', width: 110, templet: '#status-tpl', align: 'center', escape: false},
-            {title: '操作', width: 120, toolbar: '#table-bar', align: 'center', fixed: 'right', escape: false}
-        ]]
-    });
+    function loadWebhookConfigs() {
+        table.render({
+            elem: '#webhook-table',
+            id: 'webhook-table',
+            url: '/api/v1/webhook/config.list',
+            parseData: function(res) {
+                return { "code": res.status === "success" ? 0 : 500, "msg": res.message || "", "data": res.data || [] };
+            },
+            page: false,
+            escape: true,
+            cols: [[
+                {field: 'id', title: '配置 ID', width: 80, sort: true, align: 'center'},
+                {field: 'name', title: '订阅端点名称', width: 180, style: 'font-weight: 600; color: #1e293b;'},
+                {field: 'url', title: '物理接收网关 URL (POST)', width: 280, style: 'font-family: monospace; color: #2563eb;'},
+                {field: 'events', title: '订阅的原子事件域', width: 260, templet: '#events-tpl', escape: false},
+                {field: 'creator_id', title: '所有权归属 (Creator)', width: 130, align: 'center', style: 'color: #64748b; font-family: monospace;'},
+                {field: 'is_active', title: '服务状态', width: 110, templet: '#status-tpl', align: 'center', escape: false},
+                {title: '操作', width: 120, toolbar: '#table-bar', align: 'center', fixed: 'right', escape: false}
+            ]],
+            done: function(res){
+                const rows = Array.isArray(res.data) ? res.data : [];
+                const $filter = $('#log-webhook-filter');
+                const selected = $filter.val() || '';
+                $filter.empty().append('<option value="">全部 Webhook 日志</option>');
+                rows.forEach(function(item){
+                    $filter.append('<option value="' + item.id + '">' + item.name + ' (#' + item.id + ')</option>');
+                });
+                if (selected) {
+                    $filter.val(selected);
+                }
+                form.render('select');
+            }
+        });
+    }
 
-    // 2. 统一安全的 HTTP 交互请求流 (修正了误写为 def 的语法错误)
+    function loadWebhookLogs() {
+        const webhookId = ($('#log-webhook-filter').val() || '').trim();
+        const reqUrl = webhookId ? '/api/v1/webhook/logs.list?webhook_id=' + encodeURIComponent(webhookId) : '/api/v1/webhook/logs.list';
+        table.render({
+            elem: '#webhook-log-table',
+            id: 'webhook-log-table',
+            url: reqUrl,
+            parseData: function(res){
+                return {"code": res.status === 'success' ? 0 : 500, "msg": res.message || '', "data": res.data || []};
+            },
+            page: false,
+            cols: [[
+                {field:'log_id', title:'日志ID', width:90, sort:true},
+                {field:'webhook_id', title:'Webhook', width:90},
+                {field:'event_type', title:'事件类型', width:170},
+                {field:'status_code', title:'HTTP', width:80, align:'center'},
+                {field:'duration_ms', title:'耗时(ms)', width:90, align:'center'},
+                {field:'is_success', title:'结果', width:90, templet: function(d){ return d.is_success ? '<span style="color:#15803d;">成功</span>' : '<span style="color:#b91c1c;">失败</span>'; }},
+                {field:'response_body', title:'响应摘要', minWidth:220, templet: function(d){ return util.escape((d.response_body || '-').slice(0, 200)); }},
+                {field:'timestamp', title:'时间', width:170}
+            ]]
+        });
+    }
+
     function executeAjax(url, method, data, contentType = 'application/x-www-form-urlencoded', callback) {
         const loading = layer.load(2);
         $.ajax({
@@ -173,6 +222,7 @@ layui.use(['table', 'form', 'layer'], function(){
                 if(res.status === 'success') {
                     layer.msg(res.message || '操作同步成功', {icon: 1, time: 1200});
                     if(callback) callback(res);
+                    loadWebhookLogs();
                 } else {
                     layer.msg(res.message || '执行链路被阻断', {icon: 2});
                 }
@@ -185,11 +235,10 @@ layui.use(['table', 'form', 'layer'], function(){
         });
     }
 
-    // 3. 注册新端点
     $('#btn-add-webhook').click(function(){
         layer.open({
             type: 1,
-            title: '🔌 注册全新 Webhook 异步分发端点',
+            title: '注册全新 Webhook 异步分发端点',
             area: ['520px', '420px'],
             content: $('#webhook-dialog').html(),
             btn: ['核准接入', '熔断放弃'],
@@ -204,29 +253,21 @@ layui.use(['table', 'form', 'layer'], function(){
                 const name = layero.find('input[name="name"]').val().trim();
                 const url = layero.find('input[name="url"]').val().trim();
                 const secret = layero.find('input[name="secret"]').val().trim();
-
-                let selectedEvents = [];
+                const selectedEvents = [];
                 layero.find('.event-checkbox-grid input[type="checkbox"]:checked').each(function(){
                     selectedEvents.push($(this).val());
                 });
 
                 if(!name || !url) {
-                    layer.msg('关键指标字段不可为空', {icon: 5, shift: 6});
+                    layer.msg('关键字段不可为空', {icon: 5, shift: 6});
                     return false;
                 }
                 if(selectedEvents.length === 0) {
-                    layer.msg('请至少订阅一个核心原子事件域', {icon: 5, shift: 6});
+                    layer.msg('请至少订阅一个事件', {icon: 5, shift: 6});
                     return false;
                 }
 
-                const payload = {
-                    name: name,
-                    url: url,
-                    secret: secret ? secret : null,
-                    events: selectedEvents,
-                    is_active: true
-                };
-
+                const payload = {name: name, url: url, secret: secret ? secret : null, events: selectedEvents, is_active: true};
                 executeAjax('/api/v1/webhook/config.create', 'POST', JSON.stringify(payload), 'application/json', function(){
                     layer.close(layerIndex);
                     table.reload('webhook-table');
@@ -235,29 +276,18 @@ layui.use(['table', 'form', 'layer'], function(){
         });
     });
 
-    // 4. 开关切换
     form.on('switch(statusSwitch)', function(data){
-        const id = data.value;
-        const is_active = data.elem.checked;
-
-        const payload = {
-            id: parseInt(id, 10),
-            is_active: is_active
-        };
-
+        const payload = {id: parseInt(data.value, 10), is_active: data.elem.checked};
         executeAjax('/api/v1/webhook/config.update', 'POST', JSON.stringify(payload), 'application/json');
     });
 
-    // 5. 行内清退注销
     table.on('tool(webhookTable)', function(obj){
         const data = obj.data;
         if(obj.event === 'del') {
-            layer.confirm(`⚠️ 安全警告：确认物理注销并断开订阅端点 [${data.name}] 吗？`, {
+            layer.confirm(`确认物理注销并断开订阅端点 [${data.name}] 吗？`, {
                 icon: 3,
                 title: 'Webhook 资产审计清退',
-                success: (layero) => {
-                    layero.find('.layui-layer-btn0').css('background-color', '#ef4444');
-                }
+                success: (layero) => { layero.find('.layui-layer-btn0').css('background-color', '#ef4444'); }
             }, function(index){
                 executeAjax(`/api/v1/webhook/config.delete?id=${data.id}`, 'DELETE', {}, 'application/x-www-form-urlencoded', function(){
                     layer.close(index);
@@ -266,6 +296,12 @@ layui.use(['table', 'form', 'layer'], function(){
             });
         }
     });
+
+    $('#btn-refresh-logs').on('click', function(){ loadWebhookLogs(); });
+    $('#log-webhook-filter').on('change', function(){ loadWebhookLogs(); });
+
+    loadWebhookConfigs();
+    loadWebhookLogs();
 });
 </script>
 </body>

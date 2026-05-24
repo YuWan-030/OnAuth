@@ -1,11 +1,13 @@
 import os
 import datetime
 import logging
+import secrets
 import redis
 import jwt
 from fastapi import Header, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from config import SECRET_KEY, ALGORITHM
 # 🌟 核心引入：确保引入了 AppDevice 模型
 from database import get_db, AppCredential, AppDevice
@@ -25,7 +27,7 @@ ADMIN_TOKEN = os.getenv("PLATFORM_ADMIN_TOKEN")
 
 
 def verify_admin_rpc(x_admin_token: str = Header(..., alias="X-Admin-Token", description="管理员核心身份令牌")):
-    if x_admin_token != ADMIN_TOKEN:
+    if not ADMIN_TOKEN or not secrets.compare_digest(str(x_admin_token), str(ADMIN_TOKEN)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="中台权限凭证不合法，拒绝访问管理端！"
@@ -52,8 +54,12 @@ def verify_client_token(
                 detail="凭证安全拒绝：该身份凭证已被主动注销或拉黑，请重新登录"
             )
     except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError):
-        # 降级策略：如果 Redis 临时挂了，记录警告日志，靠 JWT 自包含的时间戳强行防守
-        logging.warning("⚠️ Redis 服务失联，黑名单校验临时降级跳过，请尽快检查 Redis 状态！")
+        # 安全优先：黑名单不可用时直接拒绝，避免已吊销令牌被放行
+        logging.error("Redis 服务失联，无法执行吊销黑名单校验，已按安全策略拒绝请求")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="鉴权基础设施暂时不可用，请稍后重试"
+        )
 
     # ==================== 🛡️ 防御层 2：JWT 签名与合法性基础校验 ====================
     try:
@@ -69,8 +75,6 @@ def verify_client_token(
             detail="非法令牌，签名篡改校验未通过"
         )
 
-    # 提取载荷元数据
-    print(payload)
     client_id = payload.get("sub")
     token_type = payload.get("token_type", "license")
     current_time = datetime.datetime.now()
@@ -134,7 +138,9 @@ def verify_client_token(
         # 连表检索当前硬件指纹是否已经在该凭证的已知白名单里
         linked_device = db.query(AppDevice).filter(
             AppDevice.credential_id == cred.id,
-            AppDevice.device_id == x_device_id
+            AppDevice.device_id == x_device_id,
+            AppDevice.is_revoked == False,
+            or_(AppDevice.expires_at == None, AppDevice.expires_at > current_time)
         ).first()
 
         if linked_device:
@@ -143,7 +149,11 @@ def verify_client_token(
             db.commit()
         else:
             # 陌生新设备：尝试计算当前凭证已经绑定的硬件机器基数
-            current_device_count = db.query(AppDevice).filter(AppDevice.credential_id == cred.id).count()
+            current_device_count = db.query(AppDevice).filter(
+                AppDevice.credential_id == cred.id,
+                AppDevice.is_revoked == False,
+                or_(AppDevice.expires_at == None, AppDevice.expires_at > current_time)
+            ).count()
 
             # 极限对撞：若已绑数量超过或等于该激活码分配的最高 max_devices 上限，直接触发物理熔断
             if current_device_count >= cred.max_devices:
@@ -156,6 +166,7 @@ def verify_client_token(
             new_device = AppDevice(
                 credential_id=cred.id,
                 device_id=x_device_id,
+                expires_at=cred.expire_at,
                 activated_at=current_time,
                 last_seen_at=current_time
             )

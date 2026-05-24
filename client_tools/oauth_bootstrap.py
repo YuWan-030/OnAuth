@@ -303,6 +303,8 @@ def revoke_token(
         token: str,
         auth_base: str = DEFAULT_AUTH_BASE,
         token_type_hint: str = "access_token",
+        client_id: str | None = None,
+        client_secret: str | None = None,
         timeout_seconds: int = 20,
         verify_ssl: bool = False,
 ) -> dict[str, Any]:
@@ -314,7 +316,11 @@ def revoke_token(
         "token": token.strip(),
         "token_type_hint": token_type_hint,
     }
-    response = requests.post(revoke_url, data=payload, timeout=timeout_seconds, verify=verify_ssl)
+    headers: dict[str, str] = {}
+    if client_id and client_secret:
+        basic_raw = f"{client_id.strip()}:{client_secret.strip()}".encode("utf-8")
+        headers["Authorization"] = f"Basic {base64.b64encode(basic_raw).decode('utf-8')}"
+    response = requests.post(revoke_url, data=payload, headers=headers, timeout=timeout_seconds, verify=verify_ssl)
     try:
         body = response.json()
     except Exception:
