@@ -59,7 +59,7 @@
             z-index: 1;
         }
 
-        /* 🏢 资产徽标沙箱（解决多态图像层叠冲突） */
+        /* 🏢 资产徽标沙箱 */
         .logo-container {
             position: relative;
             width: 80px;
@@ -78,13 +78,17 @@
             align-items: center;
             justify-content: center;
             overflow: hidden;
+            position: relative;
         }
 
+        /* 默认占位图标 */
         .default-rocket {
             font-size: 32px;
             user-select: none;
+            display: block; /* 默认可见，等待图片加载成功后决定是否隐藏 */
         }
 
+        /* 真实Logo */
         .real-logo {
             position: absolute;
             inset: 0;
@@ -92,6 +96,8 @@
             height: 100%;
             object-fit: cover;
             border-radius: 18px;
+            display: none; /* 🧠 初始隐藏，防止加载中或破图时闪烁显示默认的白底破图框 */
+            background-color: #1e293b; /* 填补可能存在的透明区域，防止穿透 */
         }
 
         .shield-badge {
@@ -148,7 +154,7 @@
             border: 1px solid rgba(255, 255, 255, 0.05);
             transition: all 0.2s ease;
         }
-        
+
         .box:hover {
             background: rgba(255, 255, 255, 0.05);
             border-color: rgba(255, 255, 255, 0.09);
@@ -175,17 +181,17 @@
             gap: 8px;
             font-size: 14px;
         }
-        
+
         .group-highlight {
             color: #c084fc;
             font-weight: 600;
         }
-        
+
         .arrow-separator {
             color: #475569;
             font-size: 11px;
         }
-        
+
         .app-highlight {
             color: #4ade80;
             font-weight: 600;
@@ -228,12 +234,12 @@
             color: #ffffff;
             box-shadow: 0 4px 14px rgba(34, 197, 94, 0.2);
         }
-        
+
         .allow:hover {
             transform: translateY(-1px);
             box-shadow: 0 6px 20px rgba(34, 197, 94, 0.35);
         }
-        
+
         .allow:active {
             transform: translateY(0);
         }
@@ -243,7 +249,7 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: #f87171;
         }
-        
+
         .deny:hover {
             background: rgba(248, 113, 113, 0.1);
             border-color: rgba(248, 113, 113, 0.25);
@@ -264,7 +270,7 @@
         @media (max-width: 480px) {
             body {
                 padding: 0;
-                align-items: flex-end; /* 移动端采用主流的底部抽屉拉起感，或直接撑满 */
+                align-items: flex-end;
             }
             .card {
                 border-radius: 24px 24px 0 0;
@@ -281,12 +287,16 @@
 <body>
 
 <div class="card">
-    <!-- 🏢 资产徽标沙箱 -->
     <div class="logo-container">
         <div class="app-avatar">
-            <span class="default-rocket">🚀</span>
-            <!-- 增加了干净的后端动态参数清洗，空值或缺失时直接触发隐藏机制 -->
-            <img src="{{ app_logo if app_logo else '' }}" class="real-logo" onerror="this.style.display='none';" alt="">
+            <span id="rocketIcon" class="default-rocket">🚀</span>
+
+            <img src="{{ app_logo if app_logo else '' }}"
+                 class="real-logo"
+                 id="appLogoImg"
+                 onload="document.getElementById('rocketIcon').style.display='none'; this.style.display='block';"
+                 onerror="this.style.display='none'; document.getElementById('rocketIcon').style.display='block';"
+                 alt="">
         </div>
         <div class="shield-badge">🛡️</div>
     </div>
@@ -298,13 +308,11 @@
         ⚠️ 敏感授权防线：请确认您完全信任该独立软件。授权后，该应用将代表您访问对应的云端业务接口资产。
     </div>
 
-    <!-- 用户身份舱 -->
     <div class="box">
         <div class="title">当前登录账户</div>
         <div class="value" style="font-weight: 500;">{{ username | default('未知用户') }}</div>
     </div>
 
-    <!-- 主体关系舱 -->
     <div class="box">
         <div class="title">申请访问的应用主体</div>
         <div class="value-hierarchy">
@@ -314,15 +322,12 @@
         </div>
     </div>
 
-    <!-- 权限域舱 -->
     <div class="box">
         <div class="title">请求权限范围 (Scope)</div>
         <div class="scope">{{ scope | default('default') }}</div>
     </div>
 
-    <!-- 确权表单提交总线 -->
     <form action="/oauth/consent_submit" method="post">
-        <!-- 隐式鉴权令牌栈 -->
         <input type="hidden" name="session_id" value="{{ session_id }}">
         <input type="hidden" name="client_id" value="{{ client_id }}">
         <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">

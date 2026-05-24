@@ -40,3 +40,7 @@ build/
 dist/
 *.egg-info/
 
+# Release packaging helper scripts
+pack_release.ps1
+pack_release.bat
+

@@ -47,7 +47,18 @@ class CallbackHandler(BaseHTTPRequestHandler):
     """本地轻量级回调 HTTP 监听器"""
 
     def do_GET(self):
-        query_components = parse_qs(urlparse(self.path).query)
+        parsed = urlparse(self.path)
+        if parsed.path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+            return
+
+        if parsed.path not in {"/callback", ""}:
+            self.send_response(204)
+            self.end_headers()
+            return
+
+        query_components = parse_qs(parsed.query)
         code = (query_components.get("code") or [""])[0].strip()
         if code:
             notify_code_captured(code)
