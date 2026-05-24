@@ -120,6 +120,14 @@ def _derive_code_challenge(code_verifier: str, method: str) -> str:
     return base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
 
 
+def _normalize_optional_pkce(code_challenge: str | None, code_challenge_method: str | None) -> tuple[str, str]:
+    challenge = (code_challenge or "").strip()
+    if not challenge:
+        return "", ""
+    method = _normalize_pkce_method(code_challenge_method)
+    return _validate_pkce_challenge(challenge), method
+
+
 def _validate_state(state: str | None) -> str | None:
     if state is None:
         return None
@@ -245,8 +253,8 @@ def oauth_authorize(
         redirect_uri: str = Query(...),
         scope: str = Query("read"),
         state: str = Query(None),
-        code_challenge: str = Query(...),
-        code_challenge_method: str = Query("S256"),
+        code_challenge: str = Query(None),
+        code_challenge_method: str = Query(None),
 
         # 🎯 纯净双轨：只拦截你中台登录时亲手种下的两个 Session Cookie 键名
         sso_session_id: str = Cookie(None),
@@ -261,8 +269,7 @@ def oauth_authorize(
         )
 
     normalized_state = _validate_state(state)
-    pkce_method = _normalize_pkce_method(code_challenge_method)
-    pkce_challenge = _validate_pkce_challenge(code_challenge)
+    pkce_challenge, pkce_method = _normalize_optional_pkce(code_challenge, code_challenge_method)
 
     cred = db.query(AppCredential).filter(AppCredential.client_id == client_id).first()
     if not cred:
@@ -315,6 +322,7 @@ def oauth_authorize(
     context = {
         "request": request,
         "client_id": client_id,
+        "response_type": "code",
         "redirect_uri": redirect_uri,
         "scope": scope,
         "state": normalized_state or "",
@@ -355,8 +363,8 @@ def login_submit(
         redirect_uri: str = Form(...),
         scope: str = Form(...),
         state: str = Form(None),
-        code_challenge: str = Form(...),
-        code_challenge_method: str = Form("S256"),
+        code_challenge: str = Form(None),
+        code_challenge_method: str = Form(None),
         captcha_token: str = Form(None),
         captcha_code: str = Form(None),
         db: Session = Depends(get_db)
@@ -389,6 +397,8 @@ def login_submit(
 
     _clear_login_fail(username, client_ip)
 
+    pkce_challenge, pkce_method = _normalize_optional_pkce(code_challenge, code_challenge_method)
+
     # 2. ⚡ 生成传统的 Redis 会话（供 OAuth 授权大厅撞库）
     new_session_id = "sess_" + secrets.token_hex(12)
     redis_client.setex(new_session_id, 86400, str(user.id))
@@ -417,9 +427,10 @@ def login_submit(
         "response_type": "code",
         "redirect_uri": redirect_uri,
         "scope": scope,
-        "code_challenge": code_challenge,
-        "code_challenge_method": code_challenge_method
     }
+    if pkce_challenge:
+        target_query["code_challenge"] = pkce_challenge
+        target_query["code_challenge_method"] = pkce_method
     if state:
         target_query["state"] = state
     target_url = f"/oauth/authorize?{urlencode(target_query)}"
@@ -458,8 +469,8 @@ def consent_submit(
         redirect_uri: str = Form(...),
         scope: str = Form(...),
         state: str = Form(None),
-        code_challenge: str = Form(...),
-        code_challenge_method: str = Form("S256"),
+        code_challenge: str = Form(None),
+        code_challenge_method: str = Form(None),
         session_id: str = Form(..., description="接收从上一步 HTML 隐藏表单里提交上来的会话ID"),
         db: Session = Depends(get_db)
 ):
@@ -495,8 +506,7 @@ def consent_submit(
     except (TypeError, ValueError):
         raise HTTPException(status_code=401, detail="会话数据损坏，请重新登录")
 
-    pkce_method = _normalize_pkce_method(code_challenge_method)
-    pkce_challenge = _validate_pkce_challenge(code_challenge)
+    pkce_challenge, pkce_method = _normalize_optional_pkce(code_challenge, code_challenge_method)
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -523,6 +533,7 @@ def consent_submit(
         "scope": ",".join(final_scopes),
         "username": user.username,
         "user_id": user.id,
+        "response_type": "code",
         "code_challenge": pkce_challenge,
         "code_challenge_method": pkce_method
     }
@@ -558,11 +569,11 @@ def oauth_token_exchange(
         except Exception:
             raise HTTPException(status_code=401, detail="HTTP Basic 认证请求头格式解析破损")
 
-    if not client_id or not client_secret:
-        raise HTTPException(status_code=401, detail="缺少客户端凭证(Client ID / Secret)")
+    if not client_id:
+        raise HTTPException(status_code=401, detail="缺少客户端标识(Client ID)")
 
     cred = db.query(AppCredential).filter(AppCredential.client_id == client_id).first()
-    if not cred or not verify_secret(client_secret, cred.client_secret_hash):
+    if not cred:
         raise HTTPException(status_code=401, detail="Client ID 或 Secret 安全不匹配")
 
     # 🚀【核心漏洞修复：防御层扩展到三层多租户】
@@ -581,6 +592,8 @@ def oauth_token_exchange(
         raise HTTPException(status_code=403, detail="该中台服务订阅已到期，无法继续签发/刷新凭证")
 
     if grant_type == "client_credentials":
+        if not client_secret or not verify_secret(client_secret, cred.client_secret_hash):
+            raise HTTPException(status_code=401, detail="Client ID 或 Secret 安全不匹配")
         token_expire = current_time + datetime.timedelta(days=1)
         if cred.expire_at and token_expire > cred.expire_at:
             token_expire = cred.expire_at
@@ -596,9 +609,6 @@ def oauth_token_exchange(
     elif grant_type == "authorization_code":
         if not code:
             raise HTTPException(status_code=400, detail="授权码模式下必须提供 'code' 参数")
-        if not code_verifier:
-            raise HTTPException(status_code=400, detail="PKCE 校验失败：授权码模式下必须提供 code_verifier")
-
         redis_key = f"oauth_code:{code}"
         code_raw = redis_client.get(redis_key)
         if not code_raw:
@@ -610,14 +620,18 @@ def oauth_token_exchange(
         if code_info["client_id"] != client_id:
             raise HTTPException(status_code=400, detail="安全隔离阻断：串号漏洞拒绝！")
 
-        verifier = _validate_code_verifier(code_verifier)
-        method = _normalize_pkce_method(code_info.get("code_challenge_method", "S256"))
         expected_challenge = str(code_info.get("code_challenge") or "").strip()
-        if not expected_challenge:
-            raise HTTPException(status_code=400, detail="PKCE 校验失败：授权码缺少挑战值")
-        derived_challenge = _derive_code_challenge(verifier, method)
-        if not secrets.compare_digest(derived_challenge, expected_challenge):
-            raise HTTPException(status_code=400, detail="PKCE 校验失败：code_verifier 不匹配")
+        if expected_challenge:
+            if not code_verifier:
+                raise HTTPException(status_code=400, detail="PKCE 校验失败：授权码模式下必须提供 code_verifier")
+            verifier = _validate_code_verifier(code_verifier)
+            method = _normalize_pkce_method(code_info.get("code_challenge_method", "S256"))
+            derived_challenge = _derive_code_challenge(verifier, method)
+            if not secrets.compare_digest(derived_challenge, expected_challenge):
+                raise HTTPException(status_code=400, detail="PKCE 校验失败：code_verifier 不匹配")
+        else:
+            if not client_secret or not verify_secret(client_secret, cred.client_secret_hash):
+                raise HTTPException(status_code=401, detail="传统授权码模式下缺少或错误的 Client Secret")
 
         access_token_expire = current_time + datetime.timedelta(days=1)
         refresh_token_expire = current_time + datetime.timedelta(days=30)
@@ -650,6 +664,8 @@ def oauth_token_exchange(
         }
 
     elif grant_type == "refresh_token":
+        if not client_secret or not verify_secret(client_secret, cred.client_secret_hash):
+            raise HTTPException(status_code=401, detail="Client ID 或 Secret 安全不匹配")
         if not refresh_token:
             raise HTTPException(status_code=400, detail="刷新令牌模式下必须传 'refresh_token'")
 
