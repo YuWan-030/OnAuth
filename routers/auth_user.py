@@ -185,6 +185,35 @@ def _store_session_meta(session_id: str, request: Request):
     })
     redis_client.expire(meta_key, 86400)
 
+
+def _purge_session_artifacts(session_id: str, user_id: int | None = None) -> None:
+    token_id = str(session_id or "").strip()
+    if not token_id:
+        return
+
+    redis_client.delete(token_id)
+    redis_client.delete(f"sess_meta:{token_id}")
+    redis_client.delete(f"rbac:perms:{token_id}")
+    if user_id is not None:
+        redis_client.srem(f"user:active_sessions:{user_id}", token_id)
+
+
+def _purge_user_session_artifacts(user_id: int) -> list[str]:
+    user_set_key = f"user:active_sessions:{user_id}"
+    token_ids = redis_client.smembers(user_set_key) or []
+    purged: list[str] = []
+
+    for raw_token_id in token_ids:
+        token_id = raw_token_id.decode("utf-8") if isinstance(raw_token_id, bytes) else str(raw_token_id)
+        token_id = token_id.strip()
+        if not token_id.startswith("sess_"):
+            continue
+        _purge_session_artifacts(token_id, user_id=user_id)
+        purged.append(token_id)
+
+    redis_client.delete(user_set_key)
+    return purged
+
 def _record_risk_event(db: Session, request: Request, risk_level: str, action: str = "BLOCK") -> None:
     record_risk_event(db, request, risk_level, action)
 
@@ -678,24 +707,26 @@ def delete_account(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="目标账户不存在")
 
+    user_id = int(user.id)
+    username_text = str(user.username)
+
     # 🚀 4. 严苛验证密码
     if not pwd_context.verify(confirm_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="安全审计失败：密码校验错误，拒绝销户请求")
 
     # 🚀 5. 斩草除根：物理抹除与分布式会话粉碎
+    _purge_user_session_artifacts(user_id)
+    _purge_session_artifacts(target_session_id, user_id=user_id)
     db.delete(user)
     db.commit()
     dispatch_webhook_event(
         event_type="user.delete",
         payload={
-            "user_id": user.id,
+            "user_id": user_id,
             "status": "terminated"
         },
         db=db
     )
-
-    # 抹除该用户当前的这根 Session 导火索
-    redis_client.delete(target_session_id)
 
     # 强行清洗浏览器托管的 Cookie 凭证（注意 path="/" 的严格对齐）
     response.delete_cookie(
@@ -708,7 +739,7 @@ def delete_account(
 
     return {
         "status": "success",
-        "message": f"用户账户 [{username}] 已成功物理销户，相关核心数据及全网 Session 会话已被全面抹除清空。"
+        "message": f"用户账户 [{username_text}] 已成功物理销户，相关核心数据及全网 Session 会话已被全面抹除清空。"
     }
 
 

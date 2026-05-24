@@ -1,207 +1,228 @@
 # 🛡️ OnAuth 多租户统一身份认证与访问控制系统
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Uvicorn-222222?style=for-the-badge&logo=uvicorn&logoColor=white" alt="Uvicorn" />
   <img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge" alt="Apache License 2.0" />
 </p>
 
-<p align="center">
-  <b>🚀 高性能 · 异步驱动 · 颗粒度权限控制 · 专为现代云原生微服务打造的统一认证底座</b>
-</p>
+<p align="center"><b>企业级 OAuth2.0 + License 双轨鉴权 · RBAC · 多租户 · 风控 · 会话管理</b></p>
 
 ---
 
-## 📢 法律与商业化声明
+## 项目简介
 
-> ⚠️ **授权模式说明**  
-> 本项目遵循 **Apache License 2.0** 协议开源。
->
-> 您可以自由使用、修改和分发本项目，无需开源您的修改。但是，若需用于商用或闭源开发，请确保遵守 Apache License 2.0 要求，并保留原作者版权声明。
+OnAuth 是一个面向企业内网/中台/多租户场景的统一身份认证与访问控制系统，提供：
 
----
-
-## 🎯 为什么选择 OnAuth？
-
-在构建现代企业级架构时，重复开发身份认证和权限系统无异于重复发明轮子。OnAuth 旨在解决以下核心痛点：
-
-*   **多应用孤岛**：告别每个子系统各自一套用户表的混乱局面，实现真正的 **单点登录 (SSO)**。
-*   **权限黑盒**：传统硬编码权限难以维护。OnAuth 提供标准的 **RBAC (基于角色的访问控制)** 模型，权限精确到按钮级。
-*   **安全隐患**：底层基于行业标准的 `Bcrypt` 加密算法与标准 `JWT` 令牌，天然防御重放攻击与明文泄露。
-*   **零开销冷启动**：系统内置智能环境感知。检测到纯净数据库时，**秒级自动初始化**首个公网演示账号，拒绝繁琐的 SQL 导入。
+- OAuth 2.0 授权登录（`authorization_code + PKCE`、`client_credentials`、`refresh_token`）
+- 基于 RBAC 的权限控制
+- 多租户空间管理与成员管理
+- Webhook 订阅与审计
+- 风控规则引擎与全局熔断
+- 普通用户会话管理
+- 应用凭证与设备绑定控制
+- 管理端 / 租户端 / 用户中心三套 Web 界面
 
 ---
 
-## ✨ 核心特性矩阵 (Feature Matrix)
+## 当前完成度评价
 
-| 特性分类        | 功能要点                      | 技术实现 / 优势                                               |
-|:------------|:--------------------------|:--------------------------------------------------------|
-| ⚡ **极致性能**  | 纯异步高并发                    | 基于 FastAPI + Asyncio + Uvicorn 异步事件循环，基于异步事件循环，显著提升并发能力 |
-| 🔒 **合规安全** | 行业级防护                     | `passlib` 驱动的 Bcrypt 强哈希（抗撞库）；自带 JWT 黑名单高频鉴权机制          |
-| 🔌 **双轨鉴权** | 同时兼容 OAuth2 标准客户端与长期直连激活码 |   OAuth2 提供短期令牌 + 刷新机制，降低泄漏风险；License 用于高信任场景，减少网ⓝ... |
-| 🌱 **智能运维** | 零配置启动                     | 控制台引导式环境自检，支持 `.env` 环境变量一键平滑切换开发/生产环境                  |
+**完成度：功能完备的 MVP / Beta 版本，约 80%~90%**
+
+### 已完成的核心能力
+- OAuth2 授权与令牌签发流程已打通
+- PKCE 校验、刷新令牌、客户端凭证模式已支持
+- RBAC 权限、租户空间、应用、凭证、会话、设备管理已形成闭环
+- 风控规则引擎已可配置，并带有默认安全策略
+- 管理端、租户端、用户端页面都已具备可用功能
+- 已有 pytest 回归测试覆盖关键模块
+
+### 还不算“生产级”的部分
+- 配置仍有硬编码项，需要进一步改为环境变量化
+- 仓库需要清理敏感文件后再公开
+- README、部署脚本、演示截图还可继续增强
+- 生产环境加固、监控、审计、备份策略仍可继续完善
+
+**结论：可以上 GitHub，但建议作为“可运行的开源 MVP / Beta”发布，而不是直接宣称生产级成熟产品。**
 
 ---
 
-## 🏗️ 系统架构与认证时序 (Architecture)
+## 核心特性
 
-### 1. 技术栈拓扑
+| 模块 | 能力 |
+| --- | --- |
+| 认证 | OAuth2 授权、PKCE、刷新令牌、客户端凭证 |
+| 用户 | 登录、注册、资料管理、在线会话管理 |
+| 租户 | 空间申请、审核、成员邀请、应用管理 |
+| 应用 | 客户端管理、密钥、白名单、设备管理 |
+| 风控 | 登录失败验证码、扫描器拦截、SQL 注入、XSS、敏感路径探测、全局熔断 |
+| 安全 | Bcrypt 密码哈希、JWT、Redis 会话、设备绑定 |
+| 运维 | 健康检查、审计日志、Webhook、Alembic 迁移 |
+
+---
+
+## 技术栈
+
+- **后端**：FastAPI、Uvicorn、SQLAlchemy、Redis
+- **认证**：OAuth 2.0、JWT、PKCE
+- **数据库**：SQLite / MySQL（代码中当前默认使用 SQLite）
+- **前端**：Layui + 原生 HTML / JS
+- **测试**：pytest
+- **迁移**：Alembic
+
+---
+
+## 项目结构
+
 ```text
-[ 客户端 (Web / App / 小程序) ]
-             │  (HTTPS 安全加密传输)
-             ▼
-   [ Uvicorn ASGI 高性能服务器 ]
-             │
-   [ FastAPI 异步路由/安全拦截层 ] ◄──► [ Redis 令牌黑名单/频控 ]
-             │
-   [ SQLAlchemy Async ORM ]
-             │
-   [ 数据库 (MySQL / PostgreSQL / SQLite) ]
+OnAuth/
+├─ app_factory.py          # FastAPI 应用装配
+├─ bootstrap.py            # 启动初始化、默认角色/规则种子
+├─ config.py               # 当前版本的基础配置
+├─ database.py             # ORM 模型与数据库连接
+├─ main.py                 # 启动入口
+├─ routers/                # OAuth、管理端、租户端、用户端 API
+├─ middlewares/            # RBAC、异常处理、操作日志
+├─ utils/                  # 认证、安全、风控、验证码等工具
+├─ admin_web/              # 管理端页面
+├─ tenant_web/             # 租户端页面
+├─ user_web/               # 用户中心页面
+├─ templates/              # 通用模板
+└─ tests/                  # pytest 回归测试
 ```
-### 标准 OAuth 2.0 / JWT 认证时序
-```text
-用户                第三方客户端                OnAuth 授权后端
- │                      │                            │
- │                      │◄────── 1. 跳转授权页 ────────┤
- ├──── 2. 提交账号密码 ─►│                            │
- │                      ├────── 3. 发起授权请求 ──────►│
- │                      │                            ├─ 4. Bcrypt校验账号密码
- │                      │                            ├─ 5. 生成临时授权码 code
- │                      │◄───── 6. 回调带回 code ──────┤
- │                      │                            │
- │                      ├──── 7. code换取令牌 ────────►│
- │                      │                            ├─ 8. 校验授权码合法性
- │                      │                            ├─ 9. 签发 Access/Refresh 双Token
- │                      │◄──── 10. 返回令牌数据 ───────┤
- 📦 本地/安全Cookie持久化存储Token
-```
-## 🛠️ 快速启动 (Quick Start)
 
-### 1. 运行环境
-* **Python**: 3.10 / 3.11 / 3.12+
-* **支持系统**: Windows, Linux, macOS
+---
 
-### 2. 秒级部署流程
+## 快速启动
+
+### 1. 创建虚拟环境
 
 ```bash
-# 1. 克隆高能仓库
-git clone [https://github.com/your-organization/OnAuth.git](https://github.com/your-organization/OnAuth.git)
-cd OnAuth
-
-# 2. 初始化虚拟隔离环境
 python -m venv .venv
+```
 
-# 3. 激活虚拟环境
-# Windows 环境:
-.venv/Scripts/activate
-# Linux / macOS 环境:
-source .venv/Scripts/activate
+### 2. 激活虚拟环境
 
-# 4. 安装依赖（已做企业级生产环境版本锁定）
+**Windows**
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+**Linux / macOS**
+
+```bash
+source .venv/bin/activate
+```
+
+### 3. 安装依赖
+
+```bash
 pip install -r requirements.txt
 ```
-### ⚙️ 生产兼容性补丁说明：
-> 为彻底解决旧版 `passlib` 无法读取新版 `bcrypt` 内部属性导致的 `AttributeError: module 'bcrypt' has no attribute '__about__'` 致命错误，本项目已在依赖中强制锁...
-> ```bash
-> pip install "bcrypt==4.0.1"
-> ```
-> **注意**：请勿使用 `bcrypt` 4.0.0 版本，因为它引入了不兼容的内部结构变更，导致 `passlib` 无法正常工作，从而引发认证系统崩溃。
-> 
-### 3. 环境配置
-**请在项目根目录下创建一个名为 .env 的文件，并写入以下配置：**
-```bash
-# SERVER CONFIG
-APP_ENV=development
-APP_HOST=0.0.0.0
-APP_PORT=8000
 
-# SECURITY CONFIG
-# ⚠️ 警告：由于 Bcrypt 底层算法限制，明文密码切勿超过 72 字节，否则初始化将报错
-INITIAL_ADMIN_PASSWORD=SecurePassword123_PleaseChangeMe
-JWT_SECRET_KEY=9a7b8c6d5e4f3g2h1i0j_your_super_secret_key
+### 4. 启动服务
 
-# DATABASE CONFIG
-DATABASE_URL=sqlite+aiosqlite:///./onauth.db
-```
-### 4. 闪电启动
 ```bash
 python main.py
 ```
-**若为首次运行，系统将通过日志输出以下提示：**
-```bash
-🌱 检测到干净的数据库环境，正在为您初始化创建首个公网演示账号...
-🚀 初始化用户成功！默认管理员配置已就绪。
-INFO: Uvicorn running on [https://0.0.0.0:8000](https://0.0.0.0:8000) (Press CTRL+C to quit)
-```
-## 📖 交互式 API 开发者面板
 
-服务运行后，开发者可以通过以下地址实时调试接口：
+启动后可访问：
 
-* **静态/交互式 Swagger 面板 (推荐)**: `https://127.0.0.1:8000/docs` —— 包含全量接口的 Request/Response 结构化示例。
-* **ReDoc 深度文档**: `https://127.0.0.1:8000/redoc` —— 适合架构师审阅的结构化技术规格书。
+- Swagger：`https://127.0.0.1:8000/docs`
+- ReDoc：`https://127.0.0.1:8000/redoc`
+
+> 首次启动时，系统会自动初始化数据库结构、默认角色、默认风控规则和演示账号。
 
 ---
 
-## 🔒 生产环境加固规范 (Hardening)
+## 配置说明
 
-1. **密码长度约束**：Bcrypt 算法原生限制明文长度为 **72 字节**。在前端表单或下游注册逻辑中，请务必增加 `len(password.encode('utf-8')) <= 72` 校验。
-2. **密钥轮转**：生产环境（`APP_ENV=production`）下，必须定期更换 `JWT_SECRET_KEY`，且严禁使用默认初始密码。
-3. **文档关闭**：在公网生产环境部署时，建议通过配置关闭 `/docs` 路由，防范接口暴露引起的嗅探。
+### 当前版本的配置方式
 
----
+本项目目前仍以 `config.py` 为主进行基础配置，包括：
 
-## 🤝 参与贡献 (Contributing)
+- 数据库类型
+- JWT 密钥
+- 数据库连接串
 
-我们极度欢迎并渴望社区的优秀代码贡献！
-s
-```text
-Fork 本仓库 ➔ 新建特性分支 (git checkout -b feature/AmazingFeature) ➔ 提交您的修改 ➔ 发起 Pull Request (PR)
-```
-## 📄 商业与开源许可证说明
+如果你准备部署到自己的环境，建议先检查并修改 `config.py`，避免直接使用仓库里的默认值。
 
-* **开源版本**：本项目遵循 **Apache License 2.0** 开源协议，允许自由使用、修改及分发。 
+### 建议的生产化方向
 
----
+后续建议将以下内容改为环境变量：
 
-## ❤️ 健康检查
-
-- 服务健康接口：`GET /health`
-- 返回内容包含 `database` 与 `redis` 连通状态。
-- 当依赖服务异常时返回 `503`，便于负载均衡与容器编排平台探活。
+- `SECRET_KEY`
+- 数据库账号密码
+- 生产环境域名
+- 管理员初始密码
+- 端口和协议配置
 
 ---
 
-## 🧱 数据库迁移（Alembic）
+## 风控能力
 
-项目已加入 Alembic 基础骨架文件：`alembic.ini`、`alembic/env.py`、`alembic/versions/`。
+当前风控系统支持基于表达式的动态规则配置，默认内置策略包括：
 
-```bash
-# 安装迁移工具
-pip install -r requirements-dev.txt
+- 登录失败验证码
+- 防扫描器
+- 防恶意 UI / 自动化
+- 防 SQL 注入
+- 防 XSS 注入
+- 高危路径探测
 
-# 生成迁移脚本
-alembic revision --autogenerate -m "init migration"
+同时支持：
 
-# 执行升级
-alembic upgrade head
-```
+- 全局熔断
+- 风控事件记录
+- 规则启用 / 停用
+- 管理端可视化维护
 
 ---
 
-## ✅ 基础测试
+## 测试
 
 ```bash
 pip install -r requirements-dev.txt
-pytest
+pytest -q
 ```
 
-当前仓库已提供基础安全与表达式引擎测试样例（`tests/test_crypto_and_risk.py`），建议在新增路由时同步补充 API 级测试。
+当前仓库已经包含关键回归测试，覆盖了：
+
+- 密码哈希与令牌逻辑
+- 风控表达式引擎
+- OAuth 重定向 URI 匹配
+- 用户会话管理
+- 设备数量限制
+- Windows 异步噪音过滤
 
 ---
 
-## 📦 依赖说明（Flet）
+## 公开到 GitHub 前的建议清单
 
-`flet` / `flet-desktop` 主要用于仓库中的桌面示例脚本（`Test_App_A.py`、`Test_App_B.py`、`Test.py`）。
-若你的部署不使用这些桌面示例，可在构建产物中将其作为可选依赖剥离。
+如果你准备正式公开仓库，建议先做下面几件事：
 
+- [ ] 移除或替换敏感文件：`.env`、`apps.db`、`local_server.crt`、`local_server.key`
+- [ ] 添加或完善 `.gitignore`
+- [ ] 将 `config.py` 中的硬编码密钥/密码改为环境变量
+- [ ] 检查默认管理员密码是否需要改为首次启动随机生成
+- [ ] 补充项目截图或页面预览
+- [ ] 说明部署环境、数据库初始化和迁移方式
+- [ ] 在 README 中明确“这是 MVP/Beta，不是生产级最终版”
+
+---
+
+## 许可证
+
+本项目遵循 **Apache License 2.0**。
+
+你可以自由使用、修改和分发本项目，但请保留原始版权与许可证声明。
+
+---
+
+## 结论
+
+这个项目已经具备了很完整的业务闭环，**可以上传 GitHub**，并且很适合作为一个 **企业级统一认证平台的开源 MVP** 来展示。
+
+不过，**在公开前最好先做一次仓库清理和配置脱敏**，否则会影响专业度，也可能带来安全风险。
