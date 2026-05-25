@@ -157,7 +157,8 @@ python main.py
 
 第三方接入与授权码模式的详细流程请参考：
 
-- [第三方接入文档](docs/third_party_integration.md)
+- [docs/third_party_integration.md](docs/third_party_integration.md)
+- [docs/oauth_bootstrap_one_click.md](docs/oauth_bootstrap_one_click.md)
 
 推荐流程：第三方网站不直接注册本地账号，注册与登录统一交由 OnAuth 完成，通过 OAuth 获取用户资料后在本地创建/更新用户。
 
