@@ -74,7 +74,7 @@ def test_change_password_resolves_numeric_user_id_from_session(monkeypatch) -> N
 
     result = auth_user.change_password(
         current_password="admin@123",
-        new_password="Wzt52052..",
+        new_password="AA123456..",
         authorization="",
         sso_session_id_cookie="sess_5ebaeab3767325b4f19fddb6",
         db=cast(Session, cast(object, fake_db)),
