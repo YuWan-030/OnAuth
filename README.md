@@ -157,7 +157,7 @@ python main.py
 
 - [docs/third_party_integration.md](docs/third_party_integration.md)
 - [docs/oauth_bootstrap_one_click.md](docs/oauth_bootstrap_one_click.md)
-- [Go 语言一键调用参考](https://github.com/YuWan-030/oauthpkce/edit/master/README.md)
+- [Go 语言一键调用参考](https://github.com/YuWan-030/oauthpkce/blob/master/README.md)
 
 推荐流程：第三方网站不直接注册本地账号，注册与登录统一交由 OnAuth 完成，通过 OAuth 获取用户资料后在本地创建/更新用户。
 
