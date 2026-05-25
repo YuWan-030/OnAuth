@@ -136,16 +136,22 @@ curl -X POST "https://<onauth-host>/oauth/token" \
 
 ## 3. 获取用户资料（第三方系统调用）
 
-使用 `access_token` 调用用户资料接口：
+推荐使用 `/auth/me`（支持 `access_token`），兼容接口为 `/api/v1/user/get_info`。
 
 - 推荐接口：`GET /auth/me`
-- 兼容接口：`GET /api/v1/user/get_info`
 - Header：`Authorization: Bearer <access_token>`
 
 示例：
 
 ```bash
 curl "https://<onauth-host>/auth/me" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+兼容接口：
+
+```bash
+curl "https://<onauth-host>/api/v1/user/get_info" \
   -H "Authorization: Bearer <access_token>"
 ```
 

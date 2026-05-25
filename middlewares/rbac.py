@@ -4,8 +4,65 @@ from fastapi import Request, HTTPException, status, Depends
 from sqlalchemy.orm import Session, selectinload
 from database import get_db, User, Role
 from middlewares.auth import redis_client
+import jwt
+import config
 
 RBAC_CACHE_TTL_SECONDS = max(10, int(os.getenv("RBAC_CACHE_TTL_SECONDS", "60")))
+SECRET_KEY = config.SECRET_KEY
+ALGORITHM = config.ALGORITHM
+
+
+def _decode_oauth_userinfo(token: str) -> dict | None:
+    userinfo_raw = redis_client.get(f"oauth_userinfo:{token}")
+    if not userinfo_raw:
+        return None
+    try:
+        return json.loads(userinfo_raw)
+    except Exception:
+        return None
+
+
+def _resolve_user_id_from_access_token(token: str, db: Session) -> int:
+    if redis_client.exists(f"revoked_token:{token}"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="凭证已失效")
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="凭证已过期")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="凭证校验失败")
+
+    user_id = None
+    username = None
+    sub = payload.get("sub")
+
+    if isinstance(sub, int):
+        user_id = sub
+    elif isinstance(sub, str) and sub.isdigit():
+        user_id = int(sub)
+    elif isinstance(sub, str):
+        username = sub.strip()
+
+    userinfo = _decode_oauth_userinfo(token)
+    if userinfo:
+        if user_id is None and userinfo.get("user_id") is not None:
+            try:
+                user_id = int(userinfo.get("user_id"))
+            except Exception:
+                user_id = None
+        if not username:
+            username = str(userinfo.get("username") or "").strip() or None
+
+    if user_id is not None:
+        return user_id
+
+    if username:
+        user = db.query(User).filter(User.username == username).first()
+        if user:
+            return int(user.id)
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="当前令牌不绑定终端用户")
 
 
 class _RolePrincipal:
@@ -115,21 +172,17 @@ class _RBACBaseChecker:
                 detail="身份凭证已缺失，请重新登录"
             )
 
-        # 2. Redis 会话状态机校验
-        if not effective_session_id.startswith("sess_"):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="认证凭证不合法"
-            )
-
-        raw_user_id = redis_client.get(effective_session_id)
-        if not raw_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="会话已过期，请重新登录"
-            )
-
-        user_id = int(raw_user_id.decode('utf-8') if isinstance(raw_user_id, bytes) else raw_user_id)
+        is_session_token = str(effective_session_id).startswith("sess_")
+        if is_session_token:
+            raw_user_id = redis_client.get(effective_session_id)
+            if not raw_user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="会话已过期，请重新登录"
+                )
+            user_id = int(raw_user_id.decode('utf-8') if isinstance(raw_user_id, bytes) else raw_user_id)
+        else:
+            user_id = _resolve_user_id_from_access_token(str(effective_session_id), db)
 
         cached = _load_cached_permissions(effective_session_id)
         if cached and cached[0] == user_id:
