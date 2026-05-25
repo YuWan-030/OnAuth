@@ -11,6 +11,7 @@ from middlewares.auth import redis_client
 import jwt  # 需要安装 PyJWT
 import config
 from passlib.context import CryptContext
+from routers.auth_user import _build_user_profile_payload
 
 router = APIRouter(tags=["用户信息统一管理接口"])
 
@@ -146,12 +147,8 @@ def get_user_info(
     user, _ = _require_current_user(resolved_credentials, db)
 
     return {
-        "user_id": user.id,
-        "username": user.username,
-        "nickname": user.nickname,
-        "email": user.email,
-        "roles": [role.name for role in user.roles],
-        "permissions": sorted(list(user.all_permissions))
+        "status": "success",
+        "data": _build_user_profile_payload(db, user)
     }
 
 

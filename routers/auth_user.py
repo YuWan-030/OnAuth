@@ -864,26 +864,9 @@ def get_current_user_profile(
         current_user: User = Depends(RBACChecker("read")),
         db: Session = Depends(get_db)
 ):
-    group = _resolve_user_group(db, current_user)
-    roles = [role.name for role in current_user.roles]
-    nickname = getattr(current_user, "nickname", None)
     return {
         "status": "success",
-        "data": {
-            "user_id": current_user.id,
-            "username": current_user.username,
-            "nickname": nickname,
-            "group_id": group.id if group else None,
-            "group_name": group.group_name if group else None,
-            "group_code": group.group_code if group else None,
-            "group_status": group.status if group else None,
-            "group_is_active": group.is_active if group else None,
-            "group_review_note": group.review_note if group else None,
-            "group_reviewed_at": group.reviewed_at.strftime("%Y-%m-%d %H:%M:%S") if group and group.reviewed_at else None,
-            "group_expire_at": group.expire_at.strftime("%Y-%m-%d %H:%M:%S") if group and group.expire_at else None,
-            "roles": roles,
-            "is_tenant_admin": "tenant_admin" in roles or "super_admin" in roles
-        }
+        "data": _build_user_profile_payload(db, current_user)
     }
 
 
@@ -1032,3 +1015,28 @@ def revoke_my_sessions_all(
     }
 
 
+
+def _build_user_profile_payload(db: Session, current_user: User) -> dict:
+    group = _resolve_user_group(db, current_user)
+    roles = [role.name for role in current_user.roles]
+    nickname = getattr(current_user, "nickname", None)
+    raw_permissions = getattr(current_user, "all_permissions", None)
+    permissions = sorted(list(raw_permissions)) if raw_permissions else []
+    email = getattr(current_user, "email", None)
+    return {
+        "user_id": current_user.id,
+        "username": current_user.username,
+        "nickname": nickname,
+        "email": email,
+        "group_id": group.id if group else None,
+        "group_name": group.group_name if group else None,
+        "group_code": group.group_code if group else None,
+        "group_status": group.status if group else None,
+        "group_is_active": group.is_active if group else None,
+        "group_review_note": group.review_note if group else None,
+        "group_reviewed_at": group.reviewed_at.strftime("%Y-%m-%d %H:%M:%S") if group and group.reviewed_at else None,
+        "group_expire_at": group.expire_at.strftime("%Y-%m-%d %H:%M:%S") if group and group.expire_at else None,
+        "roles": roles,
+        "permissions": permissions,
+        "is_tenant_admin": "tenant_admin" in roles or "super_admin" in roles
+    }

@@ -100,6 +100,45 @@ def _require_super_admin(current_user: User):
         raise HTTPException(status_code=403, detail="仅超级管理员可执行该操作")
 
 
+def _clear_user_rbac_cache(user_id: int) -> None:
+    user_set_key = f"user:active_sessions:{user_id}"
+    session_ids = redis_client.smembers(user_set_key) or []
+    for raw_session_id in session_ids:
+        session_id = raw_session_id.decode("utf-8") if isinstance(raw_session_id, bytes) else str(raw_session_id)
+        if session_id:
+            redis_client.delete(f"rbac:perms:{session_id}")
+
+
+def _ensure_tenant_admin_role_active(db: Session, user: User | None) -> bool:
+    if not user:
+        return False
+    existing_role = None
+    for role in (user.roles or []):
+        if getattr(role, "name", None) == ROLE_TENANT_ADMIN:
+            existing_role = role
+            break
+    if existing_role is not None:
+        if hasattr(existing_role, "is_active") and existing_role.is_active is False:
+            existing_role.is_active = True
+            db.flush()
+            return True
+        return False
+
+    role = db.query(Role).filter(Role.name == ROLE_TENANT_ADMIN).first()
+    if not role:
+        return False
+    changed = False
+    if not role.is_active:
+        role.is_active = True
+        changed = True
+    if role not in (user.roles or []):
+        user.roles.append(role)
+        changed = True
+    if changed:
+        db.flush()
+    return changed
+
+
 def _parse_expire_at(expire_at_value: str | None) -> datetime.datetime | None:
     if not expire_at_value:
         return None
@@ -127,7 +166,7 @@ def _parse_redirect_uri_whitelist_input(raw_value: str | None) -> list[str]:
         if parsed.fragment:
             raise HTTPException(status_code=400, detail=f"redirect_uri 不允许包含 fragment: {uri}")
         if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
-            raise HTTPException(status_code=400, detail=f"http redirect_uri 仅允许本地地址: {uri}")
+            raise HTTPException(status_code=400, detail=f"http redirect_uri 仅允许本��地址: {uri}")
         if uri not in seen:
             seen.add(uri)
             deduped.append(uri)
@@ -231,7 +270,7 @@ def create_group(
 
 
 @router.post("/groups/{group_id}/toggle", summary="【管理端】工作室状态切换(兼容旧前端直发POST请求)")
-@router.put("/groups/{group_id}/toggle", summary="【管理端】一键开关工作组/联动熔断/修改备注")
+@router.put("/groups/{group_id}/toggle", summary="【管理端】��键开关工作组/联动熔断/修改备注")
 def toggle_group_status(
         group_id: int,
         payload: GroupToggleInput,
@@ -269,7 +308,7 @@ def delete_group(
     name = target.group_name
     db.delete(target)
     db.commit()
-    return {"msg": f"工作室 [{name}] 及其旗下所有应用凭证已被全盘风暴级级联擦除"}
+    return {"msg": f"工作组 [{name}] 及其旗下所有应用凭证已被全盘风暴级级联擦除"}
 
 
 @router.get("/groups/reviews/pending", summary="【管理端】查看待审批的租户空间申请")
@@ -320,6 +359,8 @@ def review_group_space(
     group.review_note = payload.review_note
     group.reviewed_at = datetime.datetime.now()
 
+    owner_user = None
+    ensure_role_changed = False
     if action == "approve":
         expire_at = _parse_expire_at(payload.expire_at)
         if not expire_at:
@@ -327,6 +368,8 @@ def review_group_space(
         group.status = "approved"
         group.is_active = True
         group.expire_at = expire_at
+        owner_user = db.query(User).filter(User.id == group.owner_user_id).first() if group.owner_user_id else None
+        ensure_role_changed = _ensure_tenant_admin_role_active(db, owner_user)
     elif action == "reject":
         group.status = "rejected"
         group.is_active = False
@@ -336,6 +379,8 @@ def review_group_space(
 
     db.commit()
     db.refresh(group)
+    if owner_user and ensure_role_changed:
+        _clear_user_rbac_cache(int(owner_user.id))
     dispatch_webhook_event(
         event_type="tenant_space.review",
         payload={
@@ -418,6 +463,8 @@ def assign_group_to_tenant_admin(
     if ROLE_TENANT_ADMIN not in role_names and not role_names.intersection(PRIVILEGED_ADMIN_ROLE_NAMES):
         raise HTTPException(status_code=400, detail="目标用户不是租户管理员")
 
+    ensure_role_changed = _ensure_tenant_admin_role_active(db, target_user)
+
     previous_owner_id = group.owner_user_id
 
     group.owner_user_id = target_user.id
@@ -436,6 +483,8 @@ def assign_group_to_tenant_admin(
     db.refresh(target_user)
     if previous_owner:
         db.refresh(previous_owner)
+    if ensure_role_changed:
+        _clear_user_rbac_cache(int(target_user.id))
 
     dispatch_webhook_event(
         event_type="tenant_space.assign",
@@ -745,7 +794,7 @@ def list_system_operation_logs(
     }
 
 
-@router.put("/apps/{app_id}/status", summary="【管理端】一键启停/熔断独立应用")
+@router.put("/apps/{app_id}/status", summary="【��理端】一键启停/熔断独立应用")
 def update_app_status(
         app_id: int,
         payload: AppStatusInput,
@@ -880,7 +929,7 @@ def create_app_credential(
         credential_name: str = Query(...),
         scope: str = "read",
         max_devices: int = Query(1, ge=1, le=1000, description="当前最多允许几台设备"),
-        redirect_uris: str | None = Query(None, description="redirect_uri 白名单，支持逗号或换行分隔"),
+        redirect_uris: str | None = Query(None, description="redirect_uri 白名单，传空字符串可清空"),
         valid_days: int = Query(365),
         current_user: User = Depends(RBACChecker("admin:create")),
         db: Session = Depends(get_db)
@@ -946,7 +995,7 @@ def batch_update_credential_status(
 
     creds = db.query(AppCredential).filter(AppCredential.client_id.in_(client_ids)).all()
     if not creds:
-        raise HTTPException(status_code=404, detail="未找到目标凭证")
+        raise HTTPException(status_code=404, detail="未找到目��凭证")
 
     for cred in creds:
         cred.is_active = payload.is_active
@@ -1071,7 +1120,7 @@ def get_admin_users_list(
             "is_active": u.is_active,
             "created_at": u.created_at.strftime("%Y-%m-%d %H:%M:%S") if u.created_at else "-",
             "roles": roles_list,
-            "permissions": list(perms_list)  # 这里返回的是合并后的完整权限列表
+            "permissions": list(perms_list)  # 这里返回的是���并后的完整权限列表
         })
 
     return {"code": 0, "msg": "success", "count": total, "data": data_list}
@@ -1103,7 +1152,7 @@ def toggle_user_status(
         except Exception:
             pass
 
-    status_text = "激活受信" if payload.is_active else "风控隔离并强行全网切断下线"
+    status_text = "激活受信" if payload.is_active else "风控隔离并强行全网��断下线"
     return {"status": "success", "message": f"用户 [{target_user.username}] 已成功切换为 {status_text} 状态"}
 
 
@@ -1135,16 +1184,16 @@ def batch_toggle_user_status(
     db.commit()
     return {
         "status": "success",
-        "message": "批量状态切换完成",
+        "message": "批量状态切���完成",
         "updated": changed,
         "skipped": skipped
     }
 
-# 权限修改接口，接收用户 ID 和新的权限列表以及是增还是删，更新数据库中的用户权限
+# 权限修改接口，接收用户 ID 和新的权限列���以及是增还是删，更新数据库中的用户权限
 @router.post("/users/update_permissions", summary="【管理端】更新用户独立权限")
 def update_user_permissions(
         payload: UserPermissionUpdateSchema,
-        # 🌟 1. 修正 RBACChecker 传参，升级拦截权限为写权限
+        # ���� 1. 修正 RBACChecker 传参，升级拦截权限为写权限
         current_user: User = Depends(RBACChecker("admin:write", "admin:update")),
         db: Session = Depends(get_db)
 ):
@@ -1220,7 +1269,7 @@ def update_user_roles(
             revoke_user_redis_sessions(int(getattr(target_user, "id", 0)))
         except Exception as e:
             db.rollback()
-            raise HTTPException(status_code=500, detail="角色更新失败，数据库错误")
+            raise HTTPException(status_code=500, detail="角色更新失���，数据库错误")
 
     return {
         "status": "success",
@@ -1332,7 +1381,7 @@ def update_user_nickname(
 
 # ==================== 🏢 租户空间审批管理 ====================
 
-@router.post("/system/bootstrap", summary="【管理端】初始化核心角色与权限种子")
+@router.post("/system/bootstrap", summary="【管理端】���始化核心角色与权限种子")
 def bootstrap_system_seed(
         current_user: User = Depends(RBACChecker("admin:create", "admin:update")),
         db: Session = Depends(get_db)
@@ -1356,7 +1405,7 @@ def bootstrap_system_seed(
         "webhook:logs": "Webhook-查看投递日志",
         "admin:read": "中台管理端-查看",
         "admin:create": "中台管理端-创建",
-        "admin:update": "中台管理端-更新",
+        "admin:update": "��台管理端-更新",
         "admin:delete": "中台管理端-删除",
     }
 
@@ -1388,7 +1437,7 @@ def bootstrap_system_seed(
 
     created_roles = 0
     created_roles += _ensure_role("super_admin", "系统最高权力控制组", list(seed_scopes.keys()))
-    created_roles += _ensure_role("standard_user", "普通注册合规用户组", ["read", "write"])
+    created_roles += _ensure_role("standard_user", "��通注册合规用户组", ["read", "write"])
     created_roles += _ensure_role(
         "tenant_admin",
         "租户空间管理员",
@@ -1458,28 +1507,28 @@ def review_tenant(
     action = (payload.action or "").lower().strip()
     now_time = datetime.datetime.now()
 
+    owner_user = None
+    ensure_role_changed = False
     if action == "approve":
-        if not payload.expire_at:
-            raise HTTPException(status_code=400, detail="审批通过必须设置到期时间")
-        try:
-            expire_at = datetime.datetime.fromisoformat(payload.expire_at)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="到期时间格式不合法，需 ISO 8601 格式")
-
+        expire_at = _parse_expire_at(payload.expire_at)
+        if not expire_at:
+            raise HTTPException(status_code=400, detail="审批通过时必须提供 expire_at")
         target.status = "approved"
         target.is_active = True
         target.expire_at = expire_at
-        target.review_note = payload.review_note
-        target.reviewed_at = now_time
+        owner_user = db.query(User).filter(User.id == target.owner_user_id).first() if target.owner_user_id else None
+        ensure_role_changed = _ensure_tenant_admin_role_active(db, owner_user)
     elif action == "reject":
         target.status = "rejected"
         target.is_active = False
-        target.review_note = payload.review_note
-        target.reviewed_at = now_time
+        target.expire_at = None
     else:
-        raise HTTPException(status_code=400, detail="无效的审批动作，必须为 approve 或 reject")
+        raise HTTPException(status_code=400, detail="action 仅支持 approve 或 reject")
 
     db.commit()
+    db.refresh(target)
+    if owner_user and ensure_role_changed:
+        _clear_user_rbac_cache(int(owner_user.id))
     return {
         "status": "success",
         "message": f"租户空间 [{target.group_name}] 审批已完成",
