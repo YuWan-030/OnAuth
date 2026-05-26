@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OnAuth - 租户中心</title>
-    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="icon" href="/favicon.ico?v=20260526" type="image/x-icon" sizes="any">
+    <link rel="shortcut icon" href="/favicon.ico?v=20260526" type="image/x-icon">
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
 
@@ -57,20 +58,21 @@
         .logo-icon {
             width: 34px;
             height: 34px;
-            border-radius: 10px;
-            background: linear-gradient(135deg,#2563eb,#1d4ed8);
+            border-radius: 0;
+            background: transparent;
             display: flex;
             align-items: center;
             justify-content: center;
             margin-right: 12px;
-            box-shadow: 0 4px 12px rgba(37,99,235,.35);
-            overflow: hidden;
+            box-shadow: none;
+            flex: 0 0 34px;
         }
 
         .logo-icon img {
-            width: 20px;
-            height: 20px;
+            width: 100%;
+            height: 100%;
             object-fit: contain;
+            display: block;
         }
 
         .header-meta {
@@ -522,10 +524,11 @@
             display: inline !important;
         }
         body.onauth-shell .logo-icon {
-            width: 26px !important;
-            height: 26px !important;
+            width: 28px !important;
+            height: 28px !important;
             margin-right: 6px !important;
             font-size: 14px !important;
+            flex: 0 0 28px !important;
         }
         body.onauth-shell .header-meta .pill,
         body.onauth-shell .tenant-user-area #tenant-name,
