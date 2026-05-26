@@ -171,7 +171,7 @@
         display: none;
         position: fixed;
         left: 12px;
-        bottom: 12px;
+        bottom: 56px;
         z-index: 3001;
         width: 40px;
         height: 40px;
@@ -184,73 +184,21 @@
     }
     @media (max-width: 768px) {
         body {
-            overflow: auto !important;
+            overflow-x: hidden !important;
+            overflow-y: auto !important;
             -webkit-text-size-adjust: 100%;
         }
-        .header,
-        .header-meta,
-        .logo-area {
-            min-width: 0;
+        .onauth-version-badge {
+            right: 8px;
+            bottom: 8px;
+            font-size: 11px;
         }
-        .header {
-            height: auto !important;
-            min-height: 52px;
-            padding: 8px 12px !important;
-            gap: 8px;
-            flex-wrap: wrap;
-            position: sticky !important;
-            top: 0;
+        .layui-layer {
+            max-width: 94vw !important;
+            left: 3vw !important;
         }
-        .logo-area {
-            font-size: 15px !important;
-        }
-        .logo-icon {
-            width: 30px !important;
-            height: 30px !important;
-            margin-right: 8px !important;
-            font-size: 16px !important;
-        }
-        .side {
-            top: 52px !important;
-            left: 0 !important;
-            width: min(82vw, 300px) !important;
-            max-width: 300px;
-            transform: translateX(-105%);
-            transition: transform 0.2s ease;
-            box-shadow: 10px 0 24px rgba(15, 23, 42, 0.22);
-            z-index: 2000 !important;
-        }
-        body.onauth-mobile-nav-open .side {
-            transform: translateX(0);
-        }
-        .main,
-        .main-body {
-            position: relative !important;
-            top: 0 !important;
-            left: 0 !important;
-            right: 0 !important;
-            bottom: auto !important;
-            min-height: calc(100vh - 52px);
-        }
-        .ruoyi-tab-container {
-            height: auto !important;
-        }
-        .ruoyi-tab-container .layui-tab-title,
-        .layui-tab-title {
-            white-space: nowrap;
+        .layui-table-view {
             overflow-x: auto;
-            overflow-y: hidden;
-        }
-        .ruoyi-tab-content-wrapper,
-        .layui-tab-content,
-        .layui-tab-item,
-        .admin-iframe {
-            min-height: 70vh;
-            height: auto !important;
-            position: relative !important;
-        }
-        .layui-form-item {
-            margin-bottom: 14px;
         }
         .layui-form-label {
             width: 100% !important;
@@ -263,13 +211,6 @@
             margin-left: 0 !important;
             width: 100% !important;
         }
-        .layui-table-view {
-            overflow-x: auto;
-        }
-        .layui-layer {
-            max-width: 94vw !important;
-            left: 3vw !important;
-        }
         .login-container,
         .reg-container,
         .container,
@@ -279,12 +220,68 @@
             padding: 20px !important;
             border-radius: 16px !important;
         }
-        .onauth-version-badge {
-            right: 8px;
-            bottom: 8px;
-            font-size: 11px;
+        body.onauth-shell .header,
+        body.onauth-shell .header-meta,
+        body.onauth-shell .logo-area {
+            min-width: 0;
         }
-        body.onauth-has-side .onauth-mobile-nav-toggle {
+        body.onauth-shell .header {
+            height: auto !important;
+            min-height: 52px;
+            padding: 8px 12px !important;
+            gap: 8px;
+            flex-wrap: wrap;
+            position: sticky !important;
+            top: 0;
+        }
+        body.onauth-shell .logo-area {
+            font-size: 15px !important;
+        }
+        body.onauth-shell .logo-icon {
+            width: 30px !important;
+            height: 30px !important;
+            margin-right: 8px !important;
+            font-size: 16px !important;
+        }
+        body.onauth-shell .side {
+            top: 52px !important;
+            left: 0 !important;
+            width: min(82vw, 300px) !important;
+            max-width: 300px;
+            transform: translateX(-105%);
+            transition: transform 0.2s ease;
+            box-shadow: 10px 0 24px rgba(15, 23, 42, 0.22);
+            z-index: 2000 !important;
+        }
+        body.onauth-mobile-nav-open.onauth-shell .side {
+            transform: translateX(0);
+        }
+        body.onauth-shell .main,
+        body.onauth-shell .main-body {
+            position: relative !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: auto !important;
+            min-height: calc(100vh - 52px);
+        }
+        body.onauth-shell .ruoyi-tab-container {
+            height: auto !important;
+        }
+        body.onauth-shell .ruoyi-tab-container .layui-tab-title,
+        body.onauth-shell .layui-tab-title {
+            white-space: nowrap;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+        body.onauth-shell .ruoyi-tab-content-wrapper,
+        body.onauth-shell .layui-tab-content,
+        body.onauth-shell .layui-tab-item,
+        body.onauth-shell .admin-iframe {
+            min-height: 70vh;
+            height: auto !important;
+        }
+        body.onauth-shell.onauth-has-side .onauth-mobile-nav-toggle {
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -550,6 +547,10 @@ layui.use(['table', 'layer', 'form'], function(){
                 badge.style.display = "none";
             }
             var side = document.querySelector(".side");
+            var hasShell = !!(side && (document.querySelector(".main") || document.querySelector(".main-body")));
+            if (hasShell) {
+                document.body.classList.add("onauth-shell");
+            }
             if (!side || !toggleBtn) {
                 if (toggleBtn) {
                     toggleBtn.style.display = "none";
