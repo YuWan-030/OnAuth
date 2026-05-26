@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Cookie, Depends, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from pathlib import Path
+
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -15,6 +17,14 @@ from utils.view_guard import (
 )
 
 router = APIRouter(tags=["Web Views"])
+FAVICON_PATH = Path(__file__).resolve().parent.parent / "favicon.ico"
+
+
+@router.get("/favicon.ico", include_in_schema=False)
+def favicon_view():
+    if FAVICON_PATH.exists():
+        return FileResponse(path=FAVICON_PATH, media_type="image/x-icon")
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="favicon.ico not found")
 
 
 def _decode_session_username(sso_session_id: str | None) -> str | None:

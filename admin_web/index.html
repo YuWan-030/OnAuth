@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OnAuth - 多租户授权管理中台</title>
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.10/dist/css/layui.css">
 
@@ -47,6 +48,14 @@
             letter-spacing: .5px;
         }
 
+        .logo-title-desktop {
+            display: inline;
+        }
+
+        .logo-title-mobile {
+            display: none;
+        }
+
         .logo-icon {
             width: 34px;
             height: 34px;
@@ -56,8 +65,14 @@
             align-items: center;
             justify-content: center;
             margin-right: 12px;
-            font-size: 18px;
             box-shadow: 0 4px 12px rgba(37,99,235,.35);
+            overflow: hidden;
+        }
+
+        .logo-icon img {
+            width: 20px;
+            height: 20px;
+            object-fit: contain;
         }
 
         /* =========================
@@ -431,10 +446,16 @@
             font-size: 13px !important;
             line-height: 1;
         }
-        body.onauth-shell .logo-area > div:last-child {
+        body.onauth-shell .logo-area .logo-title {
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+        body.onauth-shell .logo-title-desktop {
+            display: none !important;
+        }
+        body.onauth-shell .logo-title-mobile {
+            display: inline !important;
         }
         body.onauth-shell .logo-icon {
             width: 26px !important;
@@ -599,8 +620,9 @@
 
 <div class="header">
     <div class="logo-area">
-        <div class="logo-icon">🛡</div>
-        <div>管理中心</div>
+        <div class="logo-icon"><img src="/favicon.ico" alt="OnAuth"></div>
+        <div class="logo-title logo-title-desktop">OnAuth - 多租户授权管理中台</div>
+        <div class="logo-title logo-title-mobile">管理中心</div>
     </div>
 
     <div class="user-info-area">
