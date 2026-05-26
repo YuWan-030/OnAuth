@@ -66,3 +66,58 @@ def test_revoke_online_sessions_all_ignores_session_meta_hash(monkeypatch) -> No
     assert ("user:active_sessions:202", "sess_other") in fake.srem_calls
     assert "sess_meta:sess_ok" in fake.deleted
 
+
+def test_build_announcement_feed_payload_splits_broadcast_and_notices() -> None:
+    items = [
+        SimpleNamespace(
+            id=10,
+            title="系统维护",
+            content="今晚 22:00 维护",
+            type="bulletin",
+            is_pinned=True,
+            created_at=None,
+        ),
+        SimpleNamespace(
+            id=11,
+            title="常规通知A",
+            content="内容A",
+            type="notice",
+            is_pinned=False,
+            created_at=None,
+        ),
+        SimpleNamespace(
+            id=12,
+            title="常规通知B",
+            content="内容B",
+            type="notice",
+            is_pinned=False,
+            created_at=None,
+        ),
+    ]
+
+    payload = system_api._build_announcement_feed_payload(items, notice_limit=2)
+
+    assert payload["broadcast"]["id"] == 10
+    assert len(payload["notices"]) == 2
+    assert payload["notices"][0]["id"] == 11
+
+
+def test_build_announcement_feed_payload_without_bulletin() -> None:
+    items = [
+        SimpleNamespace(
+            id=21,
+            title="通知1",
+            content="正文1",
+            type="notice",
+            is_pinned=False,
+            created_at=None,
+        )
+    ]
+
+    payload = system_api._build_announcement_feed_payload(items, notice_limit=3)
+
+    assert payload["broadcast"] is None
+    assert len(payload["notices"]) == 1
+    assert payload["notices"][0]["id"] == 21
+
+

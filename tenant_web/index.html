@@ -292,6 +292,26 @@
         .btn-theme-submit { background: linear-gradient(90deg, #2563eb, #1d4ed8) !important; color: #fff !important; border-radius: 6px !important; border: none !important; box-shadow: 0 4px 12px rgba(37, 99, 235, .2); }
         .btn-theme-cancel { border-radius: 6px !important; }
         .layui-layer-content { overflow: hidden !important; }
+
+        .announcement-feed {
+            display: none;
+            padding: 10px 16px;
+            border-bottom: 1px solid #e5e7eb;
+            background: #fff;
+            gap: 8px;
+            flex-direction: column;
+        }
+        .announce-line {
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+        }
+        .announce-broadcast { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .announce-notice { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
     </style>
 </head>
 
@@ -376,6 +396,11 @@
 </div>
 
 <div class="main-body">
+    <div class="announcement-feed" id="announcement-feed">
+        <div class="announce-line announce-broadcast" id="broadcast-line" style="display:none;"></div>
+        <div class="announce-line announce-notice" id="notice-line" style="display:none;"></div>
+    </div>
+
     <div class="ruoyi-tab-container">
         <div class="layui-tab" lay-filter="ruoyiTabs" lay-allowclose="true">
             <ul class="layui-tab-title">
@@ -433,6 +458,8 @@ layui.use(['element', 'jquery', 'layer', 'form'], function(){
     const element = layui.element;
     const layer = layui.layer;
     const form = layui.form;
+    let currentBroadcast = null;
+    let currentNotices = [];
 
     let contextMenuTargetId = null; // 右键选中的 Tab 项绑定的唯一 ID
 
@@ -448,6 +475,68 @@ layui.use(['element', 'jquery', 'layer', 'form'], function(){
     function setPill(selector, text, cls) {
         $(selector).removeClass('ok warn muted').addClass(cls || 'muted').text(text);
     }
+
+    function escapeHtml(raw) {
+        return String(raw || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function loadAnnouncementFeed() {
+        $.ajax({
+            url: '/api/v1/announcement/feed?limit=3',
+            type: 'GET',
+            success: function(res){
+                if (res.status !== 'success') return;
+                const data = res.data || {};
+                const broadcast = data.broadcast || null;
+                const notices = Array.isArray(data.notices) ? data.notices : [];
+                currentBroadcast = broadcast;
+                currentNotices = notices;
+
+                let hasAny = false;
+                if (broadcast) {
+                    const line = `📢 大喇叭：${escapeHtml(broadcast.title)} - ${escapeHtml(broadcast.content)}`;
+                    $('#broadcast-line').html(line).show();
+                    hasAny = true;
+                }
+                if (notices.length > 0) {
+                    const titles = notices.slice(0, 3).map(item => `【${escapeHtml(item.title)}】`).join(' ');
+                    $('#notice-line').html(`🔔 通知：${titles}`).show();
+                    hasAny = true;
+                }
+
+                if (hasAny) {
+                    $('#announcement-feed').css('display', 'flex');
+                }
+            }
+        });
+    }
+
+    function openAnnouncementDialog(title, body) {
+        layer.open({
+            type: 1,
+            title: escapeHtml(title || '系统通知'),
+            area: ['680px', '460px'],
+            content: `<div style="padding:16px 18px; line-height:1.85; font-size:14px; color:#1f2937; white-space:pre-wrap; word-break:break-word;">${escapeHtml(body || '-')}</div>`
+        });
+    }
+
+    $('#broadcast-line').on('click', function(){
+        if (!currentBroadcast) return;
+        openAnnouncementDialog(`📢 ${currentBroadcast.title || '大喇叭公告'}`, currentBroadcast.content || '');
+    });
+
+    $('#notice-line').on('click', function(){
+        if (!currentNotices.length) return;
+        const merged = currentNotices
+            .map(item => `【${item.title || '-'}】\n${item.content || ''}`)
+            .join('\n\n--------------------\n\n');
+        openAnnouncementDialog('🔔 最新通知', merged);
+    });
 
     // 载入顶部基础账户概要明细
     function loadProfile() {
@@ -481,6 +570,7 @@ layui.use(['element', 'jquery', 'layer', 'form'], function(){
         });
     }
     loadProfile();
+    loadAnnouncementFeed();
 
     // ==========================================================================
     // RuoYi 多标签页生命周期控制器调度中心

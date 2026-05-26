@@ -381,6 +381,54 @@ def _format_announcement_item(item: SystemAnnouncement) -> dict:
     }
 
 
+def _format_announcement_feed_item(item: SystemAnnouncement) -> dict:
+    return {
+        "id": item.id,
+        "title": item.title,
+        "content": item.content,
+        "type": item.type,
+        "is_pinned": item.is_pinned,
+        "created_at": item.created_at.strftime("%Y-%m-%d %H:%M:%S") if item.created_at else None,
+    }
+
+
+def _build_announcement_feed_payload(items: list[SystemAnnouncement], notice_limit: int = 3) -> dict:
+    broadcast = None
+    notices: list[dict] = []
+
+    for item in items:
+        if item.type == "bulletin" and broadcast is None:
+            broadcast = _format_announcement_feed_item(item)
+            continue
+        if item.type == "notice" and len(notices) < max(1, notice_limit):
+            notices.append(_format_announcement_feed_item(item))
+
+    return {
+        "broadcast": broadcast,
+        "notices": notices,
+    }
+
+
+def _require_logged_in_user_by_session(sso_session_id: str | None, db: Session) -> User:
+    token = str(sso_session_id or "").strip()
+    if not token or not token.startswith("sess_"):
+        raise HTTPException(status_code=401, detail="请先登录")
+
+    raw_user_id = redis_client.get(token)
+    if not raw_user_id:
+        raise HTTPException(status_code=401, detail="登录状态已过期")
+
+    try:
+        user_id = int(raw_user_id.decode("utf-8") if isinstance(raw_user_id, bytes) else raw_user_id)
+    except Exception:
+        raise HTTPException(status_code=401, detail="登录会话异常")
+
+    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="用户不存在或已被冻结")
+    return user
+
+
 @router.get("/system/announcement", summary="【管理端】拉取系统公告列表")
 def list_system_announcements(
         page: int = 1,
@@ -411,6 +459,29 @@ def list_system_announcements(
         "code": 200,
         "count": total,
         "data": [_format_announcement_item(item) for item in announcements]
+    }
+
+
+@router.get("/api/v1/announcement/feed", summary="【前台】拉取公告与大喇叭信息流")
+def get_announcement_feed(
+        limit: int = 3,
+        sso_session_id: str | None = Cookie(None),
+        db: Session = Depends(get_db)
+):
+    _require_logged_in_user_by_session(sso_session_id, db)
+    safe_limit = min(max(limit, 1), 10)
+
+    items = db.query(SystemAnnouncement).filter(
+        SystemAnnouncement.status == "published"
+    ).order_by(
+        SystemAnnouncement.is_pinned.desc(),
+        SystemAnnouncement.created_at.desc(),
+        SystemAnnouncement.id.desc(),
+    ).limit(50).all()
+
+    return {
+        "status": "success",
+        "data": _build_announcement_feed_payload(items, notice_limit=safe_limit),
     }
 
 
