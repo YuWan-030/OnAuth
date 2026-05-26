@@ -40,6 +40,10 @@
         .layui-table td { height: 48px; }
 
         .btn-matrix-ops { background: transparent !important; border-radius: 4px !important; padding: 0 8px !important; transition: all 0.2s; font-size: 12px !important; }
+        .btn-matrix-edit { color: #2563eb !important; border: 1px solid rgba(37, 99, 235, 0.25) !important; cursor: pointer; }
+        .btn-matrix-edit:hover { background: #eff6ff !important; border-color: #2563eb !important; }
+        .btn-matrix-test { color: #7c3aed !important; border: 1px solid rgba(124, 58, 237, 0.25) !important; cursor: pointer; }
+        .btn-matrix-test:hover { background: #f5f3ff !important; border-color: #7c3aed !important; }
         .btn-matrix-del { color: #ef4444 !important; border: 1px solid rgba(239, 68, 68, 0.2) !important; cursor: pointer; }
         .btn-matrix-del:hover { background: #fef2f2 !important; border-color: #ef4444 !important; }
 
@@ -52,6 +56,9 @@
 
         .event-checkbox-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding-top: 6px; }
         .badge-event { background-color: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-family: monospace; border: 1px solid #e2e8f0; margin-right: 4px; display: inline-block; }
+        .template-tip { color: #64748b; font-size: 12px; line-height: 1.7; }
+        .template-hidden { display: none; }
+        .preset-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     </style>
 </head>
 <body>
@@ -79,6 +86,8 @@
 <script type="text/html" id="table-bar">
     {% raw %}
     <div style="display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-edit" lay-event="edit">编辑</button>
+        <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-test" lay-event="test">测试推送</button>
         <button class="layui-btn layui-btn-xs btn-matrix-ops btn-matrix-del" lay-event="del">断开端点</button>
     </div>
     {% endraw %}
@@ -97,6 +106,12 @@
             <span class="badge-event">{{ item }}</span>
         {{# }); }}
     </div>
+    {% endraw %}
+</script>
+
+<script type="text/html" id="template-tpl">
+    {% raw %}
+    <span class="badge-event">{{ d.template_type || 'onauth_default' }}</span>
     {% endraw %}
 </script>
 
@@ -138,6 +153,33 @@
                 <input type="checkbox" name="events[tenant_credential.create]" title="凭证签发" value="tenant_credential.create" lay-skin="primary">
             </div>
         </div>
+
+        <div class="layui-form-item">
+            <label class="layui-form-label"><span style="color:#ef4444">*</span> 发送模板</label>
+            <div class="layui-input-block">
+                <select name="template_type" class="layui-input webhook-template-select">
+                    <option value="onauth_default">OnAuth 默认 JSON</option>
+                    <option value="wecom_markdown">企业微信 Markdown</option>
+                    <option value="wecom_template_card">企业微信 文本通知模板卡片</option>
+                    <option value="dingtalk_markdown">钉钉 Markdown</option>
+                    <option value="feishu_text">飞书 Text</option>
+                    <option value="custom_json">自定义 JSON 模板</option>
+                </select>
+                <div class="template-tip">模板变量: <code>{event_type}</code> <code>{sent_at}</code> <code>{payload_json}</code> 以及 <code>{payload_xxx}</code></div>
+            </div>
+        </div>
+
+        <div class="layui-form-item template-hidden webhook-custom-template-wrap">
+            <label class="layui-form-label">自定义模板</label>
+            <div class="layui-input-block">
+                <textarea name="custom_template" class="layui-textarea" style="min-height:120px;" placeholder='{"msg_type":"text","content":{"text":"事件 {event_type}\\n内容: {payload_json}"}}'></textarea>
+                <div class="preset-row">
+                    <button type="button" class="layui-btn layui-btn-primary layui-btn-xs btn-template-preset" data-preset="wecom">企业微信示例</button>
+                    <button type="button" class="layui-btn layui-btn-primary layui-btn-xs btn-template-preset" data-preset="dingtalk">钉钉示例</button>
+                    <button type="button" class="layui-btn layui-btn-primary layui-btn-xs btn-template-preset" data-preset="feishu">飞书示例</button>
+                </div>
+            </div>
+        </div>
     </form>
 </div>
 
@@ -150,13 +192,167 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
     const util = layui.util;
     const $ = layui.$;
 
+    const TEMPLATE_PRESETS = {
+        wecom: {
+            msgtype: 'markdown',
+            markdown: {
+                content: '**OnAuth 事件通知**\\n> 事件: `{event_type}`\\n> 时间: {sent_at}\\n> 明细: {payload_json}'
+            }
+        },
+        dingtalk: {
+            msgtype: 'markdown',
+            markdown: {
+                title: 'OnAuth {event_type}',
+                text: '### OnAuth 事件通知\\n- 事件: `{event_type}`\\n- 时间: {sent_at}\\n- 明细: {payload_json}'
+            }
+        },
+        feishu: {
+            msg_type: 'text',
+            content: {
+                text: 'OnAuth 事件 {event_type}\\n时间: {sent_at}\\n明细: {payload_json}'
+            }
+        }
+    };
+
+    function normalizeTemplateType(raw) {
+        const value = (raw || '').toString().trim();
+        return value || 'onauth_default';
+    }
+
+    function bindTemplateSelector(layero) {
+        const $select = layero.find('.webhook-template-select');
+        const $customWrap = layero.find('.webhook-custom-template-wrap');
+        function refreshVisibility() {
+            const isCustom = ($select.val() || '') === 'custom_json';
+            $customWrap.toggleClass('template-hidden', !isCustom);
+        }
+        $select.on('change', refreshVisibility);
+        layero.find('.btn-template-preset').on('click', function(){
+            const presetName = ($(this).data('preset') || '').toString();
+            const preset = TEMPLATE_PRESETS[presetName];
+            if (!preset) return;
+            $select.val('custom_json');
+            layero.find('textarea[name="custom_template"]').val(JSON.stringify(preset, null, 2));
+            form.render('select');
+            refreshVisibility();
+        });
+        refreshVisibility();
+    }
+
+    function collectDialogPayload(layero) {
+        const name = layero.find('input[name="name"]').val().trim();
+        const url = layero.find('input[name="url"]').val().trim();
+        const secret = layero.find('input[name="secret"]').val().trim();
+        const templateType = normalizeTemplateType(layero.find('select[name="template_type"]').val());
+        const customTemplate = layero.find('textarea[name="custom_template"]').val().trim();
+        const selectedEvents = [];
+        layero.find('.event-checkbox-grid input[type="checkbox"]:checked').each(function(){
+            selectedEvents.push($(this).val());
+        });
+
+        if(!name || !url) {
+            layer.msg('关键字段不可为空', {icon: 5, shift: 6});
+            return null;
+        }
+        if(selectedEvents.length === 0) {
+            layer.msg('请至少订阅一个事件', {icon: 5, shift: 6});
+            return null;
+        }
+        if (templateType === 'custom_json' && !customTemplate) {
+            layer.msg('使用自定义模板时，custom_template 不能为空', {icon: 5, shift: 6});
+            return null;
+        }
+
+        return {
+            name: name,
+            url: url,
+            secret: secret ? secret : null,
+            events: selectedEvents,
+            template_type: templateType,
+            custom_template: templateType === 'custom_json' ? customTemplate : null
+        };
+    }
+
+    function openWebhookDialog(mode, rowData) {
+        const isEdit = mode === 'edit';
+        layer.open({
+            type: 1,
+            title: isEdit ? `编辑 Webhook 配置 #${rowData.id}` : '注册全新 Webhook 异步分发端点',
+            area: ['620px', '680px'],
+            content: $('#webhook-dialog').html(),
+            btn: [isEdit ? '保存修改' : '核准接入', '取消'],
+            success: function(layero){
+                form.render();
+                bindTemplateSelector(layero);
+
+                if (isEdit && rowData) {
+                    layero.find('input[name="name"]').val(rowData.name || '');
+                    layero.find('input[name="url"]').val(rowData.url || '');
+                    layero.find('input[name="secret"]').val(rowData.secret || '');
+                    layero.find('.event-checkbox-grid input[type="checkbox"]').prop('checked', false);
+                    (rowData.events || []).forEach(function(item){
+                        layero.find('.event-checkbox-grid input[value="' + item + '"]').prop('checked', true);
+                    });
+                    layero.find('select[name="template_type"]').val(normalizeTemplateType(rowData.template_type));
+                    layero.find('textarea[name="custom_template"]').val(rowData.custom_template || '');
+                    form.render();
+                    layero.find('.webhook-template-select').trigger('change');
+                }
+
+                layero.find('.layui-layer-btn0').css({
+                    'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                    'border-color': '#2563eb'
+                });
+            },
+            yes: function(layerIndex, layero) {
+                const payload = collectDialogPayload(layero);
+                if (!payload) return false;
+                payload.is_active = isEdit ? !!rowData.is_active : true;
+                if (isEdit) payload.id = rowData.id;
+
+                executeAjax(
+                    isEdit ? '/api/v1/webhook/config.update' : '/api/v1/webhook/config.create',
+                    'POST',
+                    JSON.stringify(payload),
+                    'application/json',
+                    function(){
+                        layer.close(layerIndex);
+                        table.reload('webhook-table');
+                    }
+                );
+            }
+        });
+    }
+
+    function triggerTestPush(rowData) {
+        layer.confirm(`对 [${rowData.name}] 发送一条模拟事件做联通测试？`, {
+            icon: 3,
+            title: '测试推送'
+        }, function(index){
+            executeAjax(
+                '/api/v1/webhook/test.push',
+                'POST',
+                JSON.stringify({id: rowData.id}),
+                'application/json',
+                function(){
+                    layer.close(index);
+                    loadWebhookLogs();
+                }
+            );
+        });
+    }
+
     function loadWebhookConfigs() {
         table.render({
             elem: '#webhook-table',
             id: 'webhook-table',
             url: '/api/v1/webhook/config.list',
             parseData: function(res) {
-                return { "code": res.status === "success" ? 0 : 500, "msg": res.message || "", "data": res.data || [] };
+                const rows = Array.isArray(res.data) ? res.data : [];
+                rows.forEach(function(item){
+                    item.template_type = normalizeTemplateType(item.template_type);
+                });
+                return { "code": res.status === "success" ? 0 : 500, "msg": res.message || "", "data": rows };
             },
             page: false,
             escape: true,
@@ -165,9 +361,10 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
                 {field: 'name', title: '订阅端点名称', width: 180, style: 'font-weight: 600; color: #1e293b;'},
                 {field: 'url', title: '物理接收网关 URL (POST)', width: 280, style: 'font-family: monospace; color: #2563eb;'},
                 {field: 'events', title: '订阅的原子事件域', width: 260, templet: '#events-tpl', escape: false},
+                {field: 'template_type', title: '发送模板', width: 160, templet: '#template-tpl', align: 'center', escape: false},
                 {field: 'creator_id', title: '所有权归属 (Creator)', width: 130, align: 'center', style: 'color: #64748b; font-family: monospace;'},
                 {field: 'is_active', title: '服务状态', width: 110, templet: '#status-tpl', align: 'center', escape: false},
-                {title: '操作', width: 120, toolbar: '#table-bar', align: 'center', fixed: 'right', escape: false}
+                {title: '操作', width: 250, toolbar: '#table-bar', align: 'center', fixed: 'right', escape: false}
             ]],
             done: function(res){
                 const rows = Array.isArray(res.data) ? res.data : [];
@@ -236,44 +433,7 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
     }
 
     $('#btn-add-webhook').click(function(){
-        layer.open({
-            type: 1,
-            title: '注册全新 Webhook 异步分发端点',
-            area: ['520px', '420px'],
-            content: $('#webhook-dialog').html(),
-            btn: ['核准接入', '熔断放弃'],
-            success: function(layero){
-                form.render();
-                layero.find('.layui-layer-btn0').css({
-                    'background': 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                    'border-color': '#2563eb'
-                });
-            },
-            yes: function(layerIndex, layero) {
-                const name = layero.find('input[name="name"]').val().trim();
-                const url = layero.find('input[name="url"]').val().trim();
-                const secret = layero.find('input[name="secret"]').val().trim();
-                const selectedEvents = [];
-                layero.find('.event-checkbox-grid input[type="checkbox"]:checked').each(function(){
-                    selectedEvents.push($(this).val());
-                });
-
-                if(!name || !url) {
-                    layer.msg('关键字段不可为空', {icon: 5, shift: 6});
-                    return false;
-                }
-                if(selectedEvents.length === 0) {
-                    layer.msg('请至少订阅一个事件', {icon: 5, shift: 6});
-                    return false;
-                }
-
-                const payload = {name: name, url: url, secret: secret ? secret : null, events: selectedEvents, is_active: true};
-                executeAjax('/api/v1/webhook/config.create', 'POST', JSON.stringify(payload), 'application/json', function(){
-                    layer.close(layerIndex);
-                    table.reload('webhook-table');
-                });
-            }
-        });
+        openWebhookDialog('create', null);
     });
 
     form.on('switch(statusSwitch)', function(data){
@@ -283,6 +443,14 @@ layui.use(['table', 'form', 'layer', 'util'], function(){
 
     table.on('tool(webhookTable)', function(obj){
         const data = obj.data;
+        if (obj.event === 'edit') {
+            openWebhookDialog('edit', data);
+            return;
+        }
+        if (obj.event === 'test') {
+            triggerTestPush(data);
+            return;
+        }
         if(obj.event === 'del') {
             layer.confirm(`确认物理注销并断开订阅端点 [${data.name}] 吗？`, {
                 icon: 3,
