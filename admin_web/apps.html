@@ -222,17 +222,57 @@
     .onauth-mobile-nav-toggle {
         display: none;
         position: fixed;
-        left: 12px;
-        bottom: 56px;
-        z-index: 3001;
-        width: 40px;
-        height: 40px;
+        left: 8px;
+        top: 8px;
+        z-index: 3010;
+        width: 36px;
+        height: 36px;
         border: 0;
-        border-radius: 10px;
+        border-radius: 11px;
         color: #fff;
-        background: #2563eb;
-        box-shadow: 0 8px 18px rgba(37, 99, 235, 0.35);
+        background: rgba(15, 23, 42, 0.88);
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.24);
+        backdrop-filter: blur(10px);
         cursor: pointer;
+    }
+    .onauth-burger,
+    .onauth-burger::before,
+    .onauth-burger::after {
+        display: block;
+        width: 16px;
+        height: 2px;
+        border-radius: 2px;
+        background: #ffffff;
+        content: "";
+        transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+    .onauth-burger {
+        position: relative;
+        margin: 0 auto;
+    }
+    .onauth-burger::before {
+        position: absolute;
+        left: 0;
+        top: -5px;
+    }
+    .onauth-burger::after {
+        position: absolute;
+        left: 0;
+        top: 5px;
+    }
+    body.onauth-mobile-nav-open .onauth-burger {
+        background: transparent;
+    }
+    body.onauth-mobile-nav-open .onauth-burger::before {
+        top: 0;
+        transform: rotate(45deg);
+    }
+    body.onauth-mobile-nav-open .onauth-burger::after {
+        top: 0;
+        transform: rotate(-45deg);
+    }
+    .onauth-mobile-mask {
+        display: none;
     }
     @media (max-width: 768px) {
         body {
@@ -274,36 +314,90 @@
         }
         body.onauth-shell .header,
         body.onauth-shell .header-meta,
-        body.onauth-shell .logo-area {
+        body.onauth-shell .logo-area,
+        body.onauth-shell .user-info-area,
+        body.onauth-shell .tenant-user-area {
             min-width: 0;
         }
         body.onauth-shell .header {
-            height: auto !important;
+            height: 52px !important;
             min-height: 52px;
-            padding: 8px 12px !important;
+            padding: 6px 10px 6px 50px !important;
             gap: 8px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
+            align-items: center;
             position: sticky !important;
             top: 0;
         }
         body.onauth-shell .logo-area {
-            font-size: 15px !important;
+            flex: 1;
+            max-width: calc(100% - 86px);
+            font-size: 13px !important;
+            line-height: 1;
+        }
+        body.onauth-shell .logo-area > div:last-child {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         body.onauth-shell .logo-icon {
-            width: 30px !important;
-            height: 30px !important;
-            margin-right: 8px !important;
-            font-size: 16px !important;
+            width: 26px !important;
+            height: 26px !important;
+            margin-right: 6px !important;
+            font-size: 14px !important;
+        }
+        body.onauth-shell .header-meta .pill,
+        body.onauth-shell .tenant-user-area #tenant-name,
+        body.onauth-shell .tenant-user-area #tenant-status,
+        body.onauth-shell .user-info-area #tenant-pill {
+            display: none !important;
+        }
+        body.onauth-shell .user-info-area .layui-nav-item,
+        body.onauth-shell .tenant-user-area .layui-nav-item {
+            line-height: 32px !important;
+        }
+        body.onauth-shell .user-info-area .layui-nav-item > a,
+        body.onauth-shell .tenant-user-area .layui-nav-item > a {
+            width: 36px !important;
+            min-width: 36px !important;
+            max-width: 36px !important;
+            padding: 0 16px 0 4px !important;
+            font-size: 12px !important;
+            justify-content: center !important;
+        }
+        body.onauth-shell .user-info-area .layui-nav-item > a span,
+        body.onauth-shell .tenant-user-area .layui-nav-item > a span {
+            display: none !important;
+        }
+        body.onauth-shell .user-info-area .layui-nav-item > a i,
+        body.onauth-shell .tenant-user-area .layui-nav-item > a i {
+            margin-right: 0 !important;
+        }
+        body.onauth-shell .user-info-area .layui-nav .layui-nav-more,
+        body.onauth-shell .tenant-user-area .layui-nav .layui-nav-more {
+            right: 2px !important;
         }
         body.onauth-shell .side {
             top: 52px !important;
             left: 0 !important;
-            width: min(82vw, 300px) !important;
-            max-width: 300px;
+            width: min(74vw, 250px) !important;
+            max-width: 250px;
             transform: translateX(-105%);
-            transition: transform 0.2s ease;
-            box-shadow: 10px 0 24px rgba(15, 23, 42, 0.22);
-            z-index: 2000 !important;
+            transition: transform 0.22s ease;
+            box-shadow: 14px 0 28px rgba(15, 23, 42, 0.22);
+            z-index: 3005 !important;
+            border-top-right-radius: 16px;
+            border-bottom-right-radius: 16px;
+            background: rgba(31, 41, 55, 0.97) !important;
+            backdrop-filter: blur(10px);
+        }
+        body.onauth-shell .side-menu {
+            width: 100% !important;
+        }
+        body.onauth-shell .side-menu .layui-nav-item > a,
+        body.onauth-shell .side-menu .layui-nav-child dd a {
+            padding-left: 14px !important;
+            font-size: 13px !important;
         }
         body.onauth-mobile-nav-open.onauth-shell .side {
             transform: translateX(0);
@@ -325,18 +419,56 @@
             white-space: nowrap;
             overflow-x: auto;
             overflow-y: hidden;
+            height: 36px !important;
+        }
+        body.onauth-shell .ruoyi-tab-container .layui-tab-title li,
+        body.onauth-shell .layui-tab-title li {
+            line-height: 36px !important;
+            height: 36px !important;
+            padding: 0 10px !important;
+            font-size: 13px !important;
+        }
+        body.onauth-shell .ruoyi-tab-container .layui-tab-title li .layui-tab-close,
+        body.onauth-shell .layui-tab-title li .layui-tab-close {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            margin-left: 4px;
+            border-radius: 999px;
+            color: #64748b !important;
+            background: rgba(148, 163, 184, 0.18);
+            font-size: 12px;
+        }
+        body.onauth-shell .ruoyi-tab-container .layui-tab-title li .layui-tab-close:hover,
+        body.onauth-shell .layui-tab-title li .layui-tab-close:hover {
+            color: #ffffff !important;
+            background: rgba(239, 68, 68, 0.88);
         }
         body.onauth-shell .ruoyi-tab-content-wrapper,
         body.onauth-shell .layui-tab-content,
         body.onauth-shell .layui-tab-item,
         body.onauth-shell .admin-iframe {
-            min-height: 70vh;
+            min-height: calc(100vh - 100px);
             height: auto !important;
         }
         body.onauth-shell.onauth-has-side .onauth-mobile-nav-toggle {
             display: inline-flex;
             align-items: center;
             justify-content: center;
+        }
+        body.onauth-shell .onauth-mobile-mask {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.22);
+            z-index: 3003;
+        }
+        body.onauth-mobile-nav-open.onauth-shell .onauth-mobile-mask {
+            display: block;
+        }
+        body.onauth-mobile-nav-open.onauth-shell {
+            overflow: hidden !important;
         }
     }
 </style>
@@ -764,10 +896,22 @@ layui.use(['table', 'form', 'layer'], function(){
                 }
                 return;
             }
-            document.body.classList.add("onauth-has-side");
-            toggleBtn.addEventListener("click", function () {
+            var mask = document.createElement("div");
+            mask.className = "onauth-mobile-mask";
+            document.body.appendChild(mask);
+            function closeMobileNav() {
+                document.body.classList.remove("onauth-mobile-nav-open");
+                toggleBtn.setAttribute("aria-expanded", "false");
+            }
+            function toggleMobileNav() {
+                var willOpen = !document.body.classList.contains("onauth-mobile-nav-open");
                 document.body.classList.toggle("onauth-mobile-nav-open");
-            });
+                toggleBtn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+            }
+            document.body.classList.add("onauth-has-side");
+            toggleBtn.setAttribute("aria-expanded", "false");
+            toggleBtn.addEventListener("click", toggleMobileNav);
+            mask.addEventListener("click", closeMobileNav);
             document.addEventListener("click", function (evt) {
                 if (!document.body.classList.contains("onauth-mobile-nav-open")) {
                     return;
@@ -775,11 +919,18 @@ layui.use(['table', 'form', 'layer'], function(){
                 if (side.contains(evt.target) || toggleBtn.contains(evt.target)) {
                     return;
                 }
-                document.body.classList.remove("onauth-mobile-nav-open");
+                closeMobileNav();
+            });
+            side.addEventListener("click", function (evt) {
+                // Only collapse drawer when a child menu item is clicked.
+                var childMenuLink = evt.target.closest(".layui-nav-child dd a");
+                if (childMenuLink) {
+                    closeMobileNav();
+                }
             });
             window.addEventListener("resize", function () {
                 if (window.innerWidth > 768) {
-                    document.body.classList.remove("onauth-mobile-nav-open");
+                    closeMobileNav();
                 }
             });
         }
@@ -791,6 +942,6 @@ layui.use(['table', 'form', 'layer'], function(){
     })();
 </script>
 <div id="onauth-version-badge" class="onauth-version-badge">{{ APP_VERSION }}</div>
-<button id="onauth-mobile-nav-toggle" class="onauth-mobile-nav-toggle" type="button" aria-label="Toggle navigation">MENU</button>
+<button id="onauth-mobile-nav-toggle" class="onauth-mobile-nav-toggle" type="button" aria-label="Toggle navigation"><span class="onauth-burger" aria-hidden="true"></span></button>
 </body>
 </html>
