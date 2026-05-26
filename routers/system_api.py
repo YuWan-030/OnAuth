@@ -87,6 +87,15 @@ def _is_string_session_key(token_id: str) -> bool:
     return key_type == "string"
 
 
+def _resolve_device_type_from_meta(meta: dict[str, str]) -> str:
+    raw_type = str(meta.get("device_type", "")).strip().lower()
+    if raw_type in {"mobile", "desktop"}:
+        return raw_type
+
+    raw_mobile = str(meta.get("is_mobile", "")).strip().lower()
+    return "mobile" if raw_mobile in {"1", "true", "yes"} else "desktop"
+
+
 @router.get("/system/session", summary="【管理端】获取在线会话列表")
 def list_online_sessions(
         page: int = 1,
@@ -138,12 +147,13 @@ def list_online_sessions(
         ip_value = meta.get("ip", "-")
         browser_value = meta.get("browser", "Unknown")
         os_value = meta.get("os", "Unknown")
+        device_type_value = _resolve_device_type_from_meta(meta)
         location_value = meta.get("location", "未知")
         login_time = meta.get("login_time") or "-"
 
         if ip_filter and ip_filter not in ip_value:
             continue
-        device_label = f"{browser_value} {os_value}".strip().lower()
+        device_label = f"{browser_value} {os_value} {device_type_value}".strip().lower()
         if device_filter and device_filter not in device_label:
             continue
 
@@ -157,6 +167,7 @@ def list_online_sessions(
             "ip": ip_value,
             "browser": browser_value,
             "os": os_value,
+            "device_type": device_type_value,
             "location": location_value,
             "login_time": login_time,
             "ttl": ttl,

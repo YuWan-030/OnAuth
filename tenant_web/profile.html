@@ -54,6 +54,7 @@
         <button class="layui-btn btn-theme" id="btn-apps">管理应用</button>
         <button class="layui-btn layui-btn-primary btn-light" id="btn-creds">管理凭证</button>
         <button class="layui-btn layui-btn-primary btn-light" id="btn-users">邀请成员</button>
+        <button class="layui-btn layui-btn-primary btn-light" id="btn-sessions">在线会话</button>
         <button class="layui-btn layui-btn-primary btn-light" id="btn-copy-code">复制识别码</button>
     </div>
 </div>
@@ -111,6 +112,7 @@ layui.use(['layer'], function(){
     $('#btn-apps').on('click', function(){ window.location.href = '/tenant/apps'; });
     $('#btn-creds').on('click', function(){ window.location.href = '/tenant/credentials'; });
     $('#btn-users').on('click', function(){ window.location.href = '/tenant/users'; });
+    $('#btn-sessions').on('click', function(){ window.location.href = '/tenant/sessions'; });
     $('#btn-copy-code').on('click', function(){
         const code = $('#group-code').text().trim();
         if (!code || code === '-') return layer.msg('暂无租户识别码', {icon: 4});

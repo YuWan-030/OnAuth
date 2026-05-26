@@ -99,6 +99,49 @@ def resolve_ip_location(ip_value: str) -> str:
     return "未知"
 
 
+def _parse_user_agent(user_agent: str) -> tuple[bool, str, str]:
+    ua_lower = (user_agent or "").lower()
+
+    # iPadOS desktop UA often carries "Macintosh" but still includes mobile Safari tokens.
+    is_ios = any(token in ua_lower for token in ("iphone", "ipad", "ipod", "cpu iphone os", "cpu os")) or (
+        "macintosh" in ua_lower and "mobile/" in ua_lower and "safari" in ua_lower
+    )
+    is_android = "android" in ua_lower
+    is_mobile = is_android or is_ios or any(
+        token in ua_lower for token in ("mobile", "phone", "iemobile", "windows phone")
+    )
+
+    if any(token in ua_lower for token in ("edg/", "edga/", "edgios/", " edge/")):
+        browser = "Edge"
+    elif "samsungbrowser" in ua_lower:
+        browser = "Samsung Internet"
+    elif "opr/" in ua_lower or "opera" in ua_lower:
+        browser = "Opera"
+    elif "firefox" in ua_lower or "fxios" in ua_lower:
+        browser = "Firefox"
+    elif "chrome" in ua_lower or "crios" in ua_lower or "chromium" in ua_lower:
+        browser = "Chrome"
+    elif "safari" in ua_lower:
+        browser = "Safari"
+    else:
+        browser = "Unknown"
+
+    if is_android:
+        os_name = "Android"
+    elif is_ios:
+        os_name = "iOS"
+    elif "windows" in ua_lower:
+        os_name = "Windows"
+    elif "mac os" in ua_lower or "macintosh" in ua_lower:
+        os_name = "macOS"
+    elif "linux" in ua_lower:
+        os_name = "Linux"
+    else:
+        os_name = "Unknown"
+
+    return is_mobile, browser, os_name
+
+
 def extract_client_meta(request: Request, include_location: bool = True) -> tuple[str, str, bool, str, str, str]:
     cached_base = getattr(request.state, "_client_meta_base", None)
     if cached_base is None:
@@ -106,32 +149,7 @@ def extract_client_meta(request: Request, include_location: bool = True) -> tupl
         ip_value = str(ip_raw) if ip_raw else "-"
         client_ip = (ip_value.split(",")[0].strip() if ip_value else "-")
         user_agent = request.headers.get("User-Agent") or ""
-        ua_lower = user_agent.lower()
-        is_mobile = any(key in ua_lower for key in ["mobile", "iphone", "android", "ipad"])
-
-        if "edg" in ua_lower or "edge" in ua_lower:
-            browser = "Edge"
-        elif "chrome" in ua_lower and "safari" in ua_lower:
-            browser = "Chrome"
-        elif "safari" in ua_lower:
-            browser = "Safari"
-        elif "firefox" in ua_lower:
-            browser = "Firefox"
-        else:
-            browser = "Unknown"
-
-        if "windows" in ua_lower:
-            os_name = "Windows"
-        elif "mac os" in ua_lower or "macintosh" in ua_lower:
-            os_name = "macOS"
-        elif "android" in ua_lower:
-            os_name = "Android"
-        elif "iphone" in ua_lower or "ipad" in ua_lower or "ios" in ua_lower:
-            os_name = "iOS"
-        elif "linux" in ua_lower:
-            os_name = "Linux"
-        else:
-            os_name = "Unknown"
+        is_mobile, browser, os_name = _parse_user_agent(user_agent)
 
         cached_base = (client_ip, user_agent, is_mobile, browser, os_name)
         request.state._client_meta_base = cached_base

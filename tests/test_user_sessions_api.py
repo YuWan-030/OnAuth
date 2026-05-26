@@ -14,9 +14,9 @@ class _FakeRedis:
     def __init__(self) -> None:
         self.user_sessions = {7: {"sess_current", "sess_other", "sess_third"}}
         self.meta = {
-            "sess_current": {b"ip": b"127.0.0.1", b"browser": b"Chrome", b"os": b"Windows", b"location": b"Local", b"login_time": b"2026-05-24 10:00:00"},
-            "sess_other": {b"ip": b"10.0.0.8", b"browser": b"Firefox", b"os": b"Linux", b"location": b"Office", b"login_time": b"2026-05-23 09:00:00"},
-            "sess_third": {b"ip": b"10.0.0.9", b"browser": b"Chrome", b"os": b"macOS", b"location": b"Lab", b"login_time": b"2026-05-22 09:00:00"},
+            "sess_current": {b"ip": b"127.0.0.1", b"browser": b"Chrome", b"os": b"Windows", b"location": b"Local", b"login_time": b"2026-05-24 10:00:00", b"is_mobile": b"0"},
+            "sess_other": {b"ip": b"10.0.0.8", b"browser": b"Firefox", b"os": b"Linux", b"location": b"Office", b"login_time": b"2026-05-23 09:00:00", b"is_mobile": b"1"},
+            "sess_third": {b"ip": b"10.0.0.9", b"browser": b"Chrome", b"os": b"macOS", b"location": b"Lab", b"login_time": b"2026-05-22 09:00:00", b"is_mobile": b"0"},
         }
         self.deleted: list[str] = []
         self.srem_calls: list[tuple[str, str]] = []
@@ -87,6 +87,21 @@ def test_list_my_sessions_supports_browser_and_device_filters(monkeypatch) -> No
     assert result["status"] == "success"
     assert result["count"] == 1
     assert result["data"][0]["token_id"] == "sess_third"
+
+
+def test_list_my_sessions_exposes_device_type(monkeypatch) -> None:
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(auth_user, "redis_client", fake_redis)
+
+    result = auth_user.list_my_sessions(
+        request=cast(Request, cast(object, _FakeRequest("sess_current"))),
+        current_user=cast(User, cast(object, SimpleNamespace(id=7, username="alice", roles=[]))),
+        db=cast(Session, cast(object, SimpleNamespace())),
+    )
+
+    by_token = {item["token_id"]: item for item in result["data"]}
+    assert by_token["sess_current"]["device_type"] == "desktop"
+    assert by_token["sess_other"]["device_type"] == "mobile"
 
 
 def test_revoke_my_sessions_batch_revokes_only_selected_tokens(monkeypatch) -> None:

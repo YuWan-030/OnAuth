@@ -225,17 +225,33 @@ def list_my_sessions(
     user, current_token = _require_current_user(resolved_credentials, db)
     sessions = []
 
+    def _decode(value, default=""):
+        if value is None:
+            return default
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="ignore")
+        return str(value)
+
+    def _resolve_device_type_from_meta(meta: dict[str, str]) -> str:
+        raw_type = str(meta.get("device_type", "")).strip().lower()
+        if raw_type in {"mobile", "desktop"}:
+            return raw_type
+        raw_mobile = str(meta.get("is_mobile", "")).strip().lower()
+        return "mobile" if raw_mobile in {"1", "true", "yes"} else "desktop"
+
     user_set_key = f"user:active_sessions:{user.id}"
     token_ids = redis_client.smembers(user_set_key) or []
     for token_id in token_ids:
-        token_id = str(token_id)
+        token_id = _decode(token_id)
         meta_key = f"sess_meta:{token_id}"
-        meta = redis_client.hgetall(meta_key) or {}
+        meta_raw = redis_client.hgetall(meta_key) or {}
+        meta = {str(_decode(k)): _decode(v) for k, v in meta_raw.items()}
         sessions.append({
             "token_id": token_id,
             "ip": meta.get("ip", "-"),
             "browser": meta.get("browser", "-"),
             "os": meta.get("os", "-"),
+            "device_type": _resolve_device_type_from_meta(meta),
             "location": meta.get("location", "-"),
             "login_time": meta.get("login_time", "-"),
             "is_current": token_id == current_token,

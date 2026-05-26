@@ -184,12 +184,14 @@ def _extract_client_meta(request: Request, include_location: bool = True) -> tup
 
 def _store_session_meta(session_id: str, client_meta: tuple[str, str, bool, str, str, str]):
     client_ip, user_agent, is_mobile, browser, os_name, location = client_meta
+    device_type = "mobile" if is_mobile else "desktop"
     login_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     meta_key = f"sess_meta:{session_id}"
     redis_client.hset(meta_key, mapping={
         "ip": client_ip,
         "ua": user_agent,
         "is_mobile": "1" if is_mobile else "0",
+        "device_type": device_type,
         "browser": browser,
         "os": os_name,
         "location": location,
@@ -207,6 +209,15 @@ def _enrich_session_location_async(session_id: str, client_ip: str) -> None:
         redis_client.hset(f"sess_meta:{session_id}", mapping={"location": location})
     except Exception:
         return
+
+
+def _resolve_device_type_from_meta(meta: dict[str, str]) -> str:
+    raw_type = str(meta.get("device_type", "")).strip().lower()
+    if raw_type in {"mobile", "desktop"}:
+        return raw_type
+
+    raw_mobile = str(meta.get("is_mobile", "")).strip().lower()
+    return "mobile" if raw_mobile in {"1", "true", "yes"} else "desktop"
 
 
 def _purge_session_artifacts(session_id: str, user_id: int | None = None) -> None:
@@ -909,15 +920,17 @@ def list_my_sessions(
         browser_value = meta.get("browser", "-")
         os_value = meta.get("os", "-")
         location_value = meta.get("location", "-")
+        device_type_value = _resolve_device_type_from_meta(meta)
         if browser_filter and browser_filter not in browser_value.lower():
             continue
-        if device_filter and device_filter not in f"{browser_value} {os_value} {location_value}".lower():
+        if device_filter and device_filter not in f"{browser_value} {os_value} {location_value} {device_type_value}".lower():
             continue
         sessions.append({
             "token_id": token_id,
             "ip": meta.get("ip", "-"),
             "browser": browser_value,
             "os": os_value,
+            "device_type": device_type_value,
             "location": location_value,
             "login_time": meta.get("login_time", "-"),
             "is_current": token_id == current_token,

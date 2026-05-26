@@ -349,7 +349,7 @@
 <!-- 终端环境加工模板 -->
 <script type="text/html" id="tpl-client">
     <div style="display: flex; align-items: center; gap: 8px; height: 100%;">
-        {{# if(d.is_mobile){ }}
+        {{# var _dt = ((d.device_type || '').toLowerCase() || (d.is_mobile ? 'mobile' : 'desktop')); if(_dt === 'mobile'){ }}
             <span class="client-badge badge-mobile">MOBILE</span>
         {{# } else { }}
             <span class="client-badge badge-desktop">DESKTOP</span>
@@ -384,6 +384,15 @@
 layui.use(['table', 'form', 'layer'], function(){
     const table = layui.table, form = layui.form, layer = layui.layer, $ = layui.$;
 
+    function normalizeDeviceType(item) {
+        const directType = String(item?.device_type || '').toLowerCase();
+        if (directType === 'mobile' || directType === 'desktop') return directType;
+        if (item?.is_mobile === true || item?.is_mobile === 1 || item?.is_mobile === '1' || item?.is_mobile === 'true') {
+            return 'mobile';
+        }
+        return 'desktop';
+    }
+
     // 🔗 会话网格联动拉取：对接后端的 /system/session 路由
     table.render({
         elem: '#session-table',
@@ -394,7 +403,10 @@ layui.use(['table', 'form', 'layer'], function(){
         parseData: res => ({
             code: res.code === 200 ? 0 : (res.code || 500),
             count: res.count || res.total || 0,
-            data: res.data
+            data: (res.data || []).map(function(item){
+                item.device_type = normalizeDeviceType(item);
+                return item;
+            })
         }),
         cols: [[
             {type: 'checkbox', fixed: 'left'},
@@ -411,7 +423,7 @@ layui.use(['table', 'form', 'layer'], function(){
         done: function(res) {
             if (res.data) {
                 let total = res.data.length || 0;
-                let mobile = res.data.filter(item => item.is_mobile).length;
+                let mobile = res.data.filter(item => normalizeDeviceType(item) === 'mobile').length;
                 let desktop = total - mobile;
 
                 $('#stat-total').text(total);

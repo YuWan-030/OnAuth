@@ -44,11 +44,13 @@ def _extract_client_meta(request: Request, include_location: bool = True) -> tup
 
 def _store_session_meta(session_id: str, client_meta: tuple[str, str, bool, str, str, str]) -> None:
     client_ip, user_agent, is_mobile, browser, os_name, location = client_meta
+    device_type = "mobile" if is_mobile else "desktop"
     meta_key = f"sess_meta:{session_id}"
     redis_client.hset(meta_key, mapping={
         "ip": client_ip,
         "ua": user_agent,
         "is_mobile": "1" if is_mobile else "0",
+        "device_type": device_type,
         "browser": browser,
         "os": os_name,
         "location": location,
