@@ -280,28 +280,77 @@
             overflow-y: auto !important;
             -webkit-text-size-adjust: 100%;
         }
-        .onauth-version-badge {
-            right: 8px;
-            bottom: 8px;
-            font-size: 11px;
+        body:not(.onauth-shell) {
+            padding: 10px !important;
+        }
+        .layui-fluid,
+        .layui-container {
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+        .layui-card {
+            margin-bottom: 12px;
+            border-radius: 12px;
+        }
+        .layui-card-header {
+            min-height: 40px;
+            height: auto !important;
+            line-height: 1.4 !important;
+            padding: 10px 12px !important;
+        }
+        .layui-card-body {
+            padding: 12px !important;
+        }
+        .layui-btn {
+            height: 34px;
+            line-height: 34px;
+            padding: 0 10px;
+            font-size: 13px;
+        }
+        .layui-btn + .layui-btn {
+            margin-left: 6px;
+        }
+        .layui-inline {
+            display: block !important;
+            margin-right: 0 !important;
+            margin-bottom: 8px;
+        }
+        .layui-input-inline,
+        .layui-form-select,
+        .layui-textarea {
+            width: 100% !important;
         }
         .layui-layer {
             max-width: 94vw !important;
+            max-height: 90vh !important;
             left: 3vw !important;
         }
-        .layui-table-view {
-            overflow-x: auto;
+        .layui-layer-page .layui-layer-content {
+            overflow: auto !important;
         }
-        .layui-form-label {
-            width: 100% !important;
-            text-align: left !important;
-            padding: 0 0 6px !important;
+        .layui-table-view,
+        .layui-table-box,
+        .layui-table-body,
+        .layui-table-main {
+            overflow-x: auto !important;
         }
-        .layui-input-block,
-        .layui-input-inline,
-        .layui-form-mid {
-            margin-left: 0 !important;
-            width: 100% !important;
+        /* Mobile: disable duplicated fixed columns to avoid data being covered */
+        .layui-table-fixed,
+        .layui-table-fixed-l,
+        .layui-table-fixed-r,
+        .layui-table-patch {
+            display: none !important;
+        }
+        .layui-table-view .layui-table-box {
+            overflow-x: auto !important;
+        }
+        .layui-table-cell {
+            height: auto !important;
+            line-height: 1.5 !important;
+        }
+        .layui-table-cell .layui-btn {
+            margin-top: 4px;
+            margin-bottom: 4px;
         }
         .login-container,
         .reg-container,
@@ -356,26 +405,39 @@
         body.onauth-shell .tenant-user-area .layui-nav-item {
             line-height: 32px !important;
         }
+        body.onauth-shell .user-info-area,
+        body.onauth-shell .tenant-user-area {
+            margin-right: 8px;
+        }
         body.onauth-shell .user-info-area .layui-nav-item > a,
         body.onauth-shell .tenant-user-area .layui-nav-item > a {
-            width: 36px !important;
-            min-width: 36px !important;
-            max-width: 36px !important;
-            padding: 0 16px 0 4px !important;
+            width: 72px !important;
+            min-width: 72px !important;
+            max-width: 72px !important;
+            padding: 0 18px 0 6px !important;
             font-size: 12px !important;
-            justify-content: center !important;
+            justify-content: flex-start !important;
         }
         body.onauth-shell .user-info-area .layui-nav-item > a span,
         body.onauth-shell .tenant-user-area .layui-nav-item > a span {
-            display: none !important;
+            display: inline-block !important;
+            max-width: 2.6em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         body.onauth-shell .user-info-area .layui-nav-item > a i,
         body.onauth-shell .tenant-user-area .layui-nav-item > a i {
-            margin-right: 0 !important;
+            margin-right: 4px !important;
         }
         body.onauth-shell .user-info-area .layui-nav .layui-nav-more,
         body.onauth-shell .tenant-user-area .layui-nav .layui-nav-more {
             right: 2px !important;
+        }
+        body.onauth-shell .user-info-area .layui-nav-child,
+        body.onauth-shell .tenant-user-area .layui-nav-child {
+            left: auto !important;
+            right: 0 !important;
         }
         body.onauth-shell .side {
             top: 52px !important;
@@ -420,6 +482,18 @@
             overflow-x: auto;
             overflow-y: hidden;
             height: 36px !important;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-x;
+            scrollbar-width: none;
+            padding-right: 0 !important;
+        }
+        body.onauth-shell .ruoyi-tab-container .layui-tab .layui-tab-bar,
+        body.onauth-shell .layui-tab .layui-tab-bar {
+            display: none !important;
+        }
+        body.onauth-shell .ruoyi-tab-container .layui-tab-title::-webkit-scrollbar,
+        body.onauth-shell .layui-tab-title::-webkit-scrollbar {
+            display: none;
         }
         body.onauth-shell .ruoyi-tab-container .layui-tab-title li,
         body.onauth-shell .layui-tab-title li {
