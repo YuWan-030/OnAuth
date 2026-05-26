@@ -109,6 +109,64 @@ def _clear_user_rbac_cache(user_id: int) -> None:
             redis_client.delete(f"rbac:perms:{session_id}")
 
 
+def _decode_redis_text(value, default: str = "") -> str:
+    if value is None:
+        return default
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore")
+    return str(value)
+
+
+def _count_active_user_sessions() -> int:
+    total = 0
+    seen_tokens: set[str] = set()
+
+    try:
+        user_index_keys = redis_client.scan_iter("user:active_sessions:*")
+    except Exception:
+        return 0
+
+    for raw_key in user_index_keys:
+        user_set_key = _decode_redis_text(raw_key).strip()
+        if not user_set_key:
+            continue
+        try:
+            token_ids = redis_client.smembers(user_set_key) or []
+        except Exception:
+            continue
+
+        for raw_token_id in token_ids:
+            token_id = _decode_redis_text(raw_token_id).strip()
+            if not token_id or not token_id.startswith("sess_"):
+                continue
+            if token_id in seen_tokens:
+                continue
+
+            try:
+                key_type = _decode_redis_text(redis_client.type(token_id)).strip().lower()
+            except Exception:
+                continue
+            if key_type != "string":
+                continue
+
+            try:
+                raw_user_id = redis_client.get(token_id)
+            except Exception:
+                continue
+            if not raw_user_id:
+                continue
+
+            try:
+                int(_decode_redis_text(raw_user_id).strip())
+            except ValueError:
+                continue
+
+            seen_tokens.add(token_id)
+            total += 1
+
+    return total
+
+
 def _ensure_tenant_admin_role_active(db: Session, user: User | None) -> bool:
     if not user:
         return False
@@ -627,10 +685,7 @@ def get_dashboard_stats(
         or_(AppDevice.expires_at == None, AppDevice.expires_at > now_time)
     ).scalar() or 0
 
-    try:
-        active_oauth_sessions = len(redis_client.keys("sess_*"))
-    except Exception:
-        active_oauth_sessions = 0
+    active_oauth_sessions = _count_active_user_sessions()
 
     # 4. 近 7 日双栖激活与授权爆发趋势
     seven_days_ago = now_time.date() - datetime.timedelta(days=6)

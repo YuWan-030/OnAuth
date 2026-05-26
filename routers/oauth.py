@@ -7,7 +7,7 @@ import hashlib
 import re
 import jwt
 import redis
-from fastapi import APIRouter, Depends, HTTPException, Query, Form, Cookie, Response, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, Query, Form, Cookie, Response, Request, Header, BackgroundTasks
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from utils.crypto import verify_password, create_access_token, create_refresh_to
 from utils.captcha import issue_captcha, verify_captcha
 from utils.request_utils import (
     extract_client_meta,
+    resolve_ip_location,
     record_risk_event,
     is_global_melt_enabled,
     get_login_fail_policy,
@@ -37,8 +38,33 @@ def _resolve_ip_location(ip_value: str) -> str:
     return resolve_ip_location(ip_value)
 
 
-def _extract_client_meta(request: Request) -> tuple[str, str, bool, str, str, str]:
-    return extract_client_meta(request)
+def _extract_client_meta(request: Request, include_location: bool = True) -> tuple[str, str, bool, str, str, str]:
+    return extract_client_meta(request, include_location=include_location)
+
+
+def _store_session_meta(session_id: str, client_meta: tuple[str, str, bool, str, str, str]) -> None:
+    client_ip, user_agent, is_mobile, browser, os_name, location = client_meta
+    meta_key = f"sess_meta:{session_id}"
+    redis_client.hset(meta_key, mapping={
+        "ip": client_ip,
+        "ua": user_agent,
+        "is_mobile": "1" if is_mobile else "0",
+        "browser": browser,
+        "os": os_name,
+        "location": location,
+        "login_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    redis_client.expire(meta_key, 86400)
+
+
+def _enrich_session_location_async(session_id: str, client_ip: str) -> None:
+    if not session_id or not client_ip:
+        return
+    location = resolve_ip_location(client_ip)
+    try:
+        redis_client.hset(f"sess_meta:{session_id}", mapping={"location": location})
+    except Exception:
+        return
 
 
 def _record_risk_event(db: Session, request: Request, risk_level: str, action: str = "BLOCK") -> None:
@@ -357,6 +383,7 @@ def oauth_authorize(
 def login_submit(
         response: Response,
         request: Request,
+        background_tasks: BackgroundTasks,
         username: str = Form(...),
         password: str = Form(...),
         client_id: str = Form(...),
@@ -375,7 +402,8 @@ def login_submit(
         _record_risk_event(db, request, risk_level="high", action="BLOCK")
         raise HTTPException(status_code=503, detail="全局熔断已开启，登录入口临时关闭，请稍后重试")
 
-    client_ip, _, _, _, _, _ = _extract_client_meta(request)
+    client_meta = _extract_client_meta(request, include_location=False)
+    client_ip, user_agent, is_mobile, browser, os_name, _ = client_meta
     fail_count = _get_login_fail_count(username, client_ip)
     threshold, window_seconds = _get_login_fail_policy(db, request, username, fail_count)
     if fail_count >= threshold:
@@ -407,18 +435,8 @@ def login_submit(
     redis_client.sadd(user_set_key, new_session_id)
     redis_client.expire(user_set_key, 86400)  # 保持过期时间一致
 
-    client_ip, user_agent, is_mobile, browser, os_name, location = _extract_client_meta(request)
-    meta_key = f"sess_meta:{new_session_id}"
-    redis_client.hset(meta_key, mapping={
-        "ip": client_ip,
-        "ua": user_agent,
-        "is_mobile": "1" if is_mobile else "0",
-        "browser": browser,
-        "os": os_name,
-        "location": location,
-        "login_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    })
-    redis_client.expire(meta_key, 86400)
+    _store_session_meta(new_session_id, client_meta)
+    background_tasks.add_task(_enrich_session_location_async, new_session_id, client_ip)
 
 
     # 3. 🎯 组装目标重定向 URL
@@ -440,8 +458,12 @@ def login_submit(
         payload={
             "user_id": user.id,
             "username": user.username,
-            "ip_address": request.client.host,  # 视你如何抓取 IP 而定
-            "login_at": int(time.time())
+            "ip_address": client_ip,
+            "login_at": int(time.time()),
+            "browser": browser,
+            "os": os_name,
+            "is_mobile": bool(is_mobile),
+            "user_agent": user_agent,
         },
         db=db
     )

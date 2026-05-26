@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Form, Response, Cookie, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Form, Response, Cookie, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -17,6 +17,7 @@ from routers.webhook import dispatch_webhook_event
 from utils.captcha import verify_captcha
 from utils.request_utils import (
     extract_client_meta,
+    resolve_ip_location,
     record_risk_event,
     is_global_melt_enabled,
     get_login_fail_policy,
@@ -177,12 +178,12 @@ def _ensure_role(db: Session, role_name: str, description: str, default_perm_nam
         return 0
 
 
-def _extract_client_meta(request: Request) -> tuple[str, str, bool, str, str, str]:
-    return extract_client_meta(request)
+def _extract_client_meta(request: Request, include_location: bool = True) -> tuple[str, str, bool, str, str, str]:
+    return extract_client_meta(request, include_location=include_location)
 
 
-def _store_session_meta(session_id: str, request: Request):
-    client_ip, user_agent, is_mobile, browser, os_name, location = _extract_client_meta(request)
+def _store_session_meta(session_id: str, client_meta: tuple[str, str, bool, str, str, str]):
+    client_ip, user_agent, is_mobile, browser, os_name, location = client_meta
     login_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     meta_key = f"sess_meta:{session_id}"
     redis_client.hset(meta_key, mapping={
@@ -195,6 +196,17 @@ def _store_session_meta(session_id: str, request: Request):
         "login_time": login_time
     })
     redis_client.expire(meta_key, 86400)
+
+
+def _enrich_session_location_async(session_id: str, client_ip: str) -> None:
+    # Background enrich: avoid blocking login response on external geo lookup.
+    if not session_id or not client_ip:
+        return
+    location = resolve_ip_location(client_ip)
+    try:
+        redis_client.hset(f"sess_meta:{session_id}", mapping={"location": location})
+    except Exception:
+        return
 
 
 def _purge_session_artifacts(session_id: str, user_id: int | None = None) -> None:
@@ -498,21 +510,22 @@ def register_tenant_admin(
     }
 
 
-# --- 2. 管理中台核心：用户/管理员登录接口 (精简版单轨 Session 架构) ---
+# --- 2. 管理中台核心：用户/管理员登录接口 ---
 # 支持多路由别名绑定，共享同一个底层业务闭环
 @router.post("/admin/token", summary="【核心】管理员/用户登录并灌注统一会话Cookie")
 @router.post("/auth/login", summary="【兼容】用户登录标准接口")
 def login_user(
         payload: UserLoginSchema,
-        request: Request,  # 🌟 核心修正：用于安全抓取真实的客户端公网 IP
-        response: Response,  # 🌟 用于下发单轨 HttpOnly Cookie
+        request: Request,
+        background_tasks: BackgroundTasks,
+        response: Response,
         db: Session = Depends(get_db)
 ):
     """
     🔒 极简单轨 Session 架构：
     核验用户名密码成功后，向 Redis 灌入随机 Session 令牌。
     通过全局唯一的 sso_session_id Cookie 注入，配合响应体回传，
-    让管理后台前端、Flet 客户端与 OAuth 授权大厅共享同一套生命周期。
+    让管理后台前端、客户端与 OAuth 授权大厅共享同一套生命周期。
     """
     if _is_global_melt_enabled(db):
         _record_risk_event(db, request, risk_level="high", action="BLOCK")
@@ -521,7 +534,8 @@ def login_user(
             detail="全局熔断已开启，登录入口临时关闭，请稍后重试"
         )
 
-    client_ip, _, _, _, _, _ = _extract_client_meta(request)
+    client_meta = _extract_client_meta(request, include_location=False)
+    client_ip, user_agent, is_mobile, browser, os_name, _ = client_meta
     if _is_account_locked(payload.username):
         _record_risk_event(db, request, risk_level="high", action="LOCK")
         return JSONResponse(status_code=status.HTTP_423_LOCKED, content=_account_locked_response())
@@ -556,20 +570,17 @@ def login_user(
     _clear_login_fail(payload.username, client_ip)
     _clear_account_lock(payload.username)
 
-    # 1. ⚡ 生成标准的分布式 Session ID（全局唯一标识）
     new_session_id = "sess_" + secrets.token_hex(12)
 
-    # 2. 🗄️ 将状态托管至 Redis 中控（有效期 1 天 = 86400 秒）
     redis_client.setex(new_session_id, 86400, str(user.id))
 
-    # 🌟 顺手做个反向索引：把这个 session_id 扔进该用户的活跃会话集合里
     user_set_key = f"user:active_sessions:{user.id}"
     redis_client.sadd(user_set_key, new_session_id)
-    redis_client.expire(user_set_key, 86400)  # 保持过期时间一致
+    redis_client.expire(user_set_key, 86400)
 
-    _store_session_meta(new_session_id, request)
+    _store_session_meta(new_session_id, client_meta)
+    background_tasks.add_task(_enrich_session_location_async, new_session_id, client_ip)
 
-    # 3. 🔑 穿透 RBAC 模型，提取真实的多维权限集合
     user_scopes = []
     for role in user.roles:
         if hasattr(role, 'permissions'):
@@ -579,37 +590,34 @@ def login_user(
 
     final_scopes_list = list(set(user_scopes)) if user_scopes else ["read"]
 
-    # 4. 🚀 【大一统核心】向浏览器强推全网唯一的 sso_session_id Cookie
     response.set_cookie(
         key="sso_session_id",
         value=new_session_id,
-        httponly=True,  # 🔒 严格防范 XSS 脚本劫持
-        path="/",  # 🌍 跨路由全域共享的生命线
-        secure=False,  # 🎯 本地纯 HTTP 调试环境设为 False
-        samesite="lax"  # 🎯 保障 Flet 客户端拉起跨域重定向时可以安全携带
+        httponly=True,  #
+        path="/",
+        secure=False,
+        samesite="lax"
     )
-
-    # 5. ⚡ 并网异步下发 Webhook 事件（在安全状态落盘后触发）
-    # 防范 Nginx / CDN 代理导致 IP 变成 127.0.0.1，优先解析代理链路中的真实公网 IP
-    client_ip = request.headers.get("X-Forwarded-For", request.client.host).split(",")[0].strip()
 
     dispatch_webhook_event(
         event_type="auth.login",
         payload={
             "user_id": user.id,
             "username": user.username,
-            "ip_address": client_ip,  # 👈 穿透代理后的真实 IP，提高事件审计含金量
+            "ip_address": client_ip,
             "login_at": int(time.time()),
-            "entry_point": request.url.path  # 💡 额外增补：告诉订阅方是通过 /admin/token 还是 /auth/login 登入的
+            "entry_point": request.url.path,
+            "browser": browser,
+            "os": os_name,
+            "is_mobile": bool(is_mobile),
+            "user_agent": user_agent,
         },
         db=db
     )
 
-    # 6. 🏁 【全量闭环】返回精简后的 JSON 响应体
     return {
         "status": "success",
         "message": "中台身份核验通过，单轨分布式 Session 会话已成功建立！",
-        "access_token": new_session_id,  # 🛡️ 兼容老代码的垫片
         "token_type": "bearer",
         "sso_session_id": new_session_id,
         "username": user.username,
