@@ -268,34 +268,49 @@ layui.use(['layer'], function(){
 <script>
     /* onauth-global-ui */
     (function () {
-        var versionText = "{{ APP_VERSION }}";
-        var badge = document.getElementById("onauth-version-badge");
-        if (badge) {
-            badge.textContent = versionText;
-        }
-        var side = document.querySelector(".side");
-        var toggleBtn = document.getElementById("onauth-mobile-nav-toggle");
-        if (!side || !toggleBtn) {
-            return;
-        }
-        document.body.classList.add("onauth-has-side");
-        toggleBtn.addEventListener("click", function () {
-            document.body.classList.toggle("onauth-mobile-nav-open");
-        });
-        document.addEventListener("click", function (evt) {
-            if (!document.body.classList.contains("onauth-mobile-nav-open")) {
+        function initOnAuthGlobalUi() {
+            var versionText = "{{ APP_VERSION }}";
+            var badge = document.getElementById("onauth-version-badge");
+            var toggleBtn = document.getElementById("onauth-mobile-nav-toggle");
+            if (badge) {
+                badge.textContent = versionText;
+            }
+            // Requirement: hide version icon on the three /index entries.
+            var path = (window.location.pathname || "").replace(/\/+$/, "") || "/";
+            if (path === "/index" && badge) {
+                badge.style.display = "none";
+            }
+            var side = document.querySelector(".side");
+            if (!side || !toggleBtn) {
+                if (toggleBtn) {
+                    toggleBtn.style.display = "none";
+                }
                 return;
             }
-            if (side.contains(evt.target) || toggleBtn.contains(evt.target)) {
-                return;
-            }
-            document.body.classList.remove("onauth-mobile-nav-open");
-        });
-        window.addEventListener("resize", function () {
-            if (window.innerWidth > 768) {
+            document.body.classList.add("onauth-has-side");
+            toggleBtn.addEventListener("click", function () {
+                document.body.classList.toggle("onauth-mobile-nav-open");
+            });
+            document.addEventListener("click", function (evt) {
+                if (!document.body.classList.contains("onauth-mobile-nav-open")) {
+                    return;
+                }
+                if (side.contains(evt.target) || toggleBtn.contains(evt.target)) {
+                    return;
+                }
                 document.body.classList.remove("onauth-mobile-nav-open");
-            }
-        });
+            });
+            window.addEventListener("resize", function () {
+                if (window.innerWidth > 768) {
+                    document.body.classList.remove("onauth-mobile-nav-open");
+                }
+            });
+        }
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", initOnAuthGlobalUi);
+        } else {
+            initOnAuthGlobalUi();
+        }
     })();
 </script>
 <div id="onauth-version-badge" class="onauth-version-badge">{{ APP_VERSION }}</div>
