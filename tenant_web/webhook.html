@@ -102,7 +102,7 @@
 
 <script type="text/html" id="eventTpl">
 {% raw %}
-{{# layui.each(d.events, function(_, item){ }}<span class="tag">{{ item }}</span>{{# }); }}
+{{# layui.each(d.events, function(_, item){ }}<span class="tag">{{ window.webhookEventLabel(item) }}</span>{{# }); }}
 {% endraw %}
 </script>
 
@@ -116,6 +116,7 @@
 {% raw %}
 <div style="display:flex;gap:6px;align-items:center;justify-content:center;">
     <button class="layui-btn layui-btn-xs layui-btn-primary" lay-event="edit">编辑</button>
+    <button class="layui-btn layui-btn-xs" style="background:#0f766e;color:#fff;" lay-event="template">模板</button>
     <button class="layui-btn layui-btn-xs" style="background:#7c3aed;color:#fff;" lay-event="test">测试</button>
     <button class="layui-btn layui-btn-xs layui-btn-danger" lay-event="del">删除</button>
 </div>
@@ -133,6 +134,7 @@
 layui.use(['table','form','layer','util'], function(){
     const table = layui.table, form = layui.form, layer = layui.layer, $ = layui.$;
     const util = layui.util;
+    let WEBHOOK_EVENT_LABELS = {};
 
     const TEMPLATE_PRESETS = {
         wecom: {
@@ -161,12 +163,40 @@ layui.use(['table','form','layer','util'], function(){
         return value || 'onauth_default';
     }
 
-    function bindTemplateSelector(layero) {
+    function webhookEventLabel(eventType) {
+        const raw = (eventType || '').toString();
+        const cn = WEBHOOK_EVENT_LABELS[raw];
+        return cn ? `${cn} (${raw})` : raw;
+    }
+    window.webhookEventLabel = webhookEventLabel;
+
+    function loadWebhookMeta(done) {
+        $.ajax({
+            url: '/api/v1/webhook/template.options',
+            type: 'GET',
+            dataType: 'json',
+            success: function(res) {
+                if (res && res.status === 'success' && res.event_labels && typeof res.event_labels === 'object') {
+                    WEBHOOK_EVENT_LABELS = res.event_labels;
+                }
+            },
+            complete: function() {
+                if (typeof done === 'function') done();
+            }
+        });
+    }
+
+    function bindTemplateSelector(layero, options) {
+        const templateOnly = !!(options && options.templateOnly);
         const $select = layero.find('.webhook-template-select');
         const $customWrap = layero.find('.webhook-custom-template-wrap');
+        const $customTextarea = layero.find('textarea[name="custom_template"]');
         function refreshVisibility() {
             const isCustom = ($select.val() || '') === 'custom_json';
-            $customWrap.toggleClass('template-hidden', !isCustom);
+            $customWrap.toggleClass('template-hidden', !(isCustom || templateOnly));
+            if ((isCustom || templateOnly) && !$customTextarea.val().trim()) {
+                $customTextarea.val(JSON.stringify(TEMPLATE_PRESETS.wecom, null, 2));
+            }
         }
         $select.on('change', refreshVisibility);
         layero.find('.btn-template-preset').on('click', function(){
@@ -186,7 +216,7 @@ layui.use(['table','form','layer','util'], function(){
         const url = layero.find('input[name="url"]').val().trim();
         const secret = layero.find('input[name="secret"]').val().trim();
         const templateType = normalizeTemplateType(layero.find('select[name="template_type"]').val());
-        const customTemplate = layero.find('textarea[name="custom_template"]').val().trim();
+        let customTemplate = layero.find('textarea[name="custom_template"]').val().trim();
         const events = [];
         layero.find('.event-grid input[type="checkbox"]:checked').each(function(){ events.push($(this).val()); });
 
@@ -195,8 +225,8 @@ layui.use(['table','form','layer','util'], function(){
             return null;
         }
         if (templateType === 'custom_json' && !customTemplate) {
-            layer.msg('使用自定义模板时，custom_template 不能为空', {icon: 2});
-            return null;
+            customTemplate = JSON.stringify(TEMPLATE_PRESETS.wecom, null, 2);
+            layero.find('textarea[name="custom_template"]').val(customTemplate);
         }
 
         return {
@@ -209,17 +239,39 @@ layui.use(['table','form','layer','util'], function(){
         };
     }
 
-    function openWebhookDialog(mode, rowData){
+    function collectTemplateOnlyPayload(layero, rowData) {
+        const templateType = normalizeTemplateType(layero.find('select[name="template_type"]').val());
+        let customTemplate = layero.find('textarea[name="custom_template"]').val().trim();
+        if (templateType === 'custom_json' && !customTemplate) {
+            customTemplate = JSON.stringify(TEMPLATE_PRESETS.wecom, null, 2);
+            layero.find('textarea[name="custom_template"]').val(customTemplate);
+        }
+        return {
+            id: rowData.id,
+            template_type: templateType,
+            custom_template: templateType === 'custom_json' ? customTemplate : null
+        };
+    }
+
+    function openWebhookDialog(mode, rowData, options){
         const isEdit = mode === 'edit';
+        const focusCustomTemplate = !!(options && options.focusCustomTemplate);
+        const templateOnly = !!(options && options.templateOnly);
         layer.open({
             type: 1,
-            title: isEdit ? `编辑 Webhook #${rowData.id}` : '新建 Webhook',
-            area: ['640px','700px'],
+            title: templateOnly ? `编辑模板 #${rowData.id}` : (isEdit ? `编辑 Webhook #${rowData.id}` : '新建 Webhook'),
+            area: templateOnly ? ['760px','700px'] : ['640px','700px'],
             content: $('#webhookTpl').html(),
-            btn: [isEdit ? '保存' : '创建', '取消'],
+            btn: [templateOnly ? '保存模板' : (isEdit ? '保存' : '创建'), '取消'],
             success: function(layero){
                 form.render();
-                bindTemplateSelector(layero);
+                bindTemplateSelector(layero, {templateOnly: templateOnly});
+                if (templateOnly) {
+                    layero.find('input[name="name"]').closest('.layui-form-item').hide();
+                    layero.find('input[name="url"]').closest('.layui-form-item').hide();
+                    layero.find('input[name="secret"]').closest('.layui-form-item').hide();
+                    layero.find('.event-grid').closest('.layui-form-item').hide();
+                }
                 if (isEdit && rowData) {
                     layero.find('input[name="name"]').val(rowData.name || '');
                     layero.find('input[name="url"]').val(rowData.url || '');
@@ -231,14 +283,35 @@ layui.use(['table','form','layer','util'], function(){
                     layero.find('select[name="template_type"]').val(normalizeTemplateType(rowData.template_type));
                     layero.find('textarea[name="custom_template"]').val(rowData.custom_template || '');
                     form.render();
-                    layero.find('.webhook-template-select').trigger('change');
+                }
+                if (focusCustomTemplate) {
+                    const $select = layero.find('select[name="template_type"]');
+                    if (normalizeTemplateType($select.val()) !== 'custom_json') {
+                        $select.val('custom_json');
+                    }
+                    const $textarea = layero.find('textarea[name="custom_template"]');
+                    if (!$textarea.val().trim()) {
+                        $textarea.val(JSON.stringify(TEMPLATE_PRESETS.wecom, null, 2));
+                    }
+                    form.render('select');
+                }
+                layero.find('.webhook-template-select').trigger('change');
+                if (templateOnly) {
+                    layero.find('textarea[name="custom_template"]').css('min-height', '360px');
+                }
+                if (focusCustomTemplate) {
+                    setTimeout(function(){
+                        layero.find('textarea[name="custom_template"]').trigger('focus');
+                    }, 0);
                 }
             },
             yes: function(index, layero){
-                const payload = collectDialogPayload(layero);
+                const payload = templateOnly ? collectTemplateOnlyPayload(layero, rowData) : collectDialogPayload(layero);
                 if (!payload) return false;
-                payload.is_active = isEdit ? !!rowData.is_active : true;
-                if (isEdit) payload.id = rowData.id;
+                if (!templateOnly) {
+                    payload.is_active = isEdit ? !!rowData.is_active : true;
+                    if (isEdit) payload.id = rowData.id;
+                }
 
                 $.ajax({
                     url: isEdit ? '/api/v1/webhook/config.update' : '/api/v1/webhook/config.create',
@@ -316,7 +389,7 @@ layui.use(['table','form','layer','util'], function(){
                 {field:'template_type', title:'模板', width:140, templet:'#templateTpl'},
                 {field:'is_active', title:'状态', width:120, templet:'#statusTpl'},
                 {field:'creator_id', title:'创建者', width:120},
-                {fixed:'right', title:'操作', width:210, toolbar:'#toolTpl'}
+                {fixed:'right', title:'操作', width:270, toolbar:'#toolTpl'}
             ]],
             done: function(res){
                 const rows = Array.isArray(res.data) ? res.data : [];
@@ -381,6 +454,10 @@ layui.use(['table','form','layer','util'], function(){
             openWebhookDialog('edit', obj.data);
             return;
         }
+        if (obj.event === 'template') {
+            openWebhookDialog('edit', obj.data, {focusCustomTemplate: true, templateOnly: true});
+            return;
+        }
         if (obj.event === 'test') {
             triggerTestPush(obj.data);
             return;
@@ -409,8 +486,10 @@ layui.use(['table','form','layer','util'], function(){
     $('#btn-refresh-logs').on('click', function(){ loadLogTable(); });
     $('#logWebhookFilter').on('change', function(){ loadLogTable(); });
 
-    loadTable();
-    loadLogTable();
+    loadWebhookMeta(function(){
+        loadTable();
+        loadLogTable();
+    });
 });
 </script>
 </body>

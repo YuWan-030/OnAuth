@@ -31,6 +31,21 @@ ALLOWED_EVENT_TYPES = {
     "tenant_credential.create",
 }
 
+EVENT_TYPE_LABELS = {
+    "auth.login": "用户登录",
+    "user.create": "用户创建",
+    "user.delete": "用户删除",
+    "role.update": "角色更新",
+    "tenant_admin.create": "租户管理员创建",
+    "tenant_user.invite": "租户用户邀请",
+    "tenant_space.apply": "租户空间申请",
+    "tenant_space.toggle": "租户空间启停",
+    "tenant_space.review": "租户空间审核",
+    "tenant_space.assign": "租户空间分配",
+    "tenant_app.create": "租户应用创建",
+    "tenant_credential.create": "租户凭证签发",
+}
+
 WEBHOOK_MAX_RETRIES = max(0, int(os.getenv("WEBHOOK_MAX_RETRIES", "2")))
 WEBHOOK_RETRY_BACKOFF_SECONDS = max(1, int(os.getenv("WEBHOOK_RETRY_BACKOFF_SECONDS", "1")))
 
@@ -40,6 +55,26 @@ WEBHOOK_TEMPLATE_WECOM_TEMPLATE_CARD = "wecom_template_card"
 WEBHOOK_TEMPLATE_DINGTALK_MARKDOWN = "dingtalk_markdown"
 WEBHOOK_TEMPLATE_FEISHU_TEXT = "feishu_text"
 WEBHOOK_TEMPLATE_CUSTOM_JSON = "custom_json"
+
+DEFAULT_CUSTOM_JSON_TEMPLATE = {
+    "msgtype": "markdown",
+    "markdown": {
+        "content": "**OnAuth 事件通知**\\n> 事件: `{event_display}`\\n> 时间: {sent_at}\\n> 明细:\\n{payload_lines}"
+    }
+}
+
+PAYLOAD_FIELD_LABELS = {
+    "user_id": "用户ID",
+    "username": "用户名称",
+    "ip_address": "IP",
+    "ip": "IP",
+    "browser": "浏览器",
+    "os": "操作系统",
+    "device_type": "终端类型",
+    "entry_point": "入口",
+    "login_at": "登录时间",
+    "user_agent": "UA",
+}
 
 ALLOWED_TEMPLATE_TYPES = {
     WEBHOOK_TEMPLATE_ONAUTH_DEFAULT,
@@ -91,7 +126,7 @@ def _validate_custom_template(template_type: str, custom_template: Optional[str]
     raw = (custom_template or "").strip()
     if template_type == WEBHOOK_TEMPLATE_CUSTOM_JSON:
         if not raw:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="custom_json 模板必须提供 custom_template")
+            return json.dumps(DEFAULT_CUSTOM_JSON_TEMPLATE, ensure_ascii=False)
         try:
             parsed = json.loads(raw)
         except Exception as exc:
@@ -137,13 +172,23 @@ def _build_subscription_payload(events: list[str], template_type: str, custom_te
     )
 
 
+def _event_display_name(event_type: str) -> str:
+    return EVENT_TYPE_LABELS.get(event_type, event_type)
+
+
 def _event_template_context(event_payload: dict[str, Any]) -> dict[str, str]:
     payload = event_payload.get("payload") if isinstance(event_payload.get("payload"), dict) else {}
+    event_type = str(event_payload.get("event_type") or "")
+    event_name = _event_display_name(event_type)
+    payload_lines = format_payload_to_human_lines(payload)
     context = {
         "event_id": str(event_payload.get("event_id") or ""),
-        "event_type": str(event_payload.get("event_type") or ""),
+        "event_type": event_type,
+        "event_name": event_name,
+        "event_display": f"{event_name} ({event_type})" if event_type else event_name,
         "sent_at": str(event_payload.get("sent_at") or ""),
         "payload_json": json.dumps(payload, ensure_ascii=False),
+        "payload_lines": payload_lines,
     }
     for key, value in payload.items():
         context[f"payload_{key}"] = "" if value is None else str(value)
@@ -165,6 +210,29 @@ def _render_template_value(raw: Any, context: dict[str, str]) -> Any:
     return raw
 
 
+def _format_payload_markdown_lines(payload_obj: dict[str, Any]) -> str:
+    text = format_payload_to_human_lines(payload_obj)
+    if not text:
+        return "- (empty)"
+    return "\n".join(f"- {line}" for line in text.split("\n") if line)
+
+
+def format_payload_to_human_lines(payload_obj: dict[str, Any]) -> str:
+    """把 payload JSON 转成多行可读文本（中文字段名优先）。"""
+    if not isinstance(payload_obj, dict):
+        return ""
+
+    lines: list[str] = []
+    for key, value in payload_obj.items():
+        display_key = PAYLOAD_FIELD_LABELS.get(str(key), str(key))
+        if isinstance(value, (dict, list)):
+            text_value = json.dumps(value, ensure_ascii=False)
+        else:
+            text_value = "" if value is None else str(value)
+        lines.append(f"{display_key}: {text_value}")
+    return "\n".join(lines)
+
+
 def _build_delivery_payload(
     template_type: str,
     event_payload: dict[str, Any],
@@ -172,20 +240,23 @@ def _build_delivery_payload(
 ) -> dict[str, Any] | list[Any]:
     context = _event_template_context(event_payload)
     event_type = context.get("event_type", "")
+    event_display = context.get("event_display", event_type)
     sent_at = context.get("sent_at", "")
-    payload_json = context.get("payload_json", "{}")
+    payload_lines = context.get("payload_lines", "")
+    payload_obj = event_payload.get("payload") if isinstance(event_payload.get("payload"), dict) else {}
 
     if template_type == WEBHOOK_TEMPLATE_WECOM_MARKDOWN:
+        markdown_lines = _format_payload_markdown_lines(payload_obj)
         content = (
             f"**OnAuth 事件通知**\n"
-            f"> 事件: `{event_type}`\n"
+            f"> 事件: `{event_display}`\n"
             f"> 时间: {sent_at}\n"
-            f"> 明细: {payload_json}"
+            f"> 明细:\n"
+            f"> {markdown_lines.replace(chr(10), chr(10) + '> ')}"
         )
         return {"msgtype": "markdown", "markdown": {"content": content}}
 
     if template_type == WEBHOOK_TEMPLATE_WECOM_TEMPLATE_CARD:
-        payload_obj = event_payload.get("payload") if isinstance(event_payload.get("payload"), dict) else {}
         detail_items = []
         for key, value in payload_obj.items():
             if value is None:
@@ -204,14 +275,14 @@ def _build_delivery_payload(
                     "desc_color": 0,
                 },
                 "main_title": {
-                    "title": f"OnAuth 事件: {event_type}",
+                    "title": f"OnAuth 事件: {event_display}",
                     "desc": f"发送时间: {sent_at}",
                 },
                 "emphasis_content": {
                     "title": event_type or "unknown",
                     "desc": "事件类型",
                 },
-                "sub_title_text": payload_json,
+                "sub_title_text": payload_lines or "-",
                 "horizontal_content_list": detail_items,
                 "jump_list": [
                     {
@@ -230,20 +301,20 @@ def _build_delivery_payload(
     if template_type == WEBHOOK_TEMPLATE_DINGTALK_MARKDOWN:
         text = (
             f"### OnAuth 事件通知\n"
-            f"- 事件: `{event_type}`\n"
+            f"- 事件: `{event_display}`\n"
             f"- 时间: {sent_at}\n"
-            f"- 明细: {payload_json}"
+            f"- 明细:\n{_format_payload_markdown_lines(payload_obj)}"
         )
         return {
             "msgtype": "markdown",
             "markdown": {
-                "title": f"OnAuth {event_type}",
+                "title": f"OnAuth {event_display}",
                 "text": text,
             },
         }
 
     if template_type == WEBHOOK_TEMPLATE_FEISHU_TEXT:
-        text = f"OnAuth 事件 {event_type}\n时间: {sent_at}\n明细: {payload_json}"
+        text = f"OnAuth 事件 {event_display}\n时间: {sent_at}\n明细:\n{payload_lines}"
         return {"msg_type": "text", "content": {"text": text}}
 
     if template_type == WEBHOOK_TEMPLATE_CUSTOM_JSON:
@@ -254,7 +325,15 @@ def _build_delivery_payload(
         rendered = _render_template_value(raw_obj, context)
         return rendered if isinstance(rendered, (dict, list)) else {"message": str(rendered)}
 
-    return event_payload
+    return {
+        "event_id": context.get("event_id", ""),
+        "event_type": event_type,
+        "event_name": context.get("event_name", event_type),
+        "event_display": event_display,
+        "sent_at": sent_at,
+        "payload": payload_obj,
+        "payload_lines": payload_lines,
+    }
 
 
 # ============================ 📋 Pydantic 传参校验拓扑 ============================
@@ -360,6 +439,10 @@ def create_webhook_config(
 
 @router.get("/api/v1/webhook/template.options", summary="【集成接口】Webhook 模板类型选项")
 def list_webhook_template_options(current_user=Depends(RBACChecker("webhook:list", "admin:read"))):
+    event_options = [
+        {"value": event_type, "label": _event_display_name(event_type)}
+        for event_type in sorted(ALLOWED_EVENT_TYPES)
+    ]
     return {
         "status": "success",
         "data": [
@@ -370,8 +453,10 @@ def list_webhook_template_options(current_user=Depends(RBACChecker("webhook:list
             {"value": WEBHOOK_TEMPLATE_FEISHU_TEXT, "label": "飞书 Text"},
             {"value": WEBHOOK_TEMPLATE_CUSTOM_JSON, "label": "自定义 JSON 模板"},
         ],
+        "event_labels": EVENT_TYPE_LABELS,
+        "event_options": event_options,
         "notes": {
-            "custom_json": "使用 {event_type} / {sent_at} / {payload_json} 以及 {payload_xxx} 占位符",
+            "custom_json": "使用 {event_type} / {event_name} / {event_display} / {sent_at} / {payload_json} / {payload_lines} 以及 {payload_xxx} 占位符",
             "wecom_template_card": "企业微信文本通知模板卡片，适合移动端高可读提醒"
         }
     }
