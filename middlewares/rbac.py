@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Any
 from fastapi import Request, HTTPException, status, Depends
 from sqlalchemy.orm import Session, selectinload
 from database import get_db, User, Role
@@ -7,7 +8,7 @@ from middlewares.auth import redis_client
 import jwt
 import config
 
-RBAC_CACHE_TTL_SECONDS = max(10, int(os.getenv("RBAC_CACHE_TTL_SECONDS", "60")))
+RBAC_CACHE_TTL_SECONDS = max(10, int(os.getenv("RBAC_CACHE_TTL_SECONDS", "86400")))
 SECRET_KEY = config.SECRET_KEY
 ALGORITHM = config.ALGORITHM
 
@@ -60,7 +61,7 @@ def _resolve_user_id_from_access_token(token: str, db: Session) -> int:
     if username:
         user = db.query(User).filter(User.username == username).first()
         if user:
-            return int(user.id)
+            return int(getattr(user, "id"))
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="当前令牌不绑定终端用户")
 
@@ -135,7 +136,7 @@ def _save_cached_permissions(session_id: str, principal: _UserPrincipal, permiss
     redis_client.setex(_rbac_cache_key(session_id), cache_ttl, payload)
 
 
-def _build_user_principal(user: User, permissions: set[str]) -> _UserPrincipal:
+def _build_user_principal(user: Any, permissions: set[str]) -> _UserPrincipal:
     role_names = [r.name for r in (user.roles or []) if getattr(r, "name", None)]
     return _UserPrincipal(
         user_id=int(user.id),
@@ -202,7 +203,8 @@ class _RBACBaseChecker:
                 detail="当前账户已被冻结或不存在"
             )
 
-        user_permissions = set(user.all_permissions)
+        raw_permissions = getattr(user, "all_permissions", None)
+        user_permissions = set(raw_permissions or [])
         principal = _build_user_principal(user, user_permissions)
         _save_cached_permissions(effective_session_id, principal, user_permissions)
 

@@ -56,7 +56,7 @@ def _store_session_meta(session_id: str, client_meta: tuple[str, str, bool, str,
         "location": location,
         "login_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
-    redis_client.expire(meta_key, 86400)
+    redis_client.expire(meta_key, SESSION_TTL_SECONDS)
 
 
 def _enrich_session_location_async(session_id: str, client_ip: str) -> None:
@@ -82,6 +82,7 @@ LOGIN_FAIL_TTL_SECONDS = 600
 LOGIN_FAIL_RULE_TYPE = "LOGIN_FAIL_CAPTCHA"
 PKCE_VERIFIER_RE = re.compile(r"^[A-Za-z0-9\-._~]{43,128}$")
 STATE_RE = re.compile(r"^[A-Za-z0-9\-._~]{8,128}$")
+SESSION_TTL_SECONDS = 86400
 
 
 def _get_login_fail_policy(db: Session, request: Request, username: str, fail_count: int) -> tuple[int, int]:
@@ -431,11 +432,11 @@ def login_submit(
 
     # 2. ⚡ 生成传统的 Redis 会话（供 OAuth 授权大厅撞库）
     new_session_id = "sess_" + secrets.token_hex(12)
-    redis_client.setex(new_session_id, 86400, str(user.id))
+    redis_client.setex(new_session_id, SESSION_TTL_SECONDS, str(user.id))
     # 🌟 顺手做个反向索引：把这个 session_id 扔进该用户的活跃会话集合里
     user_set_key = f"user:active_sessions:{user.id}"
     redis_client.sadd(user_set_key, new_session_id)
-    redis_client.expire(user_set_key, 86400)  # 保持过期时间一致
+    redis_client.expire(user_set_key, SESSION_TTL_SECONDS)  # 保持过期时间一致
 
     _store_session_meta(new_session_id, client_meta)
     background_tasks.add_task(_enrich_session_location_async, new_session_id, client_ip)
@@ -477,7 +478,9 @@ def login_submit(
         httponly=True,
         path="/",
         secure=False,  # 本地调试设为 False
-        samesite="lax"
+        samesite="lax",
+        max_age=SESSION_TTL_SECONDS,
+        expires=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=SESSION_TTL_SECONDS),
     )
 
     return {

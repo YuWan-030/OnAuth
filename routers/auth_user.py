@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
+import datetime
 import secrets
 import time
 import re
@@ -38,6 +39,7 @@ LOGIN_FAIL_RULE_TYPE = "LOGIN_FAIL_CAPTCHA"
 TENANT_APPLY_TTL_SECONDS = 1800
 ACCOUNT_LOCK_THRESHOLD = 10
 ACCOUNT_LOCK_TTL_SECONDS = 1800
+SESSION_TTL_SECONDS = 86400
 PASSWORD_MIN_LENGTH = 8
 
 USERNAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,31}$")
@@ -197,7 +199,7 @@ def _store_session_meta(session_id: str, client_meta: tuple[str, str, bool, str,
         "location": location,
         "login_time": login_time
     })
-    redis_client.expire(meta_key, 86400)
+    redis_client.expire(meta_key, SESSION_TTL_SECONDS)
 
 
 def _enrich_session_location_async(session_id: str, client_ip: str) -> None:
@@ -583,11 +585,11 @@ def login_user(
 
     new_session_id = "sess_" + secrets.token_hex(12)
 
-    redis_client.setex(new_session_id, 86400, str(user.id))
+    redis_client.setex(new_session_id, SESSION_TTL_SECONDS, str(user.id))
 
     user_set_key = f"user:active_sessions:{user.id}"
     redis_client.sadd(user_set_key, new_session_id)
-    redis_client.expire(user_set_key, 86400)
+    redis_client.expire(user_set_key, SESSION_TTL_SECONDS)
 
     _store_session_meta(new_session_id, client_meta)
     background_tasks.add_task(_enrich_session_location_async, new_session_id, client_ip)
@@ -607,7 +609,9 @@ def login_user(
         httponly=True,  #
         path="/",
         secure=False,
-        samesite="lax"
+        samesite="lax",
+        max_age=SESSION_TTL_SECONDS,
+        expires=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=SESSION_TTL_SECONDS),
     )
 
     dispatch_webhook_event(
