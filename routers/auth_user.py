@@ -19,7 +19,7 @@ from routers.admin import _generate_group_code
 from routers.oauth import revoke_user_oauth_artifacts
 from routers.webhook import dispatch_webhook_event
 from utils.captcha import verify_captcha
-from utils.role_constants import ROLE_SUPER_ADMIN, ROLE_TENANT_ADMIN
+from utils.role_constants import ROLE_SUPER_ADMIN
 from utils.request_utils import (
     extract_client_meta,
     resolve_ip_location,
@@ -667,6 +667,85 @@ def get_current_user_profile(
     return {
         "status": "success",
         "data": _build_user_profile_payload(db, current_user)
+    }
+
+
+@router.get("/api/v1/user/sessions", summary="获取当前用户会话列表")
+def list_my_sessions(
+        request: Request,
+        browser: str | None = None,
+        device: str | None = None,
+        current_user: User = Depends(RBACChecker("read")),
+        db: Session = Depends(get_db)
+):
+    current_token = _resolve_current_session_token(request)
+    sessions = _load_my_sessions(db, current_user, current_token=current_token, browser=browser, device=device)
+    return {
+        "status": "success",
+        "count": len(sessions),
+        "data": sessions,
+    }
+
+
+@router.post("/api/v1/user/sessions/revoke", summary="吊销单个当前用户会话")
+def revoke_my_session(
+        payload: SessionRevokeInput,
+        request: Request,
+        current_user: User = Depends(RBACChecker("read")),
+        db: Session = Depends(get_db)
+):
+    current_token = _resolve_current_session_token(request)
+    token_id = str(payload.token_id or "").strip()
+    if not token_id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="会话令牌不能为空")
+
+    revoked = _revoke_my_session_tokens(db, current_user, [token_id])
+    is_current = bool(current_token and token_id == current_token)
+    return {
+        "status": "success",
+        "count": revoked,
+        "is_current": is_current,
+        "message": "会话已吊销" if revoked else "未找到可吊销的会话",
+    }
+
+
+@router.post("/api/v1/user/sessions/revoke_batch", summary="批量吊销当前用户会话")
+def revoke_my_sessions_batch(
+        payload: SessionBatchRevokeInput,
+        request: Request,
+        current_user: User = Depends(RBACChecker("read")),
+        db: Session = Depends(get_db)
+):
+    current_token = _resolve_current_session_token(request)
+    token_ids = [str(token_id or "").strip() for token_id in (payload.token_ids or []) if str(token_id or "").strip()]
+    revoked = _revoke_my_session_tokens(db, current_user, token_ids)
+    return {
+        "status": "success",
+        "count": revoked,
+        "current_token": current_token,
+        "message": "批量会话吊销完成" if revoked else "没有可吊销的会话",
+    }
+
+
+@router.post("/api/v1/user/sessions/revoke_all", summary="吊销当前用户全部会话")
+def revoke_my_sessions_all(
+        payload: SessionRevokeAllInput,
+        request: Request,
+        current_user: User = Depends(RBACChecker("read")),
+        db: Session = Depends(get_db)
+):
+    current_token = _resolve_current_session_token(request)
+    session_items = _load_my_sessions(db, current_user, current_token=current_token)
+    token_ids = [item["token_id"] for item in session_items if item.get("token_id")]
+    if payload.keep_current and current_token:
+        token_ids = [token_id for token_id in token_ids if token_id != current_token]
+    revoked = _revoke_my_session_tokens(db, current_user, token_ids)
+    return {
+        "status": "success",
+        "count": revoked,
+        "kept_current": bool(payload.keep_current),
+        "current_token": current_token,
+        "message": "全部会话已吊销" if revoked else "没有可吊销的会话",
     }
 
 
@@ -1553,3 +1632,115 @@ def _build_user_profile_payload(db: Session, current_user: User) -> dict[str, ob
         "permissions": permissions,
         "is_tenant_admin": "tenant_admin" in roles or "super_admin" in roles
     }
+
+
+def _decode_redis_text(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore")
+    return str(value or "")
+
+
+def _load_session_meta(session_id: str) -> dict[str, str]:
+    raw_meta = redis_client.hgetall(f"sess_meta:{session_id}") or {}
+    meta: dict[str, str] = {}
+    for raw_key, raw_value in raw_meta.items():
+        meta[_decode_redis_text(raw_key)] = _decode_redis_text(raw_value)
+    return meta
+
+
+def _parse_session_login_time(value: str) -> datetime.datetime:
+    text = str(value or "").strip()
+    if not text:
+        return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.datetime.fromisoformat(normalized)
+    except ValueError:
+        try:
+            parsed = datetime.datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            parsed = datetime.datetime.min
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return parsed
+
+
+def _normalize_filter_text(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _build_session_item(session_id: str, meta: dict[str, str], current_token: str | None) -> dict[str, object]:
+    browser = str(meta.get("browser") or "")
+    os_name = str(meta.get("os") or "")
+    device_type = _resolve_device_type_from_meta(meta)
+    location = str(meta.get("location") or "")
+    login_time = str(meta.get("login_time") or "")
+    return {
+        "token_id": session_id,
+        "browser": browser,
+        "device": os_name or device_type,
+        "device_type": device_type,
+        "os": os_name,
+        "location": location,
+        "login_time": login_time,
+        "is_current": bool(current_token and session_id == current_token),
+        "_sort_key": _parse_session_login_time(login_time),
+    }
+
+
+def _load_my_sessions(
+        db: Session,
+        current_user: User,
+        current_token: str | None = None,
+        browser: str | None = None,
+        device: str | None = None,
+) -> list[dict[str, object]]:
+    user_id = int(getattr(current_user, "id", 0) or 0)
+    user_set_key = f"user:active_sessions:{user_id}"
+    raw_token_ids = redis_client.smembers(user_set_key) or set()
+    browser_filter = _normalize_filter_text(browser)
+    device_filter = _normalize_filter_text(device)
+
+    items: list[dict[str, object]] = []
+    for raw_token_id in raw_token_ids:
+        session_id = _decode_redis_text(raw_token_id).strip()
+        if not session_id.startswith("sess_"):
+            continue
+        meta = _load_session_meta(session_id)
+        item = _build_session_item(session_id, meta, current_token)
+
+        if browser_filter and browser_filter not in str(item["browser"]).lower():
+            continue
+        device_text = f"{item['device']} {item['device_type']} {item['os']}".lower()
+        if device_filter and device_filter not in device_text:
+            continue
+
+        items.append(item)
+
+    items.sort(key=lambda item: item["_sort_key"], reverse=True)
+    items.sort(key=lambda item: not bool(item.get("is_current")))
+    for item in items:
+        item.pop("_sort_key", None)
+    return items
+
+
+def _revoke_my_session_tokens(db: Session, current_user: User, token_ids: list[str]) -> int:
+    user_id = int(getattr(current_user, "id", 0) or 0)
+    if not token_ids:
+        return 0
+
+    user_set_key = f"user:active_sessions:{user_id}"
+    owned_tokens = {
+        _decode_redis_text(raw_token_id).strip()
+        for raw_token_id in (redis_client.smembers(user_set_key) or set())
+    }
+
+    revoked_count = 0
+    for token_id in token_ids:
+        safe_token_id = str(token_id or "").strip()
+        if not safe_token_id or safe_token_id not in owned_tokens:
+            continue
+        _purge_session_artifacts(safe_token_id, user_id=user_id)
+        revoked_count += 1
+    return revoked_count
+
