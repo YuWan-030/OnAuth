@@ -138,6 +138,7 @@
         }
 
         .status-active { color: #166534; background: #dcfce7; }
+        .status-used { color: #1d4ed8; background: #dbeafe; }
         .status-revoked { color: #b91c1c; background: #fee2e2; }
         .status-expired { color: #92400e; background: #fef3c7; }
         .status-missing { color: #475569; background: #e2e8f0; }
@@ -203,7 +204,7 @@
                 说明：<br>
                 1. 每次生成的邀请码会自动写入历史列表；<br>
                 2. 可以随时复制或作废任意历史邀请码；<br>
-                3. 状态会自动区分“有效 / 已作废 / 已过期”；<br>
+                3. 状态会自动区分“有效 / 已使用 / 已作废 / 已过期”；<br>
                 4. 被作废的邀请码将立即失效，不能再用于注册。
             </div>
 
@@ -253,6 +254,7 @@ layui.use(['layer', 'jquery'], function(){
         var safe = String(status || '').trim().toLowerCase();
         var textMap = {
             active: '有效',
+            used: '已使用',
             revoked: '已作废',
             expired: '已过期',
             missing: '未知'

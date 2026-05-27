@@ -13,7 +13,7 @@ def _sample_event_payload() -> dict:
         "payload": {
             "username": "alice",
             "group_id": 7,
-            "ip": "114.66.48.61",
+            "ip": "8.8.8.8",
         },
     }
 
@@ -58,7 +58,7 @@ def test_build_delivery_payload_wecom_markdown() -> None:
     assert "> 明细:" in content
     assert "> - 用户名称: alice" in content
     assert "> - group_id: 7" in content
-    assert "> - IP: 114.66.48.61" in content
+    assert "> - IP: 8.8.8.8" in content
 
 
 def test_format_payload_to_human_lines() -> None:
@@ -132,5 +132,5 @@ def test_build_delivery_payload_custom_json_with_placeholders() -> None:
     text = payload["content"]["text"]
     assert "auth.login" in text
     assert "alice" in text
-    assert "114.66.48.61" in text
+    assert "8.8.8.8" in text
 

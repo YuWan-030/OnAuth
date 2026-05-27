@@ -287,7 +287,7 @@ def _build_delivery_payload(
                 "jump_list": [
                     {
                         "type": 1,
-                        "url": "https://114.66.48.61:8900/audit",
+                        "url": "https://8.8.8.8/audit",
                         "title": "打开审计页面"
                     }
                 ],
