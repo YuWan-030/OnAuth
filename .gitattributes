@@ -1,16 +1,22 @@
-# 全局默认不检测
+# 1. 全局：默认所有文件不参与语言统计
 * linguist-detectable=false
 
-# 只把 .py 当作可检测（主语言）
+# 2. 只允许 Python 文件参与统计（主语言）
 *.py linguist-detectable=true
 
-# 把这些后缀强行归为 Python（或直接忽略）
-*.html linguist-language=Python
-*.js linguist-language=Python
-*.css linguist-language=Python
-*.md linguist-language=Python
+# 3. 强制把前端相关目录标记为「第三方/非核心代码」，不计入语言统计
+templates/* linguist-vendored
+tenant_web/* linguist-vendored
+user_web/* linguist-vendored
 
-# 若有文件夹可直接整个忽略（推荐）
-docs/* linguist-vendored
-static/* linguist-vendored
-dist/* linguist-vendored
+# 4. 如果你还有 static/、assets/ 之类的目录，也加上
+# static/* linguist-vendored
+# assets/* linguist-vendored
+
+# 5. 可选：把其他文件类型也标记为不影响语言统计
+*.html linguist-vendored
+*.js linguist-vendored
+*.css linguist-vendored
+*.md linguist-vendored
+*.ini linguist-vendored
+*.env linguist-vendored
