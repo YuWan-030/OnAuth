@@ -274,6 +274,22 @@ def admin_credentials_page(
     return _render_admin_template(request, "credentials.html", username)
 
 
+@router.get("/admin/invite_codes", response_class=HTMLResponse, summary="【视图】进入租户管理员邀请码管理页面")
+def admin_invite_codes_page(
+    request: Request,
+    sso_session_id: str = Cookie(None),
+    db: Session = Depends(get_db),
+):
+    username = _decode_session_username(sso_session_id)
+    response = _redirect_login_if_missing(username)
+    if response:
+        return response
+    response = _redirect_index_if_not_admin(username, db)
+    if response:
+        return response
+    return _render_admin_template(request, "invite_codes.html", username)
+
+
 @router.get("/login", response_class=HTMLResponse, summary="【视图】进入中台统一认证登录终端")
 def login_page(
     request: Request,
@@ -293,7 +309,18 @@ def register_page(
     username = _decode_session_username(sso_session_id)
     if username:
         return RedirectResponse(url="/index", status_code=status.HTTP_302_FOUND)
-    return templates.TemplateResponse(request=request, name="admin/register.html", context={"request": request})
+    return templates.TemplateResponse(request=request, name="admin/register_user.html", context={"request": request})
+
+
+@router.get("/tenant/register", response_class=HTMLResponse, summary="【视图】进入租户管理员注册终端")
+def tenant_register_page(
+    request: Request,
+    sso_session_id: str = Cookie(None),
+):
+    username = _decode_session_username(sso_session_id)
+    if username:
+        return RedirectResponse(url="/index", status_code=status.HTTP_302_FOUND)
+    return templates.TemplateResponse(request=request, name="tenant/register.html", context={"request": request})
 
 
 @router.get("/user", response_class=HTMLResponse, include_in_schema=False)

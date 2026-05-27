@@ -7,7 +7,7 @@ SECRET_KEY = "PLATFORM_INTERNAL_GLOBAL_SECRET_KEY"
 ALGORITHM = "HS256"
 
 # 前端统一展示版本号
-APP_VERSION = "v1.2-Beta版"
+APP_VERSION = "v1.3-Beta版"
 
 # 根据选择组合连接字符串
 if DB_TYPE == "sqlite":

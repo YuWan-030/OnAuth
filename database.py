@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import create_engine, Table
+from sqlalchemy import create_engine, Table, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
@@ -208,6 +208,7 @@ class User(Base):
     group_id = Column(Integer, ForeignKey("developer_groups.id", ondelete="SET NULL"), nullable=True, index=True)
 
     is_active = Column(Boolean, default=True, comment="账户是否激活，False 代表被冻结")
+    frozen_by_role = Column(String(32), nullable=True, index=True, comment="冻结来源：system_admin / tenant_admin")
     created_at = Column(DateTime, default=datetime.datetime.now, comment="账户创建时间")
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now, comment="账户更新时间")
 
@@ -239,6 +240,11 @@ class User(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    inspector = inspect(engine)
+    user_columns = {col["name"] for col in inspector.get_columns("users")}
+    if "frozen_by_role" not in user_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN frozen_by_role VARCHAR(32)"))
 
 
 def get_db():

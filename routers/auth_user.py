@@ -1,12 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Form, Response, Cookie, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Form, Response, Cookie, Request, BackgroundTasks, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from passlib.context import CryptContext
 import datetime
 import secrets
 import time
 import re
+import json
+from typing import cast
 
 # 🌟 引入数据库实体与核心依赖项
 from database import get_db, User, Role, DeveloperGroup, Permission
@@ -14,8 +16,10 @@ from database import get_db, User, Role, DeveloperGroup, Permission
 from middlewares.auth import redis_client
 from middlewares.rbac import RBACChecker
 from routers.admin import _generate_group_code
+from routers.oauth import revoke_user_oauth_artifacts
 from routers.webhook import dispatch_webhook_event
 from utils.captcha import verify_captcha
+from utils.role_constants import ROLE_SUPER_ADMIN, ROLE_TENANT_ADMIN
 from utils.request_utils import (
     extract_client_meta,
     resolve_ip_location,
@@ -41,6 +45,12 @@ ACCOUNT_LOCK_THRESHOLD = 10
 ACCOUNT_LOCK_TTL_SECONDS = 1800
 SESSION_TTL_SECONDS = 86400
 PASSWORD_MIN_LENGTH = 8
+TENANT_INVITE_TTL_SECONDS = 7 * 24 * 3600
+TENANT_INVITE_KEY_PREFIX = "tenant_invite:"
+TENANT_ADMIN_INVITE_TTL_SECONDS = 7 * 24 * 3600
+TENANT_ADMIN_INVITE_KEY_PREFIX = "tenant_admin_invite:"
+TENANT_ADMIN_INVITE_HISTORY_KEY = "tenant_admin_invite:history"
+TENANT_ADMIN_INVITE_RECORD_PREFIX = "tenant_admin_invite:record:"
 
 USERNAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,31}$")
 XSS_PATTERN = re.compile(r"(?i)(<\s*script|javascript:|on\w+\s*=|<\s*iframe|<\s*img|<\s*svg)")
@@ -128,7 +138,7 @@ def _load_user_from_session_value(db: Session, session_value: str | bytes | None
     return None
 
 
-def _resolve_user_group(db: Session, current_user: User):
+def _resolve_user_group(db: Session, current_user: User) -> DeveloperGroup | None:
     group = getattr(current_user, "group", None)
     if group is not None:
         return group
@@ -145,6 +155,23 @@ def _resolve_user_group(db: Session, current_user: User):
 
     return None
 
+
+def _get_current_tenant_group_or_403(db: Session, current_user: User) -> DeveloperGroup:
+    group = _resolve_user_group(db, current_user)
+    if not group:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前账号未绑定租户空间")
+
+    if (getattr(group, "status", "") or "").lower() != "approved":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租户空间尚未通过审核")
+
+    if not getattr(group, "is_active", True):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租户空间已被冻结")
+
+    expire_at = cast(datetime.datetime | None, getattr(group, "expire_at", None))
+    if expire_at and expire_at < datetime.datetime.now():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租户空间已过期")
+
+    return cast(DeveloperGroup, group)
 
 
 def _validate_password_strength(password: str) -> None:
@@ -276,7 +303,8 @@ class UserRegisterSchema(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
     password: str = Field(..., min_length=8, description="密码，至少8位")
     nickname: str = Field(None, description="昵称")
-    group_code: str = Field(..., min_length=4, max_length=32, description="租户空间唯一识别码")
+    group_code: str | None = Field(None, min_length=4, max_length=32, description="租户空间唯一识别码")
+    invite_token: str | None = Field(None, min_length=4, max_length=256, description="邀请注册链接令牌")
 
 
 class TenantAdminRegisterSchema(BaseModel):
@@ -285,6 +313,7 @@ class TenantAdminRegisterSchema(BaseModel):
     nickname: str = Field(None, description="昵称")
     group_name: str = Field(..., min_length=1, max_length=64, description="租户空间名称")
     group_description: str = Field(None, description="租户空间说明")
+    invite_code: str = Field(..., min_length=6, max_length=128, description="系统管理员邀请码")
 
 
 class TenantUserInviteSchema(BaseModel):
@@ -292,6 +321,15 @@ class TenantUserInviteSchema(BaseModel):
     password: str = Field(..., min_length=8, description="密码，至少8位")
     nickname: str = Field(None, description="昵称")
     group_code: str = Field(None, min_length=4, max_length=32, description="租户空间唯一识别码(仅超管可指定)")
+
+
+class TenantUserFreezeSchema(BaseModel):
+    user_id: int = Field(..., description="要冻结的租户内用户ID")
+
+
+class TenantUserToggleStatusSchema(BaseModel):
+    user_id: int = Field(..., description="要启用或冻结的租户内用户ID")
+    is_active: bool = Field(..., description="是否启用")
 
 
 class UserLoginSchema(BaseModel):
@@ -350,6 +388,193 @@ def _validate_tenant_admin_apply_payload(payload: "TenantAdminRegisterSchema") -
 
     return username, group_name, nickname, group_description
 
+# --- 邀请码与用户画像辅助函数 ---
+def _tenant_invite_key(invite_token: str) -> str:
+    return f"{TENANT_INVITE_KEY_PREFIX}{str(invite_token or '').strip()}"
+
+
+def _issue_tenant_invite_payload(group: DeveloperGroup, issuer_username: str, invite_token: str | None = None) -> tuple[str, dict[str, object]]:
+    token = (invite_token or secrets.token_urlsafe(24)).strip()
+    payload = {
+        "group_id": int(getattr(group, "id", 0) or 0),
+        "group_name": str(getattr(group, "group_name", "") or ""),
+        "group_code": str(getattr(group, "group_code", "") or ""),
+        "issuer_username": str(issuer_username or ""),
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    redis_client.setex(_tenant_invite_key(token), TENANT_INVITE_TTL_SECONDS, json.dumps(payload, ensure_ascii=False))
+    return token, payload
+
+
+def _load_tenant_invite_payload(invite_token: str) -> dict[str, object] | None:
+    raw_value = redis_client.get(_tenant_invite_key(invite_token))
+    if not raw_value:
+        return None
+    raw_text = raw_value.decode("utf-8") if isinstance(raw_value, bytes) else str(raw_value)
+    try:
+        payload = json.loads(raw_text)
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _tenant_admin_invite_key(invite_code: str) -> str:
+    return f"{TENANT_ADMIN_INVITE_KEY_PREFIX}{str(invite_code or '').strip()}"
+
+
+def _tenant_admin_invite_record_key(invite_code: str) -> str:
+    return f"{TENANT_ADMIN_INVITE_RECORD_PREFIX}{str(invite_code or '').strip()}"
+
+
+def _issue_tenant_admin_invite_payload(issuer_username: str, invite_code: str | None = None) -> tuple[str, dict[str, object]]:
+    code = (invite_code or secrets.token_urlsafe(18)).strip()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    expires_at = now + datetime.timedelta(seconds=TENANT_ADMIN_INVITE_TTL_SECONDS)
+    payload = {
+        "issuer_username": str(issuer_username or ""),
+        "created_at": now.isoformat(),
+        "expires_at": expires_at.isoformat(),
+    }
+    redis_client.setex(_tenant_admin_invite_key(code), TENANT_ADMIN_INVITE_TTL_SECONDS, json.dumps(payload, ensure_ascii=False))
+    redis_client.hset(_tenant_admin_invite_record_key(code), mapping={
+        "invite_code": code,
+        "issuer_username": payload["issuer_username"],
+        "created_at": payload["created_at"],
+        "expires_at": payload["expires_at"],
+        "status": "active",
+        "revoked_at": "",
+        "revoked_by": "",
+    })
+    redis_client.expire(_tenant_admin_invite_record_key(code), TENANT_ADMIN_INVITE_TTL_SECONDS + 30 * 24 * 3600)
+    redis_client.zadd(TENANT_ADMIN_INVITE_HISTORY_KEY, {code: now.timestamp()})
+    return code, payload
+
+
+def _load_tenant_admin_invite_payload(invite_code: str) -> dict[str, object] | None:
+    raw_value = redis_client.get(_tenant_admin_invite_key(invite_code))
+    if not raw_value:
+        return None
+    raw_text = raw_value.decode("utf-8") if isinstance(raw_value, bytes) else str(raw_value)
+    try:
+        payload = json.loads(raw_text)
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _tenant_admin_invite_record_payload(invite_code: str) -> dict[str, object] | None:
+    raw_record = redis_client.hgetall(_tenant_admin_invite_record_key(invite_code))
+    if not raw_record:
+        return None
+    record: dict[str, object] = {}
+    for raw_key, raw_value in raw_record.items():
+        key = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else str(raw_key)
+        value = raw_value.decode("utf-8") if isinstance(raw_value, bytes) else str(raw_value)
+        record[key] = value
+    return record
+
+
+def _tenant_admin_invite_status(invite_code: str) -> str:
+    record = _tenant_admin_invite_record_payload(invite_code) or {}
+    status_value = str(record.get("status") or "").strip().lower()
+    if status_value == "revoked":
+        return "revoked"
+    if redis_client.get(_tenant_admin_invite_key(invite_code)):
+        return "active"
+    if record:
+        return "expired"
+    return "missing"
+
+
+def _tenant_admin_invite_list(limit: int = 20) -> list[dict[str, object]]:
+    limit = max(1, min(int(limit or 20), 100))
+    raw_codes = redis_client.zrevrange(TENANT_ADMIN_INVITE_HISTORY_KEY, 0, limit - 1)
+    items: list[dict[str, object]] = []
+    for raw_code in raw_codes:
+        code = raw_code.decode("utf-8") if isinstance(raw_code, bytes) else str(raw_code)
+        record = _tenant_admin_invite_record_payload(code) or {}
+        items.append({
+            "invite_code": code,
+            "issuer_username": str(record.get("issuer_username") or ""),
+            "created_at": str(record.get("created_at") or ""),
+            "expires_at": str(record.get("expires_at") or ""),
+            "status": _tenant_admin_invite_status(code),
+            "revoked_at": str(record.get("revoked_at") or ""),
+            "revoked_by": str(record.get("revoked_by") or ""),
+        })
+    return items
+
+
+@router.get("/admin/tenant_admin/invite_codes", summary="【超管】查看租户管理员邀请码历史")
+def list_tenant_admin_invite_codes(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(RBACChecker("admin:create")),
+):
+    if ROLE_SUPER_ADMIN not in {role.name for role in (current_user.roles or [])}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可查看邀请码历史")
+
+    return {"status": "success", "data": _tenant_admin_invite_list(limit=limit)}
+
+
+@router.post("/admin/tenant_admin/invite_code/revoke", summary="【超管】作废租户管理员邀请码")
+def revoke_tenant_admin_invite_code(
+    invite_code: str = Form(..., min_length=4),
+    current_user: User = Depends(RBACChecker("admin:create")),
+):
+    if ROLE_SUPER_ADMIN not in {role.name for role in (current_user.roles or [])}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可作废邀请码")
+
+    invite_code = str(invite_code or "").strip()
+    record = _tenant_admin_invite_record_payload(invite_code)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="邀请码不存在或已过期")
+
+    if str(record.get("status") or "").strip().lower() == "revoked":
+        return {"status": "success", "message": "邀请码已作废", "data": {"invite_code": invite_code, "status": "revoked"}}
+
+    redis_client.delete(_tenant_admin_invite_key(invite_code))
+    redis_client.hset(_tenant_admin_invite_record_key(invite_code), mapping={
+        "status": "revoked",
+        "revoked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "revoked_by": str(getattr(current_user, "username", "") or ""),
+    })
+    redis_client.expire(_tenant_admin_invite_record_key(invite_code), 30 * 24 * 3600)
+    return {
+        "status": "success",
+        "message": "邀请码已作废",
+        "data": {
+            "invite_code": invite_code,
+            "status": "revoked",
+            "revoked_by": str(getattr(current_user, "username", "") or ""),
+        },
+    }
+
+
+@router.get("/auth/register/invite_info", summary="获取邀请注册链接信息")
+def get_register_invite_info(
+        invite_token: str = Query(..., min_length=4, max_length=256),
+        db: Session = Depends(get_db)
+):
+    payload = _load_tenant_invite_payload(invite_token)
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="邀请链接已失效或不存在")
+
+    group_id = payload.get("group_id")
+    group = db.query(DeveloperGroup).filter(DeveloperGroup.id == group_id).first() if group_id is not None else None
+    if not group or not group.is_active or (group.status or "").lower() != "approved":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="邀请链接对应的租户空间不可用")
+
+    return {
+        "status": "success",
+        "data": {
+            "group_id": group.id,
+            "group_name": group.group_name,
+            "group_code": group.group_code,
+            "invite_token": invite_token,
+            "expires_in_seconds": TENANT_INVITE_TTL_SECONDS,
+        }
+    }
+
 
 def _tenant_apply_limit_key(client_ip: str) -> str:
     safe_ip = (client_ip or "-").strip() or "-"
@@ -377,7 +602,17 @@ def register_user(payload: UserRegisterSchema, db: Session = Depends(get_db)):
             detail="该用户名已被注册，请更换"
         )
 
-    group = db.query(DeveloperGroup).filter(DeveloperGroup.group_code == payload.group_code).first()
+    invite_token = str(payload.invite_token or "").strip()
+    if not invite_token:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="普通用户注册必须使用租户空间邀请码")
+
+    invite_payload = _load_tenant_invite_payload(invite_token)
+    if not invite_payload:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="邀请码已失效或不存在")
+
+    invite_group_id = invite_payload.get("group_id")
+    group = db.query(DeveloperGroup).filter(DeveloperGroup.id == invite_group_id).first() if invite_group_id is not None else None
+
     if not group or not group.is_active or (group.status or "").lower() != "approved":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -424,6 +659,15 @@ def register_user(payload: UserRegisterSchema, db: Session = Depends(get_db)):
         "group_name": group.group_name
     }
 
+@router.get("/auth/me", summary="获取当前登录用户画像")
+def get_current_user_profile(
+        current_user: User = Depends(RBACChecker("read")),
+        db: Session = Depends(get_db)
+):
+    return {
+        "status": "success",
+        "data": _build_user_profile_payload(db, current_user)
+    }
 
 
 @router.post("/auth/register/tenant_admin", summary="租户管理员公开申请")
@@ -451,6 +695,18 @@ def register_tenant_admin(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="该租户空间名称已被占用"
         )
+
+    invite_code = str(payload.invite_code or "").strip()
+    if not invite_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租户管理员注册需要系统管理员邀请码")
+
+    invite_payload = _load_tenant_admin_invite_payload(invite_code)
+    if not invite_payload:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="系统管理员邀请码无效或已过期")
+    invite_issuer_username = str(invite_payload.get("issuer_username") or "")
+
+    if hasattr(redis_client, "delete"):
+        redis_client.delete(_tenant_admin_invite_key(invite_code))
 
     group_code = _generate_group_code(db)
     new_group = DeveloperGroup(
@@ -505,7 +761,8 @@ def register_tenant_admin(
             "username": new_user.username,
             "group_id": new_group.id,
             "group_code": new_group.group_code,
-            "client_ip": client_ip
+            "client_ip": client_ip,
+            "invite_issuer_username": invite_issuer_username,
         },
         db=db
     )
@@ -882,166 +1139,397 @@ def invite_tenant_user(
     }
 
 
-@router.get("/auth/me", summary="获取当前登录用户画像")
-def get_current_user_profile(
-        current_user: User = Depends(RBACChecker("read")),
+@router.post("/tenant/users/invite_link", summary="租户管理员生成邀请注册链接")
+def generate_tenant_user_invite_link(
+        current_user: User = Depends(RBACChecker("tenant:user:invite_link")),
         db: Session = Depends(get_db)
 ):
+    group = _get_current_tenant_group_or_403(db, current_user)
+    invite_token, payload = _issue_tenant_invite_payload(group, current_user.username)
     return {
         "status": "success",
-        "data": _build_user_profile_payload(db, current_user)
+        "message": "邀请注册链接已生成",
+        "data": {
+            "invite_token": invite_token,
+            "invite_url": f"/register?invite_token={invite_token}&register_type=user",
+            "group_id": payload["group_id"],
+            "group_name": payload["group_name"],
+            "group_code": payload["group_code"],
+            "expires_in_seconds": TENANT_INVITE_TTL_SECONDS,
+        }
     }
 
 
-@router.get("/api/v1/user/sessions", summary="【用户中心】查询我的会话列表")
-def list_my_sessions(
-        request: Request,
-        browser: str | None = None,
-        device: str | None = None,
-        current_user: User = Depends(RBACChecker("read")),
+@router.get("/tenant/users/list", summary="租户管理员查看本租户用户列表")
+def list_tenant_users(
+        current_user: User = Depends(RBACChecker("tenant:user:create")),
         db: Session = Depends(get_db)
 ):
-    current_token = _resolve_current_session_token(request) or ""
-    browser_filter = (browser or "").strip().lower()
-    device_filter = (device or "").strip().lower()
-    sessions = []
-
-    user_set_key = f"user:active_sessions:{current_user.id}"
-    token_ids = redis_client.smembers(user_set_key) or []
-    for token_id in token_ids:
-        token_id = token_id.decode("utf-8") if isinstance(token_id, bytes) else str(token_id)
-        meta_key = f"sess_meta:{token_id}"
-        meta_raw = redis_client.hgetall(meta_key) or {}
-
-        def _decode(value, default=""):
-            if value is None:
-                return default
-            if isinstance(value, bytes):
-                return value.decode("utf-8", errors="ignore")
-            return str(value)
-
-        meta = {str(_decode(k)): _decode(v) for k, v in meta_raw.items()}
-        browser_value = meta.get("browser", "-")
-        os_value = meta.get("os", "-")
-        location_value = meta.get("location", "-")
-        device_type_value = _resolve_device_type_from_meta(meta)
-        if browser_filter and browser_filter not in browser_value.lower():
-            continue
-        if device_filter and device_filter not in f"{browser_value} {os_value} {location_value} {device_type_value}".lower():
-            continue
-        sessions.append({
-            "token_id": token_id,
-            "ip": meta.get("ip", "-"),
-            "browser": browser_value,
-            "os": os_value,
-            "device_type": device_type_value,
-            "location": location_value,
-            "login_time": meta.get("login_time", "-"),
-            "is_current": token_id == current_token,
-        })
-
-    sessions.sort(key=lambda item: (item.get("is_current", False), item.get("login_time", "")), reverse=True)
-    return {"status": "success", "count": len(sessions), "data": sessions}
-
-
-@router.post("/api/v1/user/sessions/revoke", summary="【用户中心】注销指定会话")
-def revoke_my_session(
-        payload: SessionRevokeInput,
-        request: Request,
-        current_user: User = Depends(RBACChecker("read")),
-        db: Session = Depends(get_db)
-):
-    current_token = _resolve_current_session_token(request) or ""
-    token_id = payload.token_id.strip()
-    if not token_id.startswith("sess_"):
-        raise HTTPException(status_code=400, detail="仅支持注销 session 会话")
-
-    user_set_key = f"user:active_sessions:{current_user.id}"
-    if not redis_client.sismember(user_set_key, token_id):
-        raise HTTPException(status_code=403, detail="不允许注销其他用户的会话")
-
-    redis_client.delete(token_id)
-    redis_client.delete(f"sess_meta:{token_id}")
-    redis_client.srem(user_set_key, token_id)
-    return {
-        "status": "success",
-        "message": "会话已注销",
-        "is_current": token_id == current_token,
-    }
-
-
-@router.post("/api/v1/user/sessions/revoke_batch", summary="【用户中心】批量注销会话")
-def revoke_my_sessions_batch(
-        payload: SessionBatchRevokeInput,
-        request: Request,
-        current_user: User = Depends(RBACChecker("read")),
-        db: Session = Depends(get_db)
-):
-    current_token = _resolve_current_session_token(request) or ""
-    user_set_key = f"user:active_sessions:{current_user.id}"
-    token_ids = []
-    seen: set[str] = set()
-    for item in payload.token_ids:
-        token_id = str(item or "").strip()
-        if not token_id or token_id in seen:
-            continue
-        seen.add(token_id)
-        if not token_id.startswith("sess_"):
-            continue
-        if token_id == current_token:
-            raise HTTPException(status_code=400, detail="当前会话请使用全部下线但保留当前会话功能")
-        if not redis_client.sismember(user_set_key, token_id):
-            raise HTTPException(status_code=403, detail="不允许注销其他用户的会话")
-        token_ids.append(token_id)
-
-    if not token_ids:
-        raise HTTPException(status_code=400, detail="至少需要一个有效会话")
-
-    for token_id in token_ids:
-        redis_client.delete(token_id)
-        redis_client.delete(f"sess_meta:{token_id}")
-        redis_client.srem(user_set_key, token_id)
+    group = _get_current_tenant_group_or_403(db, current_user)
+    users = (
+        db.query(User)
+        .options(selectinload(User.roles))
+        .filter(User.group_id == group.id)
+        .order_by(User.id.desc())
+        .all()
+    )
 
     return {
         "status": "success",
-        "message": "批量会话已注销",
-        "count": len(token_ids),
+        "count": len(users),
+        "data": [
+            {
+                "user_id": user.id,
+                "username": user.username,
+                "nickname": user.nickname or user.username,
+                "email": user.email or "",
+                "is_active": bool(user.is_active),
+                "frozen_by_role": getattr(user, "frozen_by_role", None) or "",
+                "roles": [role.name for role in (user.roles or []) if getattr(role, "name", None)],
+                "created_at": user.created_at.strftime("%Y-%m-%d %H:%M:%S") if user.created_at else "-",
+            }
+            for user in users
+        ]
     }
 
 
-@router.post("/api/v1/user/sessions/revoke_all", summary="【用户中心】全部下线但保留当前会话")
-def revoke_my_sessions_all(
-        payload: SessionRevokeAllInput,
-        request: Request,
-        current_user: User = Depends(RBACChecker("read")),
+@router.post("/tenant/users/toggle_status", summary="租户管理员启用/冻结本租户用户")
+def toggle_tenant_user_status(
+        payload: TenantUserToggleStatusSchema,
+        current_user: User = Depends(RBACChecker("tenant:user:update")),
         db: Session = Depends(get_db)
 ):
-    current_token = _resolve_current_session_token(request) or ""
-    user_set_key = f"user:active_sessions:{current_user.id}"
-    token_ids = redis_client.smembers(user_set_key) or []
-    revoked: list[str] = []
+    group = _get_current_tenant_group_or_403(db, current_user)
+    target_user = (
+        db.query(User)
+        .options(selectinload(User.roles))
+        .filter(User.id == payload.user_id, User.group_id == group.id)
+        .first()
+    )
+    if not target_user:
+        raise HTTPException(status_code=404, detail="未找到当前租户空间内的目标用户")
 
-    for token_id in token_ids:
-        token_id = token_id.decode("utf-8") if isinstance(token_id, bytes) else str(token_id)
-        if not token_id.startswith("sess_"):
-            continue
-        if payload.keep_current and token_id == current_token:
-            continue
-        redis_client.delete(token_id)
-        redis_client.delete(f"sess_meta:{token_id}")
-        redis_client.srem(user_set_key, token_id)
-        revoked.append(token_id)
+    target_user_id = int(getattr(target_user, "id", 0) or 0)
+    target_username = str(getattr(target_user, "username", "") or "")
+    freeze_origin = str(getattr(target_user, "frozen_by_role", "") or "")
+
+    if target_user_id == int(getattr(current_user, "id", 0) or 0):
+        raise HTTPException(status_code=400, detail="不能修改当前登录账号状态")
+
+    if payload.is_active:
+        if freeze_origin == "system_admin":
+            raise HTTPException(status_code=403, detail="该用户由超级管理员冻结，租户管理员无权启用")
+        target_user.is_active = True
+        target_user.frozen_by_role = None
+        db.commit()
+        dispatch_webhook_event(
+            event_type="tenant_user.enable",
+            payload={
+                "user_id": target_user_id,
+                "username": target_username,
+                "group_id": group.id,
+                "group_name": group.group_name,
+                "operator": current_user.username,
+            },
+            db=db
+        )
+        return {
+            "status": "success",
+            "message": f"用户 [{target_username}] 已启用",
+            "data": {"user_id": target_user_id, "username": target_username, "is_active": True, "frozen_by_role": ""}
+        }
+
+    target_user.is_active = False
+    target_user.frozen_by_role = "tenant_admin"
+    db.commit()
+    purged_sessions = _purge_user_session_artifacts(target_user_id)
+    revoked_oauth = revoke_user_oauth_artifacts(target_user_id, target_username)
+    dispatch_webhook_event(
+        event_type="tenant_user.freeze",
+        payload={
+            "user_id": target_user_id,
+            "username": target_username,
+            "group_id": group.id,
+            "group_name": group.group_name,
+            "operator": current_user.username,
+            "purged_sessions": purged_sessions,
+            "revoked_oauth": revoked_oauth,
+        },
+        db=db
+    )
+    return {
+        "status": "success",
+        "message": f"用户 [{target_username}] 已冻结",
+        "data": {
+            "user_id": target_user_id,
+            "username": target_username,
+            "is_active": False,
+            "frozen_by_role": "tenant_admin",
+            "purged_sessions": purged_sessions,
+            "revoked_oauth": revoked_oauth,
+        }
+    }
+
+
+@router.post("/tenant/users/freeze", summary="租户管理员冻结本租户用户")
+def freeze_tenant_user(
+        payload: TenantUserFreezeSchema,
+        current_user: User = Depends(RBACChecker("tenant:user:update")),
+        db: Session = Depends(get_db)
+):
+    group = _get_current_tenant_group_or_403(db, current_user)
+    target_user = (
+        db.query(User)
+        .options(selectinload(User.roles))
+        .filter(User.id == payload.user_id, User.group_id == group.id)
+        .first()
+    )
+    if not target_user:
+        raise HTTPException(status_code=404, detail="未找到当前租户空间内的目标用户")
+
+    target_user_id = int(getattr(target_user, "id", 0) or 0)
+    target_username = str(getattr(target_user, "username", "") or "")
+
+    if target_user_id == int(getattr(current_user, "id", 0) or 0):
+        raise HTTPException(status_code=400, detail="不能冻结当前登录账号")
+
+    if not target_user.is_active:
+        if getattr(target_user, "frozen_by_role", None) == "system_admin":
+            raise HTTPException(status_code=403, detail="该用户由超级管理员冻结，租户管理员无权启用")
+        purged_sessions = _purge_user_session_artifacts(target_user_id)
+        revoked_oauth = revoke_user_oauth_artifacts(target_user_id, target_username)
+        return {
+            "status": "success",
+            "message": f"用户 [{target_username}] 已处于冻结状态",
+            "data": {
+                "user_id": target_user_id,
+                "username": target_username,
+                "is_active": target_user.is_active,
+                "frozen_by_role": getattr(target_user, "frozen_by_role", "") or "",
+                "purged_sessions": purged_sessions,
+                "revoked_oauth": revoked_oauth,
+            }
+        }
+
+    target_user.is_active = False
+    target_user.frozen_by_role = "tenant_admin"
+    db.commit()
+
+    purged_sessions = _purge_user_session_artifacts(target_user_id)
+    revoked_oauth = revoke_user_oauth_artifacts(target_user_id, target_username)
+
+    dispatch_webhook_event(
+        event_type="tenant_user.freeze",
+        payload={
+            "user_id": target_user.id,
+            "username": target_username,
+            "group_id": group.id,
+            "group_name": group.group_name,
+            "operator": current_user.username,
+            "purged_sessions": purged_sessions,
+            "revoked_oauth": revoked_oauth,
+        },
+        db=db
+    )
 
     return {
         "status": "success",
-        "message": "全部会话已下线",
-        "count": len(revoked),
-        "kept_current": bool(payload.keep_current),
+        "message": f"用户 [{target_username}] 已冻结",
+        "data": {
+            "user_id": target_user_id,
+            "username": target_username,
+            "is_active": target_user.is_active,
+            "frozen_by_role": "tenant_admin",
+            "purged_sessions": purged_sessions,
+            "revoked_oauth": revoked_oauth,
+        }
+    }
+
+
+# ==================== 🛠️ 改造核心接口 1：用户退出登录 (单轨 Session 彻底粉碎) ====================
+@router.post("/auth/logout", summary="用户退出登录")
+@router.get("/admin/logout", summary="【管理端】快捷退出登录视图管线")
+def logout_user(
+        response: Response,
+        authorization: str = Header(None, description="承载标准 Bearer Token 的请求头"),
+        sso_session_id_cookie: str = Cookie(None, alias="sso_session_id", description="从 Cookie 缓存池中捕获的唯一会话令牌"),
+        sso_session_id_form: str = Form(None, alias="sso_session_id", description="可选：通过表单显式提交的会话ID")
+):
+    """
+    业务逻辑（纯 Session 大一统改造版）：
+    1. 多渠道提取当前的 Session ID（Header / Cookie / Form）。
+    2. 服务端斩草除根：直接从 Redis 中彻底 delete 掉该 Session ID，瞬间令全网所有端同时下线。
+    3. 客户端物理擦除：向响应头下发 delete 指令，强制浏览器抹除 sso_session_id Cookie。
+    """
+    # 🚀 1. 多渠道自适应清洗唯一的会话钥匙
+    target_session_id = None
+
+    if authorization and authorization.startswith("Bearer "):
+        target_session_id = authorization.split(" ")[1]
+    elif sso_session_id_cookie:
+        target_session_id = sso_session_id_cookie
+    elif sso_session_id_form:
+        target_session_id = sso_session_id_form
+
+    # 🚀 2. 服务端状态粉碎
+    if target_session_id and target_session_id.startswith("sess_"):
+        # 直接物理删除，让这把钥匙彻底失效，根本不需要维护臃肿的黑名单数据！
+        meta_key = f"sess_meta:{target_session_id}"
+        raw_user_id = redis_client.get(target_session_id)
+        if raw_user_id:
+            try:
+                user_id = int(raw_user_id.decode("utf-8") if isinstance(raw_user_id, bytes) else raw_user_id)
+            except ValueError:
+                user_id = None
+            if user_id:
+                user_set_key = f"user:active_sessions:{user_id}"
+                redis_client.srem(user_set_key, target_session_id)
+        redis_client.delete(target_session_id)
+        redis_client.delete(meta_key)
+
+    # 🚀 3. 客户端 Cookie 擦除
+    # 必须保证 path="/" 与登录时严格对齐，否则浏览器会因为路径不匹配而拒绝擦除！
+    response.delete_cookie(
+        key="sso_session_id",
+        path="/",
+        secure=False,   # 本地调试设为 False，与登录接口完全对齐
+        httponly=True,
+        samesite="lax"
+    )
+
+    return {
+        "status": "success",
+        "message": "单点登录会话已从服务端安全粉碎，浏览器托管的全局 Cookie 凭证已同步完成擦除清空！"
     }
 
 
 
-def _build_user_profile_payload(db: Session, current_user: User) -> dict:
+# ==================== 🛠️ 改造核心接口 2：注销账户 (Delete Account - 纯 Session 版) ====================
+@router.delete("/auth/unregister", summary="合规性用户账户销户/注销")
+def delete_account(
+        response: Response,
+        confirm_password: str = Form(..., description="高危操作：必须重新验证用户当前密码"),
+        authorization: str = Header(None, description="承载标准 Bearer Token 的请求头"),
+        sso_session_id_cookie: str = Cookie(None, alias="sso_session_id", description="从 Cookie 中捕获的会话令牌"),
+        sso_session_id_form: str = Form(None, alias="sso_session_id", description="从表单中提交的会话令牌"),
+        db: Session = Depends(get_db)
+):
+    """
+    业务逻辑（Session 大一统改造版）：
+    1. 多渠道自适应提取当前的 Session ID。
+    2. 去 Redis 中提取对应的真实用户名，不再解密 JWT。
+    3. 严苛核验密码通过后，物理抹除数据库用户实体，并同步粉碎 Redis 会话与浏览器 Cookie。
+    """
+    # 🚀 1. 多渠道清洗唯一的会话钥匙
+    target_session_id = None
+    if authorization and authorization.startswith("Bearer "):
+        target_session_id = authorization.split(" ")[1]
+    elif sso_session_id_cookie:
+        target_session_id = sso_session_id_cookie
+    elif sso_session_id_form:
+        target_session_id = sso_session_id_form
+
+    if not target_session_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="身份认证已失效，请重新登录后再执行高危操作")
+
+    # 🚀 2. 从 Redis 统一中控中直接捞取用户名
+    username = redis_client.get(target_session_id)
+    if not username:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="非法或已过期的会话凭证，拒绝高危执行")
+
+    # 🚀 3. 锁定数据库用户（Redis 里存的是 user_id，兼容旧 username 会话）
+    user = _load_user_from_session_value(db, username)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="目标账户不存在")
+
+    user_id = int(user.id)
+    username_text = str(user.username)
+
+    # 🚀 4. 严苛验证密码
+    if not pwd_context.verify(confirm_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="安全审计失败：密码校验错误，拒绝销户请求")
+
+    # 🚀 5. 斩草除根：物理抹除与分布式会话粉碎
+    _purge_user_session_artifacts(user_id)
+    _purge_session_artifacts(target_session_id, user_id=user_id)
+    db.delete(user)
+    db.commit()
+    dispatch_webhook_event(
+        event_type="user.delete",
+        payload={
+            "user_id": user_id,
+            "status": "terminated"
+        },
+        db=db
+    )
+
+    # 强行清洗浏览器托管的 Cookie 凭证（注意 path="/" 的严格对齐）
+    response.delete_cookie(
+        key="sso_session_id",
+        path="/",
+        secure=False,
+        httponly=True,
+        samesite="lax"
+    )
+
+    return {
+        "status": "success",
+        "message": f"用户账户 [{username_text}] 已成功物理销户，相关核心数据及全网 Session 会话已被全面抹除清空。"
+    }
+
+
+# ==================== 🛠️ 改造核心接口 3：修改密码 (Change Password - 纯 Session 版) ====================
+@router.post("/auth/change_password", summary="用户修改密码")
+def change_password(
+        current_password: str = Form(..., description="当前密码"),
+        new_password: str = Form(..., min_length=8, description="新密码，至少8位"),
+        authorization: str = Header(None, description="承载标准 Bearer Token 的请求头"),
+        sso_session_id_cookie: str = Cookie(None, alias="sso_session_id", description="从 Cookie 中捕获的会话令牌"),
+        db: Session = Depends(get_db)
+):
+    """
+    业务逻辑（Session 大一统改造版）：
+    1. 自适应提取 Session 钥匙。
+    2. 基于 Redis 状态机核验身份，通过后更改数据库密码。
+    """
+    # 🚀 1. 钥匙清洗
+    target_session_id = None
+    if authorization and authorization.startswith("Bearer "):
+        target_session_id = authorization.split(" ")[1]
+    elif sso_session_id_cookie:
+        target_session_id = sso_session_id_cookie
+
+    if not target_session_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="身份认证已失效，请重新登录后再执行操作")
+
+    # 🚀 2. 状态检索
+    username = redis_client.get(target_session_id)
+    if not username:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="会话已过期或已被吊销，请重新登录")
+
+    # 🚀 3. 密码置换审计（Redis 里存的是 user_id，兼容旧 username 会话）
+    user = _load_user_from_session_value(db, username)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="目标账户不存在")
+
+    if not pwd_context.verify(current_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码错误，拒绝修改")
+
+    _validate_password_strength(new_password)
+
+    # 哈希加盐持久化新密码
+    user.password_hash = pwd_context.hash(new_password)
+    db.commit()
+
+    # 💡 贴心策略（可选）：修改密码后你可以选择将当前用户的 Session 清掉迫使其重新登录，
+    # 或者是保持原有连接。这里我们让其保持登录，返回成功：
+    return {
+        "status": "success",
+        "message": f"用户 [{username}] 密码修改成功，新策略已实时并网生效！"
+    }
+
+def _build_user_profile_payload(db: Session, current_user: User) -> dict[str, object]:
     group = _resolve_user_group(db, current_user)
     roles = [role.name for role in current_user.roles]
     nickname = getattr(current_user, "nickname", None)

@@ -21,6 +21,8 @@ PROTECTED_PERMS = [
     "read",
     "write",
     "tenant:user:create",
+    "tenant:user:update",
+    "tenant:user:invite_link",
     "tenant:app:read",
     "tenant:app:create",
     "tenant:credential:read",

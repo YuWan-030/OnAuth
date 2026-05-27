@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>租户管理员邀请码 - OnAuth 云中台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        body {
+            background: #f3f4f6;
+            padding: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .layui-card {
+            border-radius: 10px;
+            border: 1px solid #ebeef5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            background: #fff;
+        }
+
+        .layui-card-header {
+            padding: 0 16px;
+            font-weight: 700;
+            color: #0f172a;
+            border-bottom: 1px solid #f1f5f9;
+            height: 50px;
+            line-height: 50px;
+        }
+
+        .layui-card-body {
+            padding: 18px 16px 16px;
+        }
+
+        .page-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+
+        .page-desc {
+            font-size: 13px;
+            color: #64748b;
+            line-height: 1.7;
+            margin-bottom: 18px;
+        }
+
+        .hint-box {
+            border: 1px solid rgba(37, 99, 235, 0.16);
+            background: rgba(37, 99, 235, 0.06);
+            color: #1d4ed8;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 18px;
+            font-size: 13px;
+            line-height: 1.7;
+        }
+
+        .layui-input {
+            border-radius: 6px !important;
+            border-color: #cbd5e1 !important;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .layui-input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+
+        .layui-table-view {
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #e5e7eb;
+        }
+
+        .layui-table th {
+            background: #f8fafc !important;
+            color: #475569 !important;
+            font-weight: 600;
+        }
+
+        .btn-theme {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 40px !important;
+            line-height: 40px !important;
+            font-size: 14px !important;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.18);
+        }
+
+        .btn-ghost {
+            border-radius: 6px !important;
+            height: 40px !important;
+            line-height: 40px !important;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .invite-form {
+            padding: 14px 14px 0;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            background: #fafafa;
+            margin-bottom: 18px;
+        }
+
+        .status-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-active { color: #166534; background: #dcfce7; }
+        .status-revoked { color: #b91c1c; background: #fee2e2; }
+        .status-expired { color: #92400e; background: #fef3c7; }
+        .status-missing { color: #475569; background: #e2e8f0; }
+
+        .table-actions .layui-btn {
+            margin-right: 6px;
+            margin-bottom: 4px;
+        }
+
+        .empty-tip {
+            padding: 18px 14px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 10px;
+            background: #fff;
+            color: #64748b;
+            font-size: 13px;
+            line-height: 1.7;
+            text-align: center;
+        }
+
+        .onauth-version-badge {
+            position: fixed;
+            right: 12px;
+            bottom: 12px;
+            z-index: 3000;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            color: #e5e7eb;
+            background: rgba(17, 24, 39, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.18);
+            backdrop-filter: blur(6px);
+            pointer-events: none;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .toolbar,
+            .table-actions {
+                flex-direction: column;
+            }
+
+            .toolbar .layui-btn,
+            .table-actions .layui-btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="layui-fluid">
+    <div class="layui-card">
+        <div class="layui-card-header">租户管理员邀请码管理</div>
+        <div class="layui-card-body">
+            <div class="page-title">系统管理员邀请码</div>
+            <div class="page-desc">在这里生成、查看与作废租户管理员注册邀请码。邀请码仅供系统管理员管理，租户管理员注册时必须填写有效邀请码。</div>
+
+            <div class="hint-box">
+                说明：<br>
+                1. 每次生成的邀请码会自动写入历史列表；<br>
+                2. 可以随时复制或作废任意历史邀请码；<br>
+                3. 状态会自动区分“有效 / 已作废 / 已过期”；<br>
+                4. 被作废的邀请码将立即失效，不能再用于注册。
+            </div>
+
+            <div class="invite-form">
+                <form class="layui-form">
+                    <div class="layui-form-item">
+                        <label class="layui-form-label" for="inviteCode" style="width:90px;padding-left:0;">邀请码</label>
+                        <div class="layui-input-block" style="margin-left:110px;">
+                            <input type="text" name="invite_code" id="inviteCode" class="layui-input" placeholder="点击下方按钮生成" readonly>
+                        </div>
+                    </div>
+                    <div class="toolbar">
+                        <button type="button" class="layui-btn btn-theme" id="btn-generate-invite">生成邀请码</button>
+                        <button type="button" class="layui-btn layui-btn-primary btn-ghost" id="btn-copy-invite" disabled>复制邀请码</button>
+                        <button type="button" class="layui-btn layui-btn-primary btn-ghost" id="btn-refresh-list">刷新列表</button>
+                    </div>
+                </form>
+            </div>
+
+            <div id="emptyTip" class="empty-tip">暂无邀请码历史，点击“生成邀请码”即可创建第一条记录。</div>
+            <div id="tableWrap" style="display:none;">
+                <table class="layui-table" lay-skin="line" id="inviteTable">
+                    <thead>
+                    <tr>
+                        <th>邀请码</th>
+                        <th>生成者</th>
+                        <th>生成时间</th>
+                        <th>过期时间</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                    </thead>
+                    <tbody id="inviteTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+layui.use(['layer', 'jquery'], function(){
+    var layer = layui.layer, $ = layui.$;
+
+    function statusHtml(status) {
+        var safe = String(status || '').trim().toLowerCase();
+        var textMap = {
+            active: '有效',
+            revoked: '已作废',
+            expired: '已过期',
+            missing: '未知'
+        };
+        return '<span class="status-tag status-' + (safe || 'missing') + '">' + (textMap[safe] || '未知') + '</span>';
+    }
+
+    function fmtText(value) {
+        var text = String(value || '').trim();
+        return text || '-';
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function setCurrentInvite(data) {
+        $('#inviteCode').val(data.invite_code || '');
+        $('#btn-copy-invite').prop('disabled', !data.invite_code);
+    }
+
+    function copyInviteCode(code) {
+        var text = String(code || $('#inviteCode').val() || '').trim();
+        if (!text) {
+            layer.msg('请先生成邀请码', {icon: 2});
+            return;
+        }
+
+        function fallbackCopy() {
+            var $temp = $('<textarea readonly></textarea>').val(text).css({position: 'fixed', left: '-9999px', top: '0'});
+            $('body').append($temp);
+            $temp[0].select();
+            try {
+                document.execCommand('copy');
+                layer.msg('邀请码已复制', {icon: 1});
+            } catch (err) {
+                layer.msg('复制失败，请手动复制', {icon: 2});
+            }
+            $temp.remove();
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function(){
+                layer.msg('邀请码已复制', {icon: 1});
+            }).catch(fallbackCopy);
+            return;
+        }
+        fallbackCopy();
+    }
+
+    function renderList(items) {
+        var $body = $('#inviteTableBody');
+        $body.empty();
+
+        if (!items || !items.length) {
+            $('#tableWrap').hide();
+            $('#emptyTip').show();
+            return;
+        }
+
+        $('#tableWrap').show();
+        $('#emptyTip').hide();
+
+        items.forEach(function(item){
+            var code = fmtText(item.invite_code);
+            var row = ''
+                + '<tr>'
+                + '<td><div style="font-weight:600;word-break:break-all;">' + escapeHtml(code) + '</div></td>'
+                + '<td>' + escapeHtml(fmtText(item.issuer_username)) + '</td>'
+                + '<td>' + escapeHtml(fmtText(item.created_at)) + '</td>'
+                + '<td>' + escapeHtml(fmtText(item.expires_at)) + '</td>'
+                + '<td>' + statusHtml(item.status) + '</td>'
+                + '<td class="table-actions">'
+                + '<button type="button" class="layui-btn layui-btn-sm layui-btn-primary btn-copy-row" data-code="' + escapeHtml(code) + '">复制</button>'
+                + '<button type="button" class="layui-btn layui-btn-sm layui-btn-danger btn-revoke-row" data-code="' + escapeHtml(code) + '">作废</button>'
+                + '</td>'
+                + '</tr>';
+            $body.append(row);
+        });
+    }
+
+    function loadInviteList() {
+        layer.load(2);
+        $.ajax({
+            url: '/admin/tenant_admin/invite_codes',
+            type: 'GET',
+            data: { limit: 50 },
+            success: function(res){
+                if (res.status === 'success') {
+                    renderList(res.data || []);
+                } else {
+                    layer.msg(res.message || '加载失败', {icon: 2});
+                }
+            },
+            error: function(xhr){
+                var errorText = (xhr.responseJSON && (xhr.responseJSON.detail || xhr.responseJSON.message)) || '加载失败';
+                layer.msg(errorText, {icon: 2});
+            },
+            complete: function(){
+                layer.closeAll('loading');
+            }
+        });
+    }
+
+    $('#btn-generate-invite').on('click', function(){
+        var $btn = $(this);
+        layer.load(2);
+        $btn.prop('disabled', true);
+
+        $.ajax({
+            url: '/auth/admin/tenant_admin/invite_code',
+            type: 'POST',
+            success: function(res){
+                if (res.status === 'success') {
+                    setCurrentInvite(res.data || {});
+                    layer.msg('邀请码生成成功，请及时复制保存', {icon: 1});
+                    loadInviteList();
+                } else {
+                    layer.msg(res.message || '生成失败', {icon: 2});
+                }
+            },
+            error: function(xhr){
+                var errorText = (xhr.responseJSON && (xhr.responseJSON.detail || xhr.responseJSON.message)) || '生成失败';
+                layer.msg(errorText, {icon: 2, time: 3000});
+            },
+            complete: function(){
+                layer.closeAll('loading');
+                $btn.prop('disabled', false);
+            }
+        });
+    });
+
+    $('#btn-copy-invite').on('click', function(){
+        copyInviteCode($('#inviteCode').val());
+    });
+
+    $('#btn-refresh-list').on('click', function(){
+        loadInviteList();
+    });
+
+    $('#inviteTableBody').on('click', '.btn-copy-row', function(){
+        copyInviteCode($(this).data('code'));
+    });
+
+    $('#inviteTableBody').on('click', '.btn-revoke-row', function(){
+        var code = String($(this).data('code') || '').trim();
+        if (!code) {
+            return;
+        }
+
+        layer.confirm('确认作废邀请码 [' + code + '] 吗？作废后将立即失效。', {icon: 3, title: '作废确认'}, function(index){
+            layer.close(index);
+            layer.load(2);
+            $.ajax({
+                url: '/admin/tenant_admin/invite_code/revoke',
+                type: 'POST',
+                data: { invite_code: code },
+                success: function(res){
+                    if (res.status === 'success') {
+                        layer.msg('邀请码已作废', {icon: 1});
+                        loadInviteList();
+                    } else {
+                        layer.msg(res.message || '作废失败', {icon: 2});
+                    }
+                },
+                error: function(xhr){
+                    var errorText = (xhr.responseJSON && (xhr.responseJSON.detail || xhr.responseJSON.message)) || '作废失败';
+                    layer.msg(errorText, {icon: 2, time: 3000});
+                },
+                complete: function(){
+                    layer.closeAll('loading');
+                }
+            });
+        });
+    });
+
+    loadInviteList();
+});
+</script>
+<div id="onauth-version-badge" class="onauth-version-badge">{{ APP_VERSION }}</div>
+</body>
+</html>
+
+

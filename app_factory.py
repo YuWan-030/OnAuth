@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from bootstrap import bootstrap_system
 from middlewares.exception_handlers import register_exception_handlers
 from middlewares.operation_log import operation_log_middleware
-from routers import admin, auth_user, business, oauth, permission, system_api, tenant, webhook
+from routers import admin, auth_user, business, oauth, permission, system_api, tenant, webhook, invite_admin
 from routers.views import router as views_router
 from template_env import APP_LOGO_DIR
 
@@ -37,6 +37,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_user.router)
     app.include_router(permission.router)
     app.include_router(webhook.router)
+    app.include_router(invite_admin.router)
     app.include_router(tenant.router)
     app.include_router(system_api.router)
     app.include_router(views_router)

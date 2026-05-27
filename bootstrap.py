@@ -111,6 +111,8 @@ def seed_initial_user() -> None:
             "read": "全局可读权限",
             "write": "全局可写权限",
             "tenant:user:create": "租户管理端-邀请创建使用者账号",
+            "tenant:user:update": "租户管理端-冻结或恢复本租户空间内的使用者账号",
+            "tenant:user:invite_link": "租户管理端-生成邀请注册链接",
             "tenant:app:read": "租户管理端-查看本租户应用列表",
             "tenant:app:create": "租户管理端-创建本租户应用",
             "tenant:credential:read": "租户管理端-查看本租户应用凭证",
@@ -164,7 +166,7 @@ def seed_initial_user() -> None:
 
         tenant_admin_role = db.query(Role).filter(Role.name == "tenant_admin").first()
         tenant_admin_perm_names = [
-            "read", "write", "tenant:user:create", "tenant:app:read", "tenant:app:create",
+            "read", "write", "tenant:user:create", "tenant:user:update", "tenant:user:invite_link", "tenant:app:read", "tenant:app:create",
             "tenant:credential:read", "tenant:credential:create", "webhook:create",
             "webhook:update", "webhook:list", "webhook:delete", "webhook:logs",
         ]

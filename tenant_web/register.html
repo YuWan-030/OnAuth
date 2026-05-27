@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>租户管理员注册 - OnAuth</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="/favicon.ico?v=20260527" type="image/x-icon" sizes="any">
+    <link rel="shortcut icon" href="/favicon.ico?v=20260527" type="image/x-icon">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        /* ==========================================================================
+           全屏星空灰背景与垂直居中容器
+           ========================================================================== */
+        body {
+            background: radial-gradient(circle at 50% 50%, #f8fafc, #e2e8f0);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 注册卡片：自适应宽度，为多表单项预留呼吸空间 */
+        .reg-container {
+            width: 360px;
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+            border: 1px solid #ebeef5;
+            margin: 20px 0;
+        }
+
+        .logo {
+            width: 72px;
+            height: 72px;
+            border-radius: 0;
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: none;
+            overflow: hidden;
+            flex: 0 0 auto;
+        }
+
+        .logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            width: fit-content;
+            margin: 0 auto 22px;
+        }
+
+        .page-title-group {
+            min-width: 0;
+            flex: 0 1 auto;
+        }
+
+        /* 主标题排版 */
+        .reg-title {
+            font-size: 20px;
+            font-weight: 700;
+            text-align: left;
+            margin: 0;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+        }
+
+        .page-subtitle {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.7;
+        }
+
+        /* 顶部引导与 Banner 观感精细化 */
+        .tip {
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.7;
+            margin-bottom: 16px;
+        }
+        .banner {
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            background: rgba(37, 99, 235, 0.06);
+            border: 1px solid rgba(37, 99, 235, 0.15);
+            color: #1d4ed8;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        /* 表单项容器：相对定位，隔离图标与输入框，防止位置错乱 */
+        .layui-form-item {
+            margin-bottom: 20px;
+            position: relative;
+            clear: both;
+        }
+
+        /* ==========================================================================
+           输入框与图标精细化加工（绝对对齐规范）
+           ========================================================================== */
+        .layui-input {
+            border-radius: 6px !important;
+            border-color: #cbd5e1 !important;
+            height: 42px;
+            padding-left: 38px !important; /* 精准留出左侧图标区域 */
+            padding-right: 14px !important;
+            transition: all 0.2s ease-in-out;
+            font-size: 14px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .layui-input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+
+        /* 内嵌式输入框前置图标：强制垂直居中，彻底告别位置偏离 */
+        .input-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 16px;
+            z-index: 10;
+            pointer-events: none;
+            line-height: 1;
+        }
+
+        /* ==========================================================================
+           核心渐变蓝动作按钮与底部流转
+           ========================================================================== */
+        .btn-reg-theme {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 42px !important;
+            line-height: 42px !important;
+            font-size: 14px !important;
+            font-weight: 600;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-reg-theme:hover { opacity: 0.95; color: #fff !important; }
+        .btn-reg-theme:active { transform: scale(0.98); }
+
+        .link-back {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+        .link-back a {
+            color: #64748b;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+        .link-back a:hover {
+            color: #2563eb;
+        }
+
+        /* 全局版本标签 */
+        .onauth-version-badge {
+            position: fixed;
+            right: 12px;
+            bottom: 12px;
+            z-index: 3000;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            color: #e5e7eb;
+            background: rgba(17, 24, 39, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            backdrop-filter: blur(6px);
+            pointer-events: none;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px !important;
+            }
+            .reg-container {
+                width: min(94vw, 460px) !important;
+                max-width: 94vw !important;
+                padding: 24px 20px !important;
+                border-radius: 16px !important;
+                margin: 10px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="reg-container">
+    <div class="page-header">
+        <div class="logo"><img src="/favicon.ico?v=20260527" alt="OnAuth Logo"></div>
+        <div class="page-title-group">
+            <div class="reg-title">租户管理员注册</div>
+            <div class="page-subtitle">此页面用于初始化创建独立的租户舱体空间，并生成该空间的最高权限管理员凭证。</div>
+        </div>
+    </div>
+    <div class="banner">⚠️ 必须持有系统管理员签发的有效“系统邀请码”方可向下提交流转。</div>
+
+    <form class="layui-form" lay-filter="tenantRegisterForm">
+
+        <div class="layui-form-item">
+            <i class="layui-icon layui-icon-username input-icon"></i>
+            <input type="text" name="username" lay-verify="required" lay-reqtext="请输入管理员安全访问账户" placeholder="请输入管理员账号" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item">
+            <i class="layui-icon layui-icon-password input-icon"></i>
+            <input type="password" name="password" lay-verify="required" lay-reqtext="请为管理员设置高强度认证密码" placeholder="请设置登录密码" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item">
+            <i class="layui-icon layui-icon-user input-icon"></i>
+            <input type="text" name="nickname" placeholder="管理员昵称（可选）" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item">
+            <i class="layui-icon layui-icon-layer input-icon"></i>
+            <input type="text" name="group_name" lay-verify="required" lay-reqtext="请输入要创建的租户空间实体名称" placeholder="请输入租户空间名称（如：研发一中心）" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item">
+            <i class="layui-icon layui-icon-about input-icon"></i>
+            <input type="text" name="group_description" placeholder="租户空间说明/备注（可选）" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item">
+            <i class="layui-icon layui-icon-key input-icon"></i>
+            <input type="text" name="invite_code" lay-verify="required" lay-reqtext="请输入系统管理员下发的初始化邀请凭证" placeholder="请输入系统管理员邀请码" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item" style="margin-top: 26px; margin-bottom: 5px;">
+            <button class="layui-btn layui-btn-fluid btn-reg-theme" lay-submit lay-filter="doTenantRegister">提交注册申请并初始化空间</button>
+        </div>
+
+        <div class="link-back">
+            <a href="/register">普通用户注册入口</a> · <a href="/login">返回身份验证</a>
+        </div>
+    </form>
+</div>
+
+<script>
+layui.use(['form', 'layer'], function(){
+    var form = layui.form, layer = layui.layer, $ = layui.$;
+
+    // 🛡️ 边界防御：防 Iframe 跨域嵌套
+    if (window !== window.top) {
+        window.top.location.href = window.location.href;
+    }
+
+    // 监听租户初始化表单提交
+    form.on('submit(doTenantRegister)', function(data){
+        const loading = layer.load(2);
+
+        $.ajax({
+            url: '/auth/register/tenant_admin',
+            type: 'POST',
+            data: JSON.stringify(data.field),
+            contentType: 'application/json',
+            success: function(res){
+                layer.close(loading);
+                if (res.status === 'success') {
+                    const codeHtml = res.group_code ?
+                        '<br><br>租户核心识别码：<b style="color:#2563eb; font-size:16px; letter-spacing:0.5px;">' + res.group_code + '</b><br><span style="color:#64748b; font-size:12px;">（请妥善保管此识别码，后续用户加入时需手动填写）</span>' : '';
+
+                    layer.alert('🎉 租户管理员空间初始化申请成功！' + codeHtml + '<br><br>系统已拦截入库，请等待超级管理员安全授信审核。', {
+                        title: '授信流转通知',
+                        icon: 1,
+                        btn: ['悉知并返回登录']
+                    }, function(index){
+                        layer.close(index);
+                        window.location.href = '/login';
+                    });
+                } else {
+                    layer.msg(res.message || '租户空间创建受阻', {icon: 2, shift: 6});
+                }
+            },
+            error: function(xhr){
+                layer.close(loading);
+                var errMsg = xhr.responseJSON?.detail || xhr.responseJSON?.message || '网络空间创建遭遇分布式网格拒绝';
+                layer.msg(errMsg, {icon: 2, shift: 6});
+            }
+        });
+        return false;
+    });
+});
+</script>
+
+<div id="onauth-version-badge" class="onauth-version-badge">{{ APP_VERSION }}</div>
+</body>
+</html>

@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>普通用户注册 - OnAuth</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="/favicon.ico?v=20260527" type="image/x-icon" sizes="any">
+    <link rel="shortcut icon" href="/favicon.ico?v=20260527" type="image/x-icon">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/css/layui.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/layui/2.9.0/layui.js"></script>
+    <style>
+        /* ==========================================================================
+           全屏星空灰背景与垂直居中容器
+           ========================================================================== */
+        body {
+            background: radial-gradient(circle at 50% 50%, #f8fafc, #e2e8f0);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 注册卡片 */
+        .reg-container {
+            width: 360px;
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+            border: 1px solid #ebeef5;
+        }
+
+        .logo {
+            width: 72px;
+            height: 72px;
+            border-radius: 0;
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: none;
+            overflow: hidden;
+            flex: 0 0 auto;
+        }
+
+        .logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            width: fit-content;
+            margin: 0 auto 22px;
+        }
+
+        .page-title-group {
+            min-width: 0;
+            flex: 0 1 auto;
+        }
+
+        /* 主标题排版 */
+        .reg-title {
+            font-size: 20px;
+            font-weight: 700;
+            text-align: left;
+            margin: 0;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+        }
+
+        .page-subtitle {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.7;
+        }
+
+        /* 动态邀请空间通知 Banner */
+        .banner {
+            display: none;
+            margin-bottom: 18px;
+            padding: 14px 16px;
+            border-radius: 8px;
+            background: rgba(37, 99, 235, 0.06);
+            border: 1px solid rgba(37, 99, 235, 0.15);
+            color: #1d4ed8;
+            font-size: 13px;
+            line-height: 1.6;
+            text-align: center; /* 让文本默认整体居中 */
+        }
+
+        /* ==========================================================================
+           核心新增：独立居中的圆角矩形舱体卡片
+           ========================================================================== */
+        .tenant-capsule {
+            display: block; /* 独立成行 */
+            margin: 10px auto 2px auto;
+            padding: 6px 14px;
+            width: fit-content; /* 宽度随文字自适应 */
+            max-width: 90%;
+            background: linear-gradient(135deg, #2563eb, #1d4ed8); /* 沿用主色调渐变，保持视觉一致 */
+            color: #ffffff !important;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 6px; /* 扁平风格微圆角 */
+            box-shadow: 0 4px 10px rgba(37, 99, 235, 0.15);
+            letter-spacing: 0.5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .layui-form-item { margin-bottom: 20px; position: relative; }
+
+        /* ==========================================================================
+           输入框与图标精细化加工
+           ========================================================================== */
+        .layui-input {
+            border-radius: 6px !important;
+            border-color: #cbd5e1 !important;
+            height: 42px;
+            padding-left: 38px !important;
+            padding-right: 38px !important;
+            transition: all 0.2s ease-in-out;
+            font-size: 14px;
+        }
+        .layui-input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+
+        /* 状态打磨：当租户识别码被锁定只读时的视觉提振 */
+        .layui-input[readonly] {
+            background-color: #f1f5f9 !important;
+            border-color: #cbd5e1 !important;
+            color: #64748b !important;
+            cursor: not-allowed;
+            box-shadow: none !important;
+        }
+
+        /* 前置图标 */
+        .input-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 16px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* 后置锁定图标 */
+        .suffix-icon {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 14px;
+            z-index: 10;
+            display: none;
+        }
+
+        /* 核心渐变蓝注册按钮 */
+        .btn-reg-theme {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 6px !important;
+            height: 42px !important;
+            line-height: 42px !important;
+            font-size: 14px !important;
+            font-weight: 600;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-reg-theme:hover { opacity: 0.95; color: #fff !important; }
+        .btn-reg-theme:active { transform: scale(0.98); }
+
+        /* 底部流转 */
+        .link-back {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+        .link-back a {
+            color: #64748b;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+        .link-back a:hover { color: #2563eb; }
+
+        .sr-only {
+            position: absolute !important;
+            width: 1px !important;
+            height: 1px !important;
+            padding: 0 !important;
+            margin: -1px !important;
+            overflow: hidden !important;
+            clip: rect(0, 0, 0, 0) !important;
+            white-space: nowrap !important;
+            border: 0 !important;
+        }
+
+        /* 全局版本标签 */
+        .onauth-version-badge {
+            position: fixed;
+            right: 12px;
+            bottom: 12px;
+            z-index: 3000;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            color: #e5e7eb;
+            background: rgba(17, 24, 39, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            backdrop-filter: blur(6px);
+            pointer-events: none;
+        }
+
+        @media (max-width: 768px) {
+            .reg-container {
+                width: min(94vw, 460px) !important;
+                max-width: 94vw !important;
+                padding: 24px 20px !important;
+                border-radius: 16px !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="reg-container">
+    <div class="page-header">
+        <div class="logo"><img src="/favicon.ico?v=20260527" alt="OnAuth Logo"></div>
+        <div class="page-title-group">
+            <div class="reg-title">普通用户注册</div>
+            <div class="page-subtitle">普通用户必须通过租户管理员邀请链接进入注册；没有邀请码将无法提交注册。</div>
+        </div>
+    </div>
+
+    <div id="inviteBanner" class="banner"></div>
+
+    <form class="layui-form">
+        <input type="hidden" name="invite_token" value="">
+
+        <div class="layui-form-item">
+            <label class="sr-only" for="username">用户名</label>
+            <i class="layui-icon layui-icon-username input-icon"></i>
+            <input type="text" name="username" id="username" placeholder="请输入账户（用于登录认证）" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item">
+            <label class="sr-only" for="password">密码</label>
+            <i class="layui-icon layui-icon-password input-icon"></i>
+            <input type="password" name="password" id="password" placeholder="请设置登录密码" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item">
+            <label class="sr-only" for="nickname">昵称</label>
+            <i class="layui-icon layui-icon-user input-icon"></i>
+            <input type="text" name="nickname" id="nickname" placeholder="请输入用户昵称（可选）" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item">
+            <label class="sr-only" for="groupCode">租户识别码</label>
+            <i class="layui-icon layui-icon-layer input-icon"></i>
+            <input type="text" name="group_code" id="groupCode" placeholder="请先通过邀请链接进入" class="layui-input" autocomplete="off" readonly>
+            <i class="layui-icon layui-icon-lock suffix-icon" id="lockIcon" title="受邀请链路保护，已锁定。"></i>
+        </div>
+
+        <div class="layui-form-item" style="margin-top: 26px; margin-bottom: 5px;">
+            <button type="button" class="layui-btn layui-btn-fluid btn-reg-theme" id="btnRegisterUser" disabled>请先获取邀请链接</button>
+        </div>
+
+        <div class="link-back">
+            <a href="/login">已有账号？返回身份验证</a> · <a href="/tenant/register">租户管理员入口</a>
+        </div>
+    </form>
+</div>
+
+<script>
+layui.use(['layer'], function(){
+    var layer = layui.layer, $ = layui.$;
+
+    if (window !== window.top) {
+        window.top.location.href = window.location.href;
+    }
+
+    function setSubmitState(enabled, label) {
+        $('#btnRegisterUser').prop('disabled', !enabled).text(label || (enabled ? '立即注册并激活凭证' : '请先获取邀请链接'));
+    }
+
+    function loadInviteInfo() {
+        var params = new URLSearchParams(window.location.search || '');
+        var inviteToken = params.get('invite_token') || '';
+        if (!inviteToken) {
+            $('#inviteBanner').show().text('普通用户注册必须通过租户管理员邀请链接进入。');
+            $('#groupCode').val('').prop('readonly', true);
+            $('#lockIcon').fadeIn(100);
+            setSubmitState(false);
+            return;
+        }
+
+        $('input[name="invite_token"]').val(inviteToken);
+        $('#groupCode').prop('readonly', true);
+        $('#lockIcon').fadeIn(200);
+        $('#inviteBanner').show().text('正在解析邀请授信链，锁定空间映射中...');
+        setSubmitState(false, '邀请链校验中...');
+
+        $.get('/auth/register/invite_info', { invite_token: inviteToken }, function(res){
+            if (res.status === 'success') {
+                var data = res.data || {};
+                $('#groupCode').val(data.group_code || '');
+
+                // 🛠️ 核心结构重构：文案与矩形胶囊体分离，强制换行且独立居中包裹
+                var spaceName = data.group_name || '未知租户空间';
+                $('#inviteBanner').show().html(
+                    '🔍 检测到受邀认证链，完成注册将自动编入中台舱体：' +
+                    '<span class="tenant-capsule">🚀 ' + spaceName + '</span>'
+                );
+                setSubmitState(true, '立即注册并激活凭证');
+            } else {
+                $('#inviteBanner').show().text(res.message || '邀请链路认证失败，请向租户管理员重新索取注册链接。');
+                $('#groupCode').prop('readonly', true).val('');
+                $('#lockIcon').fadeIn(100);
+                setSubmitState(false);
+            }
+        }).fail(function(){
+            $('#inviteBanner').show().text('邀请凭证已过期或已被撤销，请向租户管理员重新索取注册链接。');
+            $('#groupCode').prop('readonly', true).val('');
+            $('#lockIcon').fadeIn(100);
+            setSubmitState(false);
+        });
+    }
+
+    loadInviteInfo();
+
+    $('#btnRegisterUser').on('click', function(){
+        var inviteToken = $('input[name="invite_token"]').val() || '';
+        if (!inviteToken) {
+            layer.msg('普通用户注册必须使用租户管理员邀请链接', {icon: 2, shift: 6});
+            return;
+        }
+
+        var fieldData = {
+            username: $('input[name="username"]').val(),
+            password: $('input[name="password"]').val(),
+            nickname: $('input[name="nickname"]').val(),
+            invite_token: inviteToken
+        };
+
+        if (!fieldData.username || !fieldData.password) {
+            layer.msg('请先填写用户名和密码', {icon: 2, shift: 6});
+            return;
+        }
+
+        const loading = layer.load(2);
+        $.ajax({
+            url: '/auth/register',
+            type: 'POST',
+            data: JSON.stringify(fieldData),
+            contentType: 'application/json',
+            success: function(res){
+                layer.close(loading);
+                if (res.status === 'success') {
+                    layer.msg(res.message || '注册成功', {icon: 1, time: 1200}, function(){
+                        window.location.href = '/login';
+                    });
+                } else {
+                    layer.msg(res.message || '注册失败', {icon: 2, shift: 6});
+                }
+            },
+            error: function(xhr){
+                layer.close(loading);
+                layer.msg(xhr.responseJSON?.detail || '注册请求遭遇拒绝', {icon: 2, shift: 6});
+            }
+        });
+        return false;
+    });
+});
+</script>
+
+<div id="onauth-version-badge" class="onauth-version-badge">{{ APP_VERSION }}</div>
+</body>
+</html>

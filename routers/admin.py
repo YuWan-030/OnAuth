@@ -1197,6 +1197,7 @@ def toggle_user_status(
         raise HTTPException(status_code=400, detail="系统最高根权限超级管理员拒绝自我熔断")
 
     target_user.is_active = payload.is_active
+    target_user.frozen_by_role = None if payload.is_active else "system_admin"
     db.commit()
 
     if not payload.is_active:
@@ -1228,6 +1229,7 @@ def batch_toggle_user_status(
             skipped += 1
             continue
         user_item.is_active = payload.is_active
+        user_item.frozen_by_role = None if payload.is_active else "system_admin"
         changed += 1
         if not payload.is_active:
             revoke_user_redis_sessions(int(user_item.id))

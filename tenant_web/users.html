@@ -10,7 +10,7 @@
         body {
             background-color: #f3f4f6;
             padding: 15px;
-            font-family: "Microsoft YaHei", sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             -webkit-font-smoothing: antialiased;
         }
         .layui-fluid { padding: 0; }
@@ -34,10 +34,23 @@
             box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
             transition: all 0.2s ease;
         }
-        .form-box { padding: 14px 16px 0 6px; }
-        .layui-form-label { width: 90px; }
-        .layui-input-block { margin-left: 120px; }
-        .note { display:inline-block; margin-top: 4px; padding: 4px 10px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:12px; font-weight:700; }
+        .btn-theme-gradient:hover { opacity: 0.95; color: #fff !important; }
+
+        /* 表单对齐 */
+        .form-box { padding: 20px 24px 10px 10px; }
+        .layui-form-label { width: 80px; text-align: right; color: #475569; }
+        .layui-input-block { margin-left: 100px; position: relative; }
+        .layui-input {
+            border-radius: 6px !important;
+            border-color: #cbd5e1 !important;
+            transition: all 0.2s ease-in-out;
+        }
+        .layui-input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+        .note { display: inline-block; margin-top: 4px; padding: 4px 10px; border-radius: 999px; background: #eff6ff; color: #2563eb; font-size: 12px; font-weight: 600; }
+        .layui-table th { font-weight: 600; color: #1e293b; background: #f8fafc; }
     </style>
 <style>
     /* onauth-global-mobile-adapt */
@@ -83,304 +96,62 @@
         content: "";
         transition: transform 0.2s ease, opacity 0.2s ease;
     }
-    .onauth-burger {
-        position: relative;
-        margin: 0 auto;
-    }
-    .onauth-burger::before {
-        position: absolute;
-        left: 0;
-        top: -5px;
-    }
-    .onauth-burger::after {
-        position: absolute;
-        left: 0;
-        top: 5px;
-    }
-    body.onauth-mobile-nav-open .onauth-burger {
-        background: transparent;
-    }
-    body.onauth-mobile-nav-open .onauth-burger::before {
-        top: 0;
-        transform: rotate(45deg);
-    }
-    body.onauth-mobile-nav-open .onauth-burger::after {
-        top: 0;
-        transform: rotate(-45deg);
-    }
-    .onauth-mobile-mask {
-        display: none;
-    }
+    .onauth-burger { position: relative; margin: 0 auto; }
+    .onauth-burger::before { position: absolute; left: 0; top: -5px; }
+    .onauth-burger::after { position: absolute; left: 0; top: 5px; }
+    body.onauth-mobile-nav-open .onauth-burger { background: transparent; }
+    body.onauth-mobile-nav-open .onauth-burger::before { top: 0; transform: rotate(45deg); }
+    body.onauth-mobile-nav-open .onauth-burger::after { top: 0; transform: rotate(-45deg); }
+    .onauth-mobile-mask { display: none; }
     @media (max-width: 768px) {
-        body {
-            overflow-x: hidden !important;
-            overflow-y: auto !important;
-            -webkit-text-size-adjust: 100%;
-        }
-        body:not(.onauth-shell) {
-            padding: 10px !important;
-        }
-        .layui-fluid,
-        .layui-container {
-            padding-left: 0 !important;
-            padding-right: 0 !important;
-        }
-        .layui-card {
-            margin-bottom: 12px;
-            border-radius: 12px;
-        }
-        .layui-card-header {
-            min-height: 40px;
-            height: auto !important;
-            line-height: 1.4 !important;
-            padding: 10px 12px !important;
-        }
-        .layui-card-body {
-            padding: 12px !important;
-        }
-        .layui-btn {
-            height: 34px;
-            line-height: 34px;
-            padding: 0 10px;
-            font-size: 13px;
-        }
-        .layui-btn + .layui-btn {
-            margin-left: 6px;
-        }
-        .layui-inline {
-            display: block !important;
-            margin-right: 0 !important;
-            margin-bottom: 8px;
-        }
-        .layui-input-inline,
-        .layui-form-select,
-        .layui-textarea {
-            width: 100% !important;
-        }
-        .layui-layer {
-            max-width: 94vw !important;
-            max-height: 90vh !important;
-            left: 3vw !important;
-        }
-        .layui-layer-page .layui-layer-content {
-            overflow: auto !important;
-        }
-        .layui-table-view,
-        .layui-table-box,
-        .layui-table-body,
-        .layui-table-main {
-            overflow-x: auto !important;
-        }
-        /* Mobile: disable duplicated fixed columns to avoid data being covered */
-        .layui-table-fixed,
-        .layui-table-fixed-l,
-        .layui-table-fixed-r,
-        .layui-table-patch {
-            display: none !important;
-        }
-        .layui-table-view .layui-table-box {
-            overflow-x: auto !important;
-        }
-        .layui-table-cell {
-            height: auto !important;
-            line-height: 1.5 !important;
-        }
-        .layui-table-cell .layui-btn {
-            margin-top: 4px;
-            margin-bottom: 4px;
-        }
-        .login-container,
-        .reg-container,
-        .container,
-        .card {
-            width: min(94vw, 460px) !important;
-            max-width: 94vw !important;
-            padding: 20px !important;
-            border-radius: 16px !important;
-        }
-        body.onauth-shell .header,
-        body.onauth-shell .header-meta,
-        body.onauth-shell .logo-area,
-        body.onauth-shell .user-info-area,
-        body.onauth-shell .tenant-user-area {
-            min-width: 0;
-        }
-        body.onauth-shell .header {
-            height: 52px !important;
-            min-height: 52px;
-            padding: 6px 10px 6px 50px !important;
-            gap: 8px;
-            flex-wrap: nowrap;
-            align-items: center;
-            position: sticky !important;
-            top: 0;
-        }
-        body.onauth-shell .logo-area {
-            flex: 1;
-            max-width: calc(100% - 86px);
-            font-size: 13px !important;
-            line-height: 1;
-        }
-        body.onauth-shell .logo-area > div:last-child {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        body.onauth-shell .logo-icon {
-            width: 26px !important;
-            height: 26px !important;
-            margin-right: 6px !important;
-            font-size: 14px !important;
-        }
-        body.onauth-shell .header-meta .pill,
-        body.onauth-shell .tenant-user-area #tenant-name,
-        body.onauth-shell .tenant-user-area #tenant-status,
-        body.onauth-shell .user-info-area #tenant-pill {
-            display: none !important;
-        }
-        body.onauth-shell .user-info-area .layui-nav-item,
-        body.onauth-shell .tenant-user-area .layui-nav-item {
-            line-height: 32px !important;
-        }
-        body.onauth-shell .user-info-area,
-        body.onauth-shell .tenant-user-area {
-            margin-right: 8px;
-        }
-        body.onauth-shell .user-info-area .layui-nav-item > a,
-        body.onauth-shell .tenant-user-area .layui-nav-item > a {
-            width: 72px !important;
-            min-width: 72px !important;
-            max-width: 72px !important;
-            padding: 0 18px 0 6px !important;
-            font-size: 12px !important;
-            justify-content: flex-start !important;
-        }
-        body.onauth-shell .user-info-area .layui-nav-item > a span,
-        body.onauth-shell .tenant-user-area .layui-nav-item > a span {
-            display: inline-block !important;
-            max-width: 2.6em;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        body.onauth-shell .user-info-area .layui-nav-item > a i,
-        body.onauth-shell .tenant-user-area .layui-nav-item > a i {
-            margin-right: 4px !important;
-        }
-        body.onauth-shell .user-info-area .layui-nav .layui-nav-more,
-        body.onauth-shell .tenant-user-area .layui-nav .layui-nav-more {
-            right: 2px !important;
-        }
-        body.onauth-shell .user-info-area .layui-nav-child,
-        body.onauth-shell .tenant-user-area .layui-nav-child {
-            left: auto !important;
-            right: 0 !important;
-        }
-        body.onauth-shell .side {
-            top: 52px !important;
-            left: 0 !important;
-            width: min(74vw, 250px) !important;
-            max-width: 250px;
-            transform: translateX(-105%);
-            transition: transform 0.22s ease;
-            box-shadow: 14px 0 28px rgba(15, 23, 42, 0.22);
-            z-index: 3005 !important;
-            border-top-right-radius: 16px;
-            border-bottom-right-radius: 16px;
-            background: rgba(31, 41, 55, 0.97) !important;
-            backdrop-filter: blur(10px);
-        }
-        body.onauth-shell .side-menu {
-            width: 100% !important;
-        }
-        body.onauth-shell .side-menu .layui-nav-item > a,
-        body.onauth-shell .side-menu .layui-nav-child dd a {
-            padding-left: 14px !important;
-            font-size: 13px !important;
-        }
-        body.onauth-mobile-nav-open.onauth-shell .side {
-            transform: translateX(0);
-        }
-        body.onauth-shell .main,
-        body.onauth-shell .main-body {
-            position: relative !important;
-            top: 0 !important;
-            left: 0 !important;
-            right: 0 !important;
-            bottom: auto !important;
-            min-height: calc(100vh - 52px);
-        }
-        body.onauth-shell .ruoyi-tab-container {
-            height: auto !important;
-        }
-        body.onauth-shell .ruoyi-tab-container .layui-tab-title,
-        body.onauth-shell .layui-tab-title {
-            white-space: nowrap;
-            overflow-x: auto;
-            overflow-y: hidden;
-            height: 36px !important;
-            -webkit-overflow-scrolling: touch;
-            touch-action: pan-x;
-            scrollbar-width: none;
-            padding-right: 0 !important;
-        }
-        body.onauth-shell .ruoyi-tab-container .layui-tab .layui-tab-bar,
-        body.onauth-shell .layui-tab .layui-tab-bar {
-            display: none !important;
-        }
-        body.onauth-shell .ruoyi-tab-container .layui-tab-title::-webkit-scrollbar,
-        body.onauth-shell .layui-tab-title::-webkit-scrollbar {
-            display: none;
-        }
-        body.onauth-shell .ruoyi-tab-container .layui-tab-title li,
-        body.onauth-shell .layui-tab-title li {
-            line-height: 36px !important;
-            height: 36px !important;
-            padding: 0 10px !important;
-            font-size: 13px !important;
-        }
-        body.onauth-shell .ruoyi-tab-container .layui-tab-title li .layui-tab-close,
-        body.onauth-shell .layui-tab-title li .layui-tab-close {
-            display: inline-flex !important;
-            align-items: center;
-            justify-content: center;
-            width: 18px;
-            height: 18px;
-            margin-left: 4px;
-            border-radius: 999px;
-            color: #64748b !important;
-            background: rgba(148, 163, 184, 0.18);
-            font-size: 12px;
-        }
-        body.onauth-shell .ruoyi-tab-container .layui-tab-title li .layui-tab-close:hover,
-        body.onauth-shell .layui-tab-title li .layui-tab-close:hover {
-            color: #ffffff !important;
-            background: rgba(239, 68, 68, 0.88);
-        }
-        body.onauth-shell .ruoyi-tab-content-wrapper,
-        body.onauth-shell .layui-tab-content,
-        body.onauth-shell .layui-tab-item,
-        body.onauth-shell .admin-iframe {
-            min-height: calc(100vh - 100px);
-            height: auto !important;
-        }
-        body.onauth-shell.onauth-has-side .onauth-mobile-nav-toggle {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-        body.onauth-shell .onauth-mobile-mask {
-            position: fixed;
-            inset: 0;
-            background: rgba(15, 23, 42, 0.22);
-            z-index: 3003;
-        }
-        body.onauth-mobile-nav-open.onauth-shell .onauth-mobile-mask {
-            display: block;
-        }
-        body.onauth-mobile-nav-open.onauth-shell {
-            overflow: hidden !important;
-        }
+        body { overflow-x: hidden !important; overflow-y: auto !important; -webkit-text-size-adjust: 100%; }
+        body:not(.onauth-shell) { padding: 10px !important; }
+        .layui-fluid, .layui-container { padding-left: 0 !important; padding-right: 0 !important; }
+        .layui-card { margin-bottom: 12px; border-radius: 12px; }
+        .layui-card-header { min-height: 40px; height: auto !important; line-height: 1.4 !important; padding: 10px 12px !important; }
+        .layui-card-body { padding: 12px !important; }
+        .layui-btn { height: 34px; line-height: 34px; padding: 0 10px; font-size: 13px; }
+        .layui-btn + .layui-btn { margin-left: 6px; }
+        .layui-inline { display: block !important; margin-right: 0 !important; margin-bottom: 8px; }
+        .layui-input-inline, .layui-form-select, .layui-textarea { width: 100% !important; }
+        .layui-layer { max-width: 94vw !important; max-height: 90vh !important; left: 3vw !important; }
+        .layui-layer-page .layui-layer-content { overflow: auto !important; }
+        .layui-table-view, .layui-table-box, .layui-table-body, .layui-table-main { overflow-x: auto !important; }
+        .layui-table-fixed, .layui-table-fixed-l, .layui-table-fixed-r, .layui-table-patch { display: none !important; }
+        .layui-table-view .layui-table-box { overflow-x: auto !important; }
+        .layui-table-cell { height: auto !important; line-height: 1.5 !important; }
+        .layui-table-cell .layui-btn { margin-top: 4px; margin-bottom: 4px; }
+        .login-container, .reg-container, .container, .card { width: min(94vw, 460px) !important; max-width: 94vw !important; padding: 20px !important; border-radius: 16px !important; }
+        body.onauth-shell .header, body.onauth-shell .header-meta, body.onauth-shell .logo-area, body.onauth-shell .user-info-area, body.onauth-shell .tenant-user-area { min-width: 0; }
+        body.onauth-shell .header { height: 52px !important; min-height: 52px; padding: 6px 10px 6px 50px !important; gap: 8px; flex-wrap: nowrap; align-items: center; position: sticky !important; top: 0; }
+        body.onauth-shell .logo-area { flex: 1; max-width: calc(100% - 86px); font-size: 13px !important; line-height: 1; }
+        body.onauth-shell .logo-area > div:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        body.onauth-shell .logo-icon { width: 26px !important; height: 26px !important; margin-right: 6px !important; font-size: 14px !important; }
+        body.onauth-shell .header-meta .pill, body.onauth-shell .tenant-user-area #tenant-name, body.onauth-shell .tenant-user-area #tenant-status, body.onauth-shell .user-info-area #tenant-pill { display: none !important; }
+        body.onauth-shell .user-info-area .layui-nav-item, body.onauth-shell .tenant-user-area .layui-nav-item { line-height: 32px !important; }
+        body.onauth-shell .user-info-area, body.onauth-shell .tenant-user-area { margin-right: 8px; }
+        body.onauth-shell .user-info-area .layui-nav-item > a, body.onauth-shell .tenant-user-area .layui-nav-item > a { width: 72px !important; min-width: 72px !important; max-width: 72px !important; padding: 0 18px 0 6px !important; font-size: 12px !important; justify-content: flex-start !important; }
+        body.onauth-shell .user-info-area .layui-nav-item > a span, body.onauth-shell .tenant-user-area .layui-nav-item > a span { display: inline-block !important; max-width: 2.6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        body.onauth-shell .user-info-area .layui-nav-item > a i, body.onauth-shell .tenant-user-area .layui-nav-item > a i { margin-right: 4px !important; }
+        body.onauth-shell .user-info-area .layui-nav .layui-nav-more, body.onauth-shell .tenant-user-area .layui-nav .layui-nav-more { right: 2px !important; }
+        body.onauth-shell .user-info-area .layui-nav-child, body.onauth-shell .tenant-user-area .layui-nav-child { left: auto !important; right: 0 !important; }
+        body.onauth-shell .side { top: 52px !important; left: 0 !important; width: min(74vw, 250px) !important; max-width: 250px; transform: translateX(-105%); transition: transform 0.22s ease; box-shadow: 14px 0 28px rgba(15, 23, 42, 0.22); z-index: 3050 !important; border-top-right-radius: 16px; border-bottom-right-radius: 16px; background: rgba(31, 41, 55, 0.97) !important; backdrop-filter: blur(10px); }
+        body.onauth-shell .side-menu { width: 100% !important; }
+        body.onauth-shell .side-menu .layui-nav-item > a, body.onauth-shell .side-menu .layui-nav-child dd a { padding-left: 14px !important; font-size: 13px !important; }
+        body.onauth-mobile-nav-open.onauth-shell .side { transform: translateX(0); }
+        body.onauth-shell .main, body.onauth-shell .main-body { position: relative !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: auto !important; min-height: calc(100vh - 52px); }
+        body.onauth-shell .ruoyi-tab-container { height: auto !important; }
+        body.onauth-shell .ruoyi-tab-container .layui-tab-title, body.onauth-shell .layui-tab-title { white-space: nowrap; overflow-x: auto; overflow-y: hidden; height: 36px !important; -webkit-overflow-scrolling: touch; touch-action: pan-x; scrollbar-width: none; padding-right: 0 !important; }
+        body.onauth-shell .ruoyi-tab-container .layui-tab .layui-tab-bar, body.onauth-shell .layui-tab .layui-tab-bar { display: none !important; }
+        body.onauth-shell .ruoyi-tab-container .layui-tab-title::-webkit-scrollbar, body.onauth-shell .layui-tab-title::-webkit-scrollbar { display: none; }
+        body.onauth-shell .ruoyi-tab-container .layui-tab-title li, body.onauth-shell .layui-tab-title li { line-height: 36px !important; height: 36px !important; padding: 0 10px !important; font-size: 13px !important; }
+        body.onauth-shell .ruoyi-tab-container .layui-tab-title li .layui-tab-close, body.onauth-shell .layui-tab-title li .layui-tab-close { display: inline-flex !important; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 4px; border-radius: 999px; color: #64748b !important; background: rgba(148, 163, 184, 0.18); font-size: 12px; }
+        body.onauth-shell .ruoyi-tab-container .layui-tab-title li .layui-tab-close:hover, body.onauth-shell .layui-tab-title li .layui-tab-close:hover { color: #ffffff !important; background: rgba(239, 68, 68, 0.88); }
+        body.onauth-shell .ruoyi-tab-content-wrapper, body.onauth-shell .layui-tab-content, body.onauth-shell .layui-tab-item, body.onauth-shell .admin-iframe { min-height: calc(100vh - 100px); height: auto !important; }
+        body.onauth-shell.onauth-has-side .onauth-mobile-nav-toggle { display: inline-flex; align-items: center; justify-content: center; }
+        body.onauth-shell .onauth-mobile-mask { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.22); z-index: 3003; }
+        body.onauth-mobile-nav-open.onauth-shell .onauth-mobile-mask { display: block; }
+        body.onauth-mobile-nav-open.onauth-shell { overflow: hidden !important; }
     }
 </style>
 </head>
@@ -392,9 +163,12 @@
                 <div>
                     <div style="font-size: 15px; font-weight: 700; color: #0f172a;">邀请成员加入本租户空间</div>
                     <div style="font-size: 12px; color: #64748b; margin-top: 4px;">成员会自动分配 standard_user 角色。</div>
-                    <span class="note">无权限时会提示具体原因</span>
+                    <span class="note">空间在创建之后才能邀请成员</span>
                 </div>
-                <button class="layui-btn btn-theme-gradient" id="btn-invite-user"><i class="layui-icon layui-icon-add-1"></i> 邀请成员</button>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="layui-btn layui-btn-primary" id="btn-generate-invite-link"><i class="layui-icon layui-icon-share"></i> 生成邀请链接</button>
+                    <button class="layui-btn btn-theme-gradient" id="btn-invite-user"><i class="layui-icon layui-icon-add-1"></i> 邀请成员</button>
+                </div>
             </div>
             <div style="font-size: 13px; color: #64748b; line-height: 1.8;">
                 租户管理员可在自己的空间内维护成员账号，超管可在邀请接口中额外指定空间。
@@ -403,20 +177,53 @@
     </div>
 </div>
 
+<div class="layui-fluid" style="margin-top: 14px;">
+    <div class="layui-card">
+        <div class="layui-card-body">
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap;">
+                <div>
+                    <div style="font-size: 15px; font-weight: 700; color: #0f172a;">本租户成员列表</div>
+                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">可查看成员状态，并冻结属于当前租户空间的账号。</div>
+                </div>
+                <button class="layui-btn layui-btn-primary" id="btn-refresh-users"><i class="layui-icon layui-icon-refresh"></i> 刷新列表</button>
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="layui-table" lay-skin="line" style="margin: 0;">
+                    <thead>
+                    <tr>
+                        <th style="width: 90px;">用户ID</th>
+                        <th>用户名</th>
+                        <th>昵称</th>
+                        <th>角色</th>
+                        <th style="width: 110px;">状态</th>
+                        <th style="width: 170px;">创建时间</th>
+                        <th style="width: 140px;">操作</th>
+                    </tr>
+                    </thead>
+                    <tbody id="tenant-user-tbody">
+                    <tr><td colspan="7" style="text-align:center; color:#94a3b8;">正在加载成员列表...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 弹窗模板骨架 -->
 <div id="inviteFormTpl" style="display:none;">
     <div class="layui-form form-box" lay-filter="inviteFormFilter">
         <input type="hidden" name="group_code">
         <div class="layui-form-item">
             <label class="layui-form-label">用户名</label>
-            <div class="layui-input-block"><input type="text" name="username" required lay-verify="required" placeholder="请输入用户名" class="layui-input"></div>
+            <div class="layui-input-block"><input type="text" name="username" required lay-verify="required" placeholder="请输入成员登录账户" class="layui-input" autocomplete="off"></div>
         </div>
         <div class="layui-form-item">
             <label class="layui-form-label">密码</label>
-            <div class="layui-input-block"><input type="text" name="password" required lay-verify="required" placeholder="至少 6 位" class="layui-input"></div>
+            <div class="layui-input-block"><input type="text" name="password" required lay-verify="required" placeholder="设置初始密码（至少 6 位）" class="layui-input" autocomplete="off"></div>
         </div>
         <div class="layui-form-item">
             <label class="layui-form-label">昵称</label>
-            <div class="layui-input-block"><input type="text" name="nickname" placeholder="可选" class="layui-input"></div>
+            <div class="layui-input-block"><input type="text" name="nickname" placeholder="使用者真实姓名或昵称（可选）" class="layui-input" autocomplete="off"></div>
         </div>
     </div>
 </div>
@@ -425,15 +232,154 @@
 layui.use(['layer','form'], function(){
     const layer = layui.layer, form = layui.form, $ = layui.$;
 
+    // 核心解析链：无损抽取 FastAPI 标准报错内容
+    function getErrorMessage(xhr, fallbackText) {
+        var serverDetail = xhr.responseJSON?.detail || xhr.responseJSON?.message;
+        if (serverDetail) {
+            return typeof serverDetail === 'object' ? JSON.stringify(serverDetail) : serverDetail;
+        }
+        if (xhr.responseText && xhr.responseText.indexOf('{') === 0) {
+            try {
+                var parsed = JSON.parse(xhr.responseText);
+                if (parsed.detail || parsed.message) return parsed.detail || parsed.message;
+            } catch(e){}
+        }
+        return xhr.statusText || fallbackText || '传输故障';
+    }
+
+    function escapeHtml(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function renderTenantUsers(rows) {
+        const body = $('#tenant-user-tbody');
+        if (!rows || !rows.length) {
+            body.html('<tr><td colspan="7" style="text-align:center; color:#94a3b8;">当前租户暂无成员</td></tr>');
+            return;
+        }
+
+        const html = rows.map(function(item) {
+            const roles = Array.isArray(item.roles) && item.roles.length ? item.roles.join(', ') : '-';
+            const frozenByRole = String(item.frozen_by_role || '').trim();
+            const statusHtml = item.is_active
+                ? '<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;font-weight:700;">正常</span>'
+                : '<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:700;">' + (frozenByRole === 'system_admin' ? '超管冻结' : '已冻结') + '</span>';
+
+            let actionHtml = '<span style="color:#94a3b8; font-size:12px;">无需操作</span>';
+            if (item.is_active) {
+                actionHtml = '<button class="layui-btn layui-btn-danger layui-btn-sm btn-toggle-user-status" data-user-id="' + escapeHtml(item.user_id) + '" data-username="' + escapeHtml(item.username) + '" data-next-status="false"><i class="layui-icon layui-icon-close-fill"></i> 冻结</button>';
+            } else if (frozenByRole === 'system_admin') {
+                actionHtml = '<span style="color:#ef4444; font-size:12px; font-weight:700;">仅超级管理员可启用</span>';
+            } else {
+                actionHtml = '<button class="layui-btn layui-btn-normal layui-btn-sm btn-toggle-user-status" data-user-id="' + escapeHtml(item.user_id) + '" data-username="' + escapeHtml(item.username) + '" data-next-status="true"><i class="layui-icon layui-icon-ok"></i> 启用</button>';
+            }
+            return '<tr>' +
+                '<td>' + escapeHtml(item.user_id) + '</td>' +
+                '<td>' + escapeHtml(item.username) + '</td>' +
+                '<td>' + escapeHtml(item.nickname || '-') + '</td>' +
+                '<td>' + escapeHtml(roles) + '</td>' +
+                '<td>' + statusHtml + '</td>' +
+                '<td>' + escapeHtml(item.created_at || '-') + '</td>' +
+                '<td>' + actionHtml + '</td>' +
+            '</tr>';
+        }).join('');
+
+        body.html(html);
+    }
+
+    function loadTenantUsers() {
+        const body = $('#tenant-user-tbody');
+        body.html('<tr><td colspan="7" style="text-align:center; color:#94a3b8;">正在加载成员列表...</td></tr>');
+        $.get('/tenant/users/list', function(res){
+            if (res.status === 'success') {
+                renderTenantUsers(res.data || []);
+            } else {
+                body.html('<tr><td colspan="7" style="text-align:center; color:#ef4444; font-weight:500;">加载失败：' + escapeHtml(res.message || '核心舱段拒绝') + '</td></tr>');
+            }
+        }).fail(function(xhr){
+            var errMsg = getErrorMessage(xhr, '异步抓取租户树失败');
+            // 💡 修复点：列表加载失败同时采用抖动 msg 和内联文字双重报错提示
+            layer.msg('❌ 成员同步受阻: ' + errMsg, {icon: 2, time: 2000, shift: 6});
+            body.html('<tr><td colspan="7" style="text-align:center; color:#ef4444; font-weight:500;">❌ 接口拒绝：' + escapeHtml(errMsg) + '</td></tr>');
+        });
+    }
+
+    function toggleTenantUserStatus(userId, username, nextStatus) {
+        const actionText = nextStatus ? '启用' : '冻结';
+        layer.confirm('确认' + actionText + '用户 [' + username + '] 吗？', {icon: 3, title: actionText + '确认'}, function(index){
+            const loading = layer.load(2);
+            $.ajax({
+                url: '/tenant/users/toggle_status',
+                type: 'POST',
+                data: JSON.stringify({ user_id: userId, is_active: !!nextStatus }),
+                contentType: 'application/json',
+                success: function(res){
+                    layer.close(loading);
+                    if (res.status === 'success') {
+                        layer.msg(res.message || actionText + '成功', {icon: 1});
+                        loadTenantUsers();
+                    } else {
+                        layer.msg(res.message || actionText + '受阻', {icon: 2});
+                    }
+                },
+                error: function(xhr){
+                    layer.close(loading);
+                    // 💡 修复点：状态修改失败，直接改为 msg 抛错（抖动提示且留空 4.5 秒供查看）
+                    var errMsg = getErrorMessage(xhr, actionText + '失败');
+                    layer.msg('⚠️ 变更失败: ' + errMsg, {icon: 2, time: 2000, shift: 6});
+                }
+            });
+            layer.close(index);
+        });
+    }
+
+    function generateInviteLink() {
+        const loading = layer.load(2);
+        $.ajax({
+            url: '/tenant/users/invite_link',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({}),
+            success: function(res){
+                layer.close(loading);
+                if (res.status === 'success') {
+                    const data = res.data || {};
+                    const inviteUrl = data.invite_url || '';
+                    const fullUrl = window.location.origin + inviteUrl;
+
+                    // 💡 修复点：链接生成成功也改成更现代无感的动态处理
+                    // 创建一个临时隐藏的 input 用于自动执行原生剪贴板写入，避免任何阻断弹窗
+                    var tempInput = document.createElement("input");
+                    tempInput.value = fullUrl;
+                    document.body.appendChild(tempInput);
+                    tempInput.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(tempInput);
+
+                    layer.msg('✅ 链接已生成，已自动复制到剪贴板！', {icon: 1, time: 2000});
+                } else {
+                    layer.msg(res.message || '生成邀请链接失败', {icon: 2});
+                }
+            },
+            error: function(xhr){
+                layer.close(loading);
+                // 💡 修复点：生成邀请链受阻改用大文字量 msg 强力抖动拦截提示
+                var errMsg = getErrorMessage(xhr, '生成失败');
+                layer.msg('❌ 生成受阻: ' + errMsg, {icon: 2, time: 2000, shift: 6});
+            }
+        });
+    }
+
+    // 全局防丢：只拦截 401 作路由跳回，不污染任何 403 业务逻辑
     $.ajaxSetup({
         complete: function(xhr) {
-            const detail = xhr.responseJSON?.detail || xhr.responseJSON?.message || '';
             if (xhr.status === 401) {
                 window.top.location.href = '/login';
-                return;
-            }
-            if (xhr.status === 403 && detail) {
-                layer.msg(detail, {icon: 2, time: 2500});
             }
         }
     });
@@ -448,14 +394,30 @@ layui.use(['layer','form'], function(){
     }
 
     loadGroupCode();
+    loadTenantUsers();
+
+    $('#btn-refresh-users').on('click', function(){
+        loadTenantUsers();
+    });
+
+    $(document).on('click', '.btn-toggle-user-status', function(){
+        const userId = $(this).data('user-id');
+        const username = $(this).data('username') || '未知用户';
+        const nextStatus = String($(this).data('next-status')) === 'true';
+        toggleTenantUserStatus(userId, username, nextStatus);
+    });
+
+    $('#btn-generate-invite-link').on('click', function(){
+        generateInviteLink();
+    });
 
     $('#btn-invite-user').on('click', function(){
         layer.open({
             type: 1,
-            title: '邀请成员',
-            area: ['520px','320px'],
+            title: '邀请新成员',
+            area: ['480px','450px'],
             content: $('#inviteFormTpl').html(),
-            btn: ['创建', '取消'],
+            btn: ['确认创建', '取消流转'],
             yes: function(index, layero){
                 const username = layero.find('input[name="username"]').val();
                 const password = layero.find('input[name="password"]').val();
@@ -464,21 +426,28 @@ layui.use(['layer','form'], function(){
                 if (!username || !password) {
                     return layer.msg('用户名和密码不能为空', {icon: 2});
                 }
+
+                const innerLoading = layer.load(2);
                 $.ajax({
                     url: '/tenant/users/invite',
                     type: 'POST',
                     data: JSON.stringify({ username: username, password: password, nickname: nickname, group_code: groupCode }),
                     contentType: 'application/json',
                     success: function(res){
+                        layer.close(innerLoading);
                         if (res.status === 'success') {
                             layer.msg(res.message || '邀请成功', {icon: 1});
                             layer.close(index);
+                            loadTenantUsers();
                         } else {
                             layer.msg(res.message || '邀请失败', {icon: 2});
                         }
                     },
                     error: function(xhr){
-                        layer.msg(xhr.responseJSON?.detail || '邀请失败', {icon: 2});
+                        layer.close(innerLoading);
+                        // 💡 修复点：显式利用 msg 抖动回传后端的账号创建具体冲突阻碍
+                        var errMsg = getErrorMessage(xhr, '邀请创建失败');
+                        layer.msg('❌ 申请被拒绝: ' + errMsg, {icon: 2, time: 2000, shift: 6});
                     }
                 });
             }
@@ -493,23 +462,14 @@ layui.use(['layer','form'], function(){
             var versionText = "{{ APP_VERSION }}";
             var badge = document.getElementById("onauth-version-badge");
             var toggleBtn = document.getElementById("onauth-mobile-nav-toggle");
-            if (badge) {
-                badge.textContent = versionText;
-            }
-            // Requirement: hide version icon on the three /index entries.
+            if (badge) { badge.textContent = versionText; }
             var path = (window.location.pathname || "").replace(/\/+$/, "") || "/";
-            if (path === "/index" && badge) {
-                badge.style.display = "none";
-            }
+            if (path === "/index" && badge) { badge.style.display = "none"; }
             var side = document.querySelector(".side");
             var hasShell = !!(side && (document.querySelector(".main") || document.querySelector(".main-body")));
-            if (hasShell) {
-                document.body.classList.add("onauth-shell");
-            }
+            if (hasShell) { document.body.classList.add("onauth-shell"); }
             if (!side || !toggleBtn) {
-                if (toggleBtn) {
-                    toggleBtn.style.display = "none";
-                }
+                if (toggleBtn) { toggleBtn.style.display = "none"; }
                 return;
             }
             var mask = document.createElement("div");
@@ -529,25 +489,16 @@ layui.use(['layer','form'], function(){
             toggleBtn.addEventListener("click", toggleMobileNav);
             mask.addEventListener("click", closeMobileNav);
             document.addEventListener("click", function (evt) {
-                if (!document.body.classList.contains("onauth-mobile-nav-open")) {
-                    return;
-                }
-                if (side.contains(evt.target) || toggleBtn.contains(evt.target)) {
-                    return;
-                }
+                if (!document.body.classList.contains("onauth-mobile-nav-open")) { return; }
+                if (side.contains(evt.target) || toggleBtn.contains(evt.target)) { return; }
                 closeMobileNav();
             });
             side.addEventListener("click", function (evt) {
-                // Only collapse drawer when a child menu item is clicked.
                 var childMenuLink = evt.target.closest(".layui-nav-child dd a");
-                if (childMenuLink) {
-                    closeMobileNav();
-                }
+                if (childMenuLink) { closeMobileNav(); }
             });
             window.addEventListener("resize", function () {
-                if (window.innerWidth > 768) {
-                    closeMobileNav();
-                }
+                if (window.innerWidth > 768) { closeMobileNav(); }
             });
         }
         if (document.readyState === "loading") {
@@ -561,5 +512,3 @@ layui.use(['layer','form'], function(){
 <button id="onauth-mobile-nav-toggle" class="onauth-mobile-nav-toggle" type="button" aria-label="Toggle navigation"><span class="onauth-burger" aria-hidden="true"></span></button>
 </body>
 </html>
-
-
