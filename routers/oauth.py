@@ -77,6 +77,106 @@ def _is_global_melt_enabled(db: Session) -> bool:
     return is_global_melt_enabled(db)
 
 
+def _purge_session_links(session_id: str | None, user_id: int | None = None) -> None:
+    if not session_id:
+        return
+    try:
+        redis_client.delete(session_id)
+        if user_id is not None:
+            redis_client.srem(f"user:active_sessions:{user_id}", session_id)
+    except Exception:
+        return
+
+
+def _resolve_active_session_user(session_id: str | None, db: Session) -> tuple[User | None, int | None, str | None]:
+    if not session_id or not str(session_id).startswith("sess_"):
+        return None, None, None
+
+    raw_user = redis_client.get(session_id)
+    if not raw_user:
+        return None, None, None
+
+    raw_user_text = raw_user.decode("utf-8") if isinstance(raw_user, bytes) else str(raw_user)
+    try:
+        user_id = int(str(raw_user_text).strip())
+    except (TypeError, ValueError):
+        return None, None, "会话数据损坏，请重新登录"
+
+    linked_user = db.query(User).filter(User.id == user_id).first()
+    if not linked_user:
+        return None, user_id, "关联用户已不存在"
+    if not linked_user.is_active:
+        return linked_user, user_id, "该账户已被冻结，请联系管理员"
+    return linked_user, user_id, None
+
+
+def revoke_user_oauth_artifacts(user_id: int | None, username: str | None = None) -> dict[str, int]:
+    """
+    按用户维度清理 OAuth 相关 Redis 残留：
+    - 授权码 oauth_code:*
+    - access_token / refresh_token 的 oauth_userinfo:*
+    """
+    deleted_code_count = 0
+    deleted_userinfo_count = 0
+
+    try:
+        target_user_id = int(user_id) if user_id is not None else None
+    except (TypeError, ValueError):
+        target_user_id = None
+
+    target_username = (username or "").strip() or None
+
+    if target_user_id is None and not target_username:
+        return {"oauth_code": 0, "oauth_userinfo": 0}
+
+    def _matches_payload(payload: dict) -> bool:
+        payload_user_id = payload.get("user_id")
+        payload_username = str(payload.get("username") or "").strip() or None
+
+        try:
+            if target_user_id is not None and payload_user_id is not None and int(payload_user_id) == target_user_id:
+                return True
+        except (TypeError, ValueError):
+            pass
+
+        if target_username and payload_username and payload_username == target_username:
+            return True
+        return False
+
+    try:
+        for raw_key in redis_client.scan_iter("oauth_code:*"):
+            key = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else str(raw_key)
+            raw_value = redis_client.get(key)
+            if not raw_value:
+                continue
+            raw_text = raw_value.decode("utf-8") if isinstance(raw_value, bytes) else str(raw_value)
+            try:
+                payload = json.loads(raw_text)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and _matches_payload(payload):
+                redis_client.delete(key)
+                deleted_code_count += 1
+
+        for raw_key in redis_client.scan_iter("oauth_userinfo:*"):
+            key = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else str(raw_key)
+            raw_value = redis_client.get(key)
+            if not raw_value:
+                continue
+            raw_text = raw_value.decode("utf-8") if isinstance(raw_value, bytes) else str(raw_value)
+            try:
+                payload = json.loads(raw_text)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and _matches_payload(payload):
+                redis_client.delete(key)
+                deleted_userinfo_count += 1
+    except Exception:
+        return {"oauth_code": deleted_code_count, "oauth_userinfo": deleted_userinfo_count}
+
+    return {"oauth_code": deleted_code_count, "oauth_userinfo": deleted_userinfo_count}
+
+
 LOGIN_FAIL_THRESHOLD = 3
 LOGIN_FAIL_TTL_SECONDS = 600
 LOGIN_FAIL_RULE_TYPE = "LOGIN_FAIL_CAPTCHA"
@@ -333,20 +433,17 @@ def oauth_authorize(
     # 顺位：URL显式传参最高准则 > 旧版或第三方规范(sso_session_id)
     effective_session_id = session_id or sso_session_id
 
-    user_logged_in = None
-    if effective_session_id and effective_session_id.startswith("sess_"):
-        # ⚡ 纯粹的分布式高速缓存撞击
-        raw_user = redis_client.get(effective_session_id)
-        if raw_user:
-            raw_user_id = raw_user.decode('utf-8') if isinstance(raw_user, bytes) else str(raw_user)
-            try:
-                user_id = int(raw_user_id)
-            except (TypeError, ValueError):
-                user_id = None
-            if user_id is not None:
-                linked_user = db.query(User).filter(User.id == user_id).first()
-                if linked_user:
-                    user_logged_in = linked_user.username
+    session_user, session_user_id, session_blocked_detail = _resolve_active_session_user(effective_session_id, db)
+    if session_blocked_detail:
+        _purge_session_links(effective_session_id, session_user_id)
+        return templates.TemplateResponse(
+            request=request,
+            name="oauth_error.html",
+            context={"request": request, "detail": session_blocked_detail},
+            status_code=403,
+        )
+
+    user_logged_in = session_user.username if session_user else None
 
     context = {
         "request": request,
@@ -521,23 +618,22 @@ def consent_submit(
     _validate_state(state)
     redirect_uri = _validate_redirect_uri(client_id, redirect_uri)
 
-    user_id_raw = redis_client.get(session_id)
-    if not user_id_raw:
+    session_user, session_user_id, session_blocked_detail = _resolve_active_session_user(session_id, db)
+    if session_blocked_detail:
+        _purge_session_links(session_id, session_user_id)
+        return templates.TemplateResponse(
+            request=request,
+            name="oauth_error.html",
+            context={"request": request, "detail": session_blocked_detail},
+            status_code=403,
+        )
+
+    if not session_user:
         raise HTTPException(status_code=401, detail="会话已过期，请重新登录")
-
-    if isinstance(user_id_raw, bytes):
-        user_id_raw = user_id_raw.decode("utf-8")
-
-    try:
-        user_id = int(str(user_id_raw).strip())
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=401, detail="会话数据损坏，请重新登录")
 
     pkce_challenge, pkce_method = _normalize_optional_pkce(code_challenge, code_challenge_method)
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="关联用户已不存在")
+    user = session_user
 
     user_allowed_scopes = set()
     for role in user.roles:
@@ -660,6 +756,18 @@ def oauth_token_exchange(
             if not client_secret or not verify_secret(client_secret, cred.client_secret_hash):
                 raise HTTPException(status_code=401, detail="传统授权码模式下缺少或错误的 Client Secret")
 
+        user_id_raw = code_info.get("user_id")
+        try:
+            user_id = int(str(user_id_raw).strip())
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=401, detail="授权码上下文中的用户信息损坏")
+
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="关联用户已不存在")
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="该账户已被冻结，请联系管理员")
+
         access_token_expire = current_time + datetime.timedelta(days=1)
         refresh_token_expire = current_time + datetime.timedelta(days=30)
 
@@ -704,6 +812,27 @@ def oauth_token_exchange(
             if payload.get("sub") != client_id:
                 raise HTTPException(status_code=401, detail="令牌错位拦截！")
 
+            prior_user_context = redis_client.get(f"oauth_userinfo:{refresh_token}")
+            if prior_user_context:
+                prior_user_context_raw = prior_user_context.decode("utf-8") if isinstance(prior_user_context, bytes) else str(prior_user_context)
+                try:
+                    prior_user_context_data = json.loads(prior_user_context_raw)
+                except json.JSONDecodeError:
+                    raise HTTPException(status_code=401, detail="刷新令牌上下文受损")
+
+                user_id_raw = prior_user_context_data.get("user_id")
+                if user_id_raw is not None:
+                    try:
+                        user_id = int(str(user_id_raw).strip())
+                    except (TypeError, ValueError):
+                        raise HTTPException(status_code=401, detail="刷新令牌上下文中的用户信息损坏")
+
+                    user = db.query(User).filter(User.id == user_id).first()
+                    if not user:
+                        raise HTTPException(status_code=401, detail="关联用户已不存在")
+                    if not user.is_active:
+                        raise HTTPException(status_code=403, detail="该账户已被冻结，请联系管理员")
+
             # 🌟【核心修复点】既然熔断校验已在上方前置拦截完成，这里可以直接安全地重新签发双币令牌
             target_scope = payload.get("scope", "read")
             access_token_expire = current_time + datetime.timedelta(days=1)
@@ -717,7 +846,6 @@ def oauth_token_exchange(
             new_access_token = create_access_token(client_id, target_scope, access_token_expire)
             new_refresh_token = create_refresh_token(client_id, target_scope, refresh_token_expire)
 
-            prior_user_context = redis_client.get(f"oauth_userinfo:{refresh_token}")
             if prior_user_context:
                 access_ttl = max(1, int((access_token_expire - current_time).total_seconds()))
                 refresh_ttl = max(1, int((refresh_token_expire - current_time).total_seconds()))

@@ -15,6 +15,7 @@ from routers.webhook import dispatch_webhook_event
 from schemas.PermissionUpdateSchema import UserPermissionUpdateSchema, UserRoleUpdateSchema
 from utils.crypto import generate_random_keys, hash_secret, create_jwt_token
 from utils.app_logo import save_app_logo_upload, ensure_uploaded_logo_reference
+from routers.oauth import revoke_user_oauth_artifacts
 from sqlalchemy import func
 from sqlalchemy import or_
 from database import AppDevice
@@ -1199,13 +1200,8 @@ def toggle_user_status(
     db.commit()
 
     if not payload.is_active:
-        try:
-            for key in redis_client.scan_iter("sess_*"):
-                stored_user = redis_client.get(key)
-                if stored_user and stored_user.decode("utf-8") == target_user.username:
-                    redis_client.delete(key)
-        except Exception:
-            pass
+        revoke_user_redis_sessions(int(target_user.id))
+        revoke_user_oauth_artifacts(int(target_user.id), target_user.username)
 
     status_text = "激活受信" if payload.is_active else "风控隔离并强行全网��断下线"
     return {"status": "success", "message": f"用户 [{target_user.username}] 已成功切换为 {status_text} 状态"}
@@ -1235,6 +1231,7 @@ def batch_toggle_user_status(
         changed += 1
         if not payload.is_active:
             revoke_user_redis_sessions(int(user_item.id))
+            revoke_user_oauth_artifacts(int(user_item.id), user_item.username)
 
     db.commit()
     return {
@@ -1284,6 +1281,7 @@ def update_user_permissions(
         db.commit()
         # 🌟 4. 权限变更，立刻清理该用户的会话缓存，安全合规熔断
         revoke_user_redis_sessions(int(getattr(target_user, "id", 0)))
+        revoke_user_oauth_artifacts(int(getattr(target_user, "id", 0)), getattr(target_user, "username", None))
 
     return {"status": "success", "message": f"用户 [{target_user.username}] 的独立权限已更新。"}
 
@@ -1370,6 +1368,8 @@ def delete_user(
 
     db.delete(target_user)
     db.commit()
+    revoke_user_redis_sessions(int(target_user.id))
+    revoke_user_oauth_artifacts(int(target_user.id), target_user.username)
     dispatch_webhook_event(
         event_type="user.delete",
         payload={
