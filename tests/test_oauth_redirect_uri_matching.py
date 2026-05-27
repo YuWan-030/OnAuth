@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import cast
+
+from sqlalchemy.orm import Session
+from starlette.requests import Request
+
+from database import AppCredential
+from routers import oauth
 from routers.oauth import _redirect_uri_matches_whitelist_entry
 
 
@@ -34,4 +42,71 @@ def test_host_and_path_must_still_match() -> None:
         "http://evil.example.com/callback",
         "http://localhost/callback",
     ) is False
+
+
+class _FakeQuery:
+    def __init__(self, obj) -> None:
+        self._obj = obj
+
+    def filter(self, *_args, **_kwargs):
+        return self
+
+    def first(self):
+        return self._obj
+
+
+class _FakeDB:
+    def __init__(self, cred) -> None:
+        self._cred = cred
+
+    def query(self, model):
+        if model is AppCredential:
+            return _FakeQuery(self._cred)
+        raise AssertionError(f"unexpected model: {model!r}")
+
+
+def test_consent_submit_passes_db_into_redirect_uri_validation(monkeypatch) -> None:
+    cred = SimpleNamespace(app=SimpleNamespace(app_name="Demo App"))
+    fake_db = _FakeDB(cred)
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(oauth, "_validate_state", lambda state: state)
+
+    def _fake_validate_redirect_uri(client_id, redirect_uri, db):
+        captured["client_id"] = client_id
+        captured["redirect_uri"] = redirect_uri
+        captured["db"] = db
+        return redirect_uri
+
+    monkeypatch.setattr(oauth, "_validate_redirect_uri", _fake_validate_redirect_uri)
+    monkeypatch.setattr(oauth, "_resolve_active_session_user", lambda session_id, db: (None, None, "会话已冻结"))
+
+    def _fake_template_response(*, request, name, context, status_code=None):
+        captured["template_name"] = name
+        captured["template_context"] = context
+        captured["status_code"] = status_code
+        return captured
+
+    monkeypatch.setattr(oauth.templates, "TemplateResponse", _fake_template_response)
+
+    response = oauth.consent_submit(
+        request=cast(Request, cast(object, SimpleNamespace())),
+        action="allow",
+        client_id="client_1",
+        redirect_uri="https://example.com/callback",
+        scope="read",
+        state="state_1234",
+        code_challenge="",
+        code_challenge_method="",
+        session_id="sess_001",
+        db=cast(Session, cast(object, fake_db)),
+    )
+
+    assert captured["client_id"] == "client_1"
+    assert captured["redirect_uri"] == "https://example.com/callback"
+    assert captured["db"] is fake_db
+    assert response["template_name"] == "oauth_error.html"
+    assert response["status_code"] == 403
+
 

@@ -628,7 +628,7 @@ def consent_submit(
         )
 
     _validate_state(state)
-    redirect_uri = _validate_redirect_uri(client_id, redirect_uri)
+    redirect_uri = _validate_redirect_uri(client_id, redirect_uri, db)
 
     session_user, session_user_id, session_blocked_detail = _resolve_active_session_user(session_id, db)
     if session_blocked_detail:
