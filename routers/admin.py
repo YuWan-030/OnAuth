@@ -225,7 +225,7 @@ def _parse_redirect_uri_whitelist_input(raw_value: str | None) -> list[str]:
         if parsed.fragment:
             raise HTTPException(status_code=400, detail=f"redirect_uri 不允许包含 fragment: {uri}")
         if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
-            raise HTTPException(status_code=400, detail=f"http redirect_uri 仅允许本��地址: {uri}")
+            raise HTTPException(status_code=400, detail=f"http redirect_uri 仅允许本地地址: {uri}")
         if uri not in seen:
             seen.add(uri)
             deduped.append(uri)
@@ -329,7 +329,7 @@ def create_group(
 
 
 @router.post("/groups/{group_id}/toggle", summary="【管理端】工作室状态切换(兼容旧前端直发POST请求)")
-@router.put("/groups/{group_id}/toggle", summary="【管理端】��键开关工作组/联动熔断/修改备注")
+@router.put("/groups/{group_id}/toggle", summary="【管理端】一键开关工作组/联动熔断/修改备注")
 def toggle_group_status(
         group_id: int,
         payload: GroupToggleInput,
@@ -850,7 +850,7 @@ def list_system_operation_logs(
     }
 
 
-@router.put("/apps/{app_id}/status", summary="【��理端】一键启停/熔断独立应用")
+@router.put("/apps/{app_id}/status", summary="【管理端】一键启停/熔断独立应用")
 def update_app_status(
         app_id: int,
         payload: AppStatusInput,
@@ -1051,7 +1051,7 @@ def batch_update_credential_status(
 
     creds = db.query(AppCredential).filter(AppCredential.client_id.in_(client_ids)).all()
     if not creds:
-        raise HTTPException(status_code=404, detail="未找到目��凭证")
+        raise HTTPException(status_code=404, detail="未找到目标凭证")
 
     for cred in creds:
         cred.is_active = payload.is_active
@@ -1176,7 +1176,7 @@ def get_admin_users_list(
             "is_active": u.is_active,
             "created_at": u.created_at.strftime("%Y-%m-%d %H:%M:%S") if u.created_at else "-",
             "roles": roles_list,
-            "permissions": list(perms_list)  # 这里返回的是���并后的完整权限列表
+            "permissions": list(perms_list)  # 这里返回的是聚并后的完整权限列表
         })
 
     return {"code": 0, "msg": "success", "count": total, "data": data_list}
@@ -1203,7 +1203,7 @@ def toggle_user_status(
         revoke_user_redis_sessions(int(target_user.id))
         revoke_user_oauth_artifacts(int(target_user.id), target_user.username)
 
-    status_text = "激活受信" if payload.is_active else "风控隔离并强行全网��断下线"
+    status_text = "激活受信" if payload.is_active else "风控隔离并强行全网切断下线"
     return {"status": "success", "message": f"用户 [{target_user.username}] 已成功切换为 {status_text} 状态"}
 
 
@@ -1236,16 +1236,16 @@ def batch_toggle_user_status(
     db.commit()
     return {
         "status": "success",
-        "message": "批量状态切���完成",
+        "message": "批量状态切换完成",
         "updated": changed,
         "skipped": skipped
     }
 
-# 权限修改接口，接收用户 ID 和新的权限列���以及是增还是删，更新数据库中的用户权限
+# 权限修改接口，接收用户 ID 和新的权限列表以及是增还是删，更新数据库中的用户权限
 @router.post("/users/update_permissions", summary="【管理端】更新用户独立权限")
 def update_user_permissions(
         payload: UserPermissionUpdateSchema,
-        # ���� 1. 修正 RBACChecker 传参，升级拦截权限为写权限
+        # 🌟 1. 修正 RBACChecker 传参，升级拦截权限为写权限
         current_user: User = Depends(RBACChecker("admin:write", "admin:update")),
         db: Session = Depends(get_db)
 ):
@@ -1322,7 +1322,7 @@ def update_user_roles(
             revoke_user_redis_sessions(int(getattr(target_user, "id", 0)))
         except Exception as e:
             db.rollback()
-            raise HTTPException(status_code=500, detail="角色更新失���，数据库错误")
+            raise HTTPException(status_code=500, detail="角色更新失败，数据库错误")
 
     return {
         "status": "success",
@@ -1436,7 +1436,7 @@ def update_user_nickname(
 
 # ==================== 🏢 租户空间审批管理 ====================
 
-@router.post("/system/bootstrap", summary="【管理端】���始化核心角色与权限种子")
+@router.post("/system/bootstrap", summary="【管理端】初始化核心角色与权限种子")
 def bootstrap_system_seed(
         current_user: User = Depends(RBACChecker("admin:create", "admin:update")),
         db: Session = Depends(get_db)
@@ -1460,7 +1460,7 @@ def bootstrap_system_seed(
         "webhook:logs": "Webhook-查看投递日志",
         "admin:read": "中台管理端-查看",
         "admin:create": "中台管理端-创建",
-        "admin:update": "��台管理端-更新",
+        "admin:update": "中台管理端-更新",
         "admin:delete": "中台管理端-删除",
     }
 
@@ -1492,7 +1492,7 @@ def bootstrap_system_seed(
 
     created_roles = 0
     created_roles += _ensure_role("super_admin", "系统最高权力控制组", list(seed_scopes.keys()))
-    created_roles += _ensure_role("standard_user", "��通注册合规用户组", ["read", "write"])
+    created_roles += _ensure_role("standard_user", "普通注册合规用户组", ["read", "write"])
     created_roles += _ensure_role(
         "tenant_admin",
         "租户空间管理员",
