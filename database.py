@@ -148,6 +148,22 @@ class AppDevice(Base):
     credential = relationship("AppCredential", back_populates="devices")
 
 
+class TenantAdminInviteRecord(Base):
+    """租户管理员邀请码历史记录：Redis 仅保存当前有效邀请码，历史与审计落库。"""
+    __tablename__ = "tenant_admin_invite_records"
+
+    invite_code = Column(String(128), primary_key=True, index=True, comment="邀请码")
+    issuer_username = Column(String(64), nullable=False, index=True, comment="发放人")
+    created_at = Column(DateTime, default=datetime.datetime.now, nullable=False, index=True, comment="创建时间")
+    expires_at = Column(DateTime, nullable=False, index=True, comment="过期时间")
+    status = Column(String(16), default="active", nullable=False, index=True, comment="active/used/revoked/expired")
+    used_at = Column(DateTime, nullable=True, index=True, comment="使用时间")
+    used_by = Column(String(64), nullable=True, index=True, comment="使用人")
+    revoked_at = Column(DateTime, nullable=True, index=True, comment="作废时间")
+    revoked_by = Column(String(64), nullable=True, index=True, comment="作废人")
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now, index=True, comment="更新时间")
+
+
 class OperationLog(Base):
     """操作日志：区分系统管理员与租户管理员"""
     __tablename__ = "operation_logs"

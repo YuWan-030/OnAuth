@@ -19,7 +19,9 @@ redis_client = redis.Redis(
     host=os.getenv("REDIS_HOST", "127.0.0.1"),
     port=int(os.getenv("REDIS_PORT", 6379)),
     db=0,
-    decode_responses=True
+    decode_responses=True,
+    socket_connect_timeout=float(os.getenv("REDIS_CONNECT_TIMEOUT", "0.5")),
+    socket_timeout=float(os.getenv("REDIS_SOCKET_TIMEOUT", "0.5")),
 )
 
 # 动态获取管理员 TOKEN

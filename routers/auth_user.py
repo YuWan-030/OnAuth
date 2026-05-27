@@ -16,7 +16,6 @@ from database import get_db, User, Role, DeveloperGroup, Permission
 from middlewares.auth import redis_client
 from middlewares.rbac import RBACChecker
 from routers.admin import _generate_group_code
-from routers.invite_helpers import _safe_redis_call
 from routers.oauth import revoke_user_oauth_artifacts
 from routers.webhook import dispatch_webhook_event
 from utils.captcha import verify_captcha
@@ -32,6 +31,16 @@ from utils.request_utils import (
     clear_login_fail,
     captcha_required_response,
 )
+from routers.tenant_admin_invites import (
+    _issue_tenant_admin_invite_payload as _db_issue_tenant_admin_invite_payload,
+    _load_tenant_admin_invite_payload as _db_load_tenant_admin_invite_payload,
+    _tenant_admin_invite_record_payload as _db_tenant_admin_invite_record_payload,
+    _tenant_admin_invite_status as _db_tenant_admin_invite_status,
+    _tenant_admin_invite_list as _db_tenant_admin_invite_list,
+    _mark_tenant_admin_invite_used as _db_mark_tenant_admin_invite_used,
+    _mark_tenant_admin_invite_revoked as _db_mark_tenant_admin_invite_revoked,
+)
+import routers.tenant_admin_invites as tenant_admin_invites
 
 # 🎯 路由配置对齐：将前缀设为全局共用，内部支持平铺管理端与业务端
 router = APIRouter(tags=["中台统一账户与动态会话鉴权中心"])
@@ -427,31 +436,13 @@ def _tenant_admin_invite_record_key(invite_code: str) -> str:
     return f"{TENANT_ADMIN_INVITE_RECORD_PREFIX}{str(invite_code or '').strip()}"
 
 
-def _issue_tenant_admin_invite_payload(issuer_username: str, invite_code: str | None = None) -> tuple[str, dict[str, object]]:
-    code = (invite_code or secrets.token_urlsafe(18)).strip()
-    now = datetime.datetime.now(datetime.timezone.utc)
-    expires_at = now + datetime.timedelta(seconds=TENANT_ADMIN_INVITE_TTL_SECONDS)
-    payload = {
-        "issuer_username": str(issuer_username or ""),
-        "created_at": now.isoformat(),
-        "expires_at": expires_at.isoformat(),
-    }
-    _safe_redis_call("setex", _tenant_admin_invite_key(code), TENANT_ADMIN_INVITE_TTL_SECONDS, json.dumps(payload, ensure_ascii=False))
-    _safe_redis_call("hset", _tenant_admin_invite_record_key(code), mapping={
-        "invite_code": code,
-        "issuer_username": payload["issuer_username"],
-        "created_at": payload["created_at"],
-        "expires_at": payload["expires_at"],
-        "status": "active",
-        "revoked_at": "",
-        "revoked_by": "",
-    })
-    _safe_redis_call("expire", _tenant_admin_invite_record_key(code), TENANT_ADMIN_INVITE_TTL_SECONDS + 30 * 24 * 3600)
-    _safe_redis_call("zadd", TENANT_ADMIN_INVITE_HISTORY_KEY, {code: now.timestamp()})
-    return code, payload
+def _issue_tenant_admin_invite_payload(issuer_username: str, invite_code: str | None = None, db: Session | None = None) -> tuple[str, dict[str, object]]:
+    tenant_admin_invites.redis_client = redis_client
+    return _db_issue_tenant_admin_invite_payload(issuer_username, invite_code=invite_code, db=db)
 
 
 def _load_tenant_admin_invite_payload(invite_code: str) -> dict[str, object] | None:
+    tenant_admin_invites.redis_client = redis_client
     raw_value = redis_client.get(_tenant_admin_invite_key(invite_code))
     if not raw_value:
         return None
@@ -463,16 +454,9 @@ def _load_tenant_admin_invite_payload(invite_code: str) -> dict[str, object] | N
     return payload if isinstance(payload, dict) else None
 
 
-def _tenant_admin_invite_record_payload(invite_code: str) -> dict[str, object] | None:
-    raw_record = _safe_redis_call("hgetall", _tenant_admin_invite_record_key(invite_code))
-    if not raw_record:
-        return None
-    record: dict[str, object] = {}
-    for raw_key, raw_value in raw_record.items():
-        key = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else str(raw_key)
-        value = raw_value.decode("utf-8") if isinstance(raw_value, bytes) else str(raw_value)
-        record[key] = value
-    return record
+def _tenant_admin_invite_record_payload(invite_code: str, db: Session | None = None) -> dict[str, object] | None:
+    tenant_admin_invites.redis_client = redis_client
+    return _db_tenant_admin_invite_record_payload(invite_code, db=db)
 
 
 def _format_invite_time(value: str | None) -> str:
@@ -498,56 +482,27 @@ def _safe_redis_call(method_name: str, *args, **kwargs):
         return None
 
 
-def _mark_tenant_admin_invite_used(invite_code: str, used_by: str | None = None) -> None:
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    _safe_redis_call("hset", _tenant_admin_invite_record_key(invite_code), mapping={
-        "status": "used",
-        "used_at": now,
-        "used_by": str(used_by or ""),
-    })
-    _safe_redis_call("expire", _tenant_admin_invite_record_key(invite_code), TENANT_ADMIN_INVITE_TTL_SECONDS + 30 * 24 * 3600)
+def _mark_tenant_admin_invite_used(invite_code: str, used_by: str | None = None, db: Session | None = None) -> None:
+    tenant_admin_invites.redis_client = redis_client
+    _db_mark_tenant_admin_invite_used(invite_code, used_by=used_by, db=db)
 
 
-def _tenant_admin_invite_status(invite_code: str) -> str:
-    record = _tenant_admin_invite_record_payload(invite_code) or {}
-    status_value = str(record.get("status") or "").strip().lower()
-    if status_value == "used":
-        return "used"
-    if status_value == "revoked":
-        return "revoked"
-    if _safe_redis_call("get", _tenant_admin_invite_key(invite_code)):
-        return "active"
-    if record:
-        return "expired"
-    return "missing"
+def _tenant_admin_invite_status(invite_code: str, db: Session | None = None) -> str:
+    tenant_admin_invites.redis_client = redis_client
+    return _db_tenant_admin_invite_status(invite_code, db=db)
 
 
-def _tenant_admin_invite_list(limit: int = 20) -> list[dict[str, object]]:
-    limit = max(1, min(int(limit or 20), 100))
-    raw_codes = _safe_redis_call("zrevrange", TENANT_ADMIN_INVITE_HISTORY_KEY, 0, limit - 1) or []
-    items: list[dict[str, object]] = []
-    for raw_code in raw_codes:
-        code = raw_code.decode("utf-8") if isinstance(raw_code, bytes) else str(raw_code)
-        record = _tenant_admin_invite_record_payload(code) or {}
-        items.append({
-            "invite_code": code,
-            "issuer_username": str(record.get("issuer_username") or ""),
-            "created_at": _format_invite_time(str(record.get("created_at") or "")),
-            "expires_at": _format_invite_time(str(record.get("expires_at") or "")),
-            "status": _tenant_admin_invite_status(code),
-            "used_at": _format_invite_time(str(record.get("used_at") or "")),
-            "used_by": str(record.get("used_by") or ""),
-            "revoked_at": _format_invite_time(str(record.get("revoked_at") or "")),
-            "revoked_by": str(record.get("revoked_by") or ""),
-        })
-    return items
+def _tenant_admin_invite_list(limit: int = 20, db: Session | None = None) -> list[dict[str, object]]:
+    tenant_admin_invites.redis_client = redis_client
+    return _db_tenant_admin_invite_list(limit=limit, db=db)
 
 
-def issue_tenant_admin_invite_code(current_user: User):
+def issue_tenant_admin_invite_code(current_user: User, db: Session | None = None):
+    tenant_admin_invites.redis_client = redis_client
     if ROLE_SUPER_ADMIN not in {role.name for role in (current_user.roles or [])}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可生成租户管理员邀请码")
 
-    invite_code, payload = _issue_tenant_admin_invite_payload(current_user.username)
+    invite_code, payload = _issue_tenant_admin_invite_payload(current_user.username, db=db)
     invite_url = f"/tenant/register?invite_code={invite_code}"
     return {
         "status": "success",
@@ -567,37 +522,35 @@ def issue_tenant_admin_invite_code(current_user: User):
 @router.get("/admin/tenant_admin/invite_codes", summary="【超管】查看租户管理员邀请码历史")
 def list_tenant_admin_invite_codes(
     limit: int = Query(20, ge=1, le=100),
+    db: Session | None = Depends(get_db),
     current_user: User = Depends(RBACChecker("admin:create")),
 ):
+    tenant_admin_invites.redis_client = redis_client
     if ROLE_SUPER_ADMIN not in {role.name for role in (current_user.roles or [])}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可查看邀请码历史")
 
-    return {"status": "success", "data": _tenant_admin_invite_list(limit=limit)}
+    return {"status": "success", "data": _tenant_admin_invite_list(limit=limit, db=db if hasattr(db, "query") else None)}
 
 
 @router.post("/admin/tenant_admin/invite_code/revoke", summary="【超管】作废租户管理员邀请码")
 def revoke_tenant_admin_invite_code(
     invite_code: str = Form(..., min_length=4),
+    db: Session | None = Depends(get_db),
     current_user: User = Depends(RBACChecker("admin:create")),
 ):
+    tenant_admin_invites.redis_client = redis_client
     if ROLE_SUPER_ADMIN not in {role.name for role in (current_user.roles or [])}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可作废邀请码")
 
     invite_code = str(invite_code or "").strip()
-    record = _tenant_admin_invite_record_payload(invite_code)
+    record = _tenant_admin_invite_record_payload(invite_code, db=db if hasattr(db, "query") else None)
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="邀请码不存在或已过期")
 
     if str(record.get("status") or "").strip().lower() == "revoked":
         return {"status": "success", "message": "邀请码已作废", "data": {"invite_code": invite_code, "status": "revoked"}}
 
-    _safe_redis_call("delete", _tenant_admin_invite_key(invite_code))
-    _safe_redis_call("hset", _tenant_admin_invite_record_key(invite_code), mapping={
-        "status": "revoked",
-        "revoked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "revoked_by": str(getattr(current_user, "username", "") or ""),
-    })
-    _safe_redis_call("expire", _tenant_admin_invite_record_key(invite_code), 30 * 24 * 3600)
+    _db_mark_tenant_admin_invite_revoked(invite_code, revoked_by=getattr(current_user, "username", "") or None, db=db if hasattr(db, "query") else None)
     return {
         "status": "success",
         "message": "邀请码已作废",
@@ -814,6 +767,7 @@ def register_tenant_admin(
     request: Request,
     db: Session = Depends(get_db)
 ):
+    tenant_admin_invites.redis_client = redis_client
     _validate_password_strength(payload.password)
 
     username, group_name, nickname, group_description = _validate_tenant_admin_apply_payload(payload)
@@ -838,10 +792,10 @@ def register_tenant_admin(
     if not invite_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="租户管理员注册需要系统管理员邀请码")
 
-    invite_payload = _load_tenant_admin_invite_payload(invite_code)
+    invite_payload = _db_load_tenant_admin_invite_payload(invite_code)
     if not invite_payload:
-        invite_record = _tenant_admin_invite_record_payload(invite_code) or {}
-        invite_status = _tenant_admin_invite_status(invite_code)
+        invite_record = _db_tenant_admin_invite_record_payload(invite_code, db=db) or {}
+        invite_status = _db_tenant_admin_invite_status(invite_code, db=db)
         if invite_status == "used":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="系统管理员邀请码已使用")
         if invite_status == "revoked":
@@ -853,8 +807,7 @@ def register_tenant_admin(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="系统管理员邀请码无效或已过期")
     invite_issuer_username = str(invite_payload.get("issuer_username") or "")
 
-    _mark_tenant_admin_invite_used(invite_code, used_by=username)
-    _safe_redis_call("delete", _tenant_admin_invite_key(invite_code))
+    _db_mark_tenant_admin_invite_used(invite_code, used_by=username, db=db)
 
     group_code = _generate_group_code(db)
     new_group = DeveloperGroup(

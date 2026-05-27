@@ -344,7 +344,7 @@ layui.use(['layer', 'jquery'], function(){
             var code = fmtText(item.invite_code);
             var inviteLink = String(item.invite_url || buildInviteLink(code) || '').trim();
             var row = ''
-                + '<tr>'
+                + '<tr data-code="' + escapeHtml(code) + '">'
                 + '<td><div style="font-weight:600;word-break:break-all;">' + escapeHtml(code) + '</div></td>'
                 + '<td>' + escapeHtml(fmtText(item.issuer_username)) + '</td>'
                 + '<td>' + escapeHtml(fmtText(item.created_at)) + '</td>'
@@ -357,6 +357,22 @@ layui.use(['layer', 'jquery'], function(){
                 + '</tr>';
             $body.append(row);
         });
+    }
+
+    function updateInviteRowAsRevoked(code) {
+        var safeCode = String(code || '').trim();
+        if (!safeCode) {
+            return;
+        }
+
+        var $row = $('#inviteTableBody').find('tr[data-code="' + safeCode.replace(/"/g, '\\"') + '"]');
+        if (!$row.length) {
+            return;
+        }
+
+        $row.find('td').eq(4).html(statusHtml('revoked'));
+        $row.find('.btn-revoke-row').prop('disabled', true).removeClass('layui-btn-danger').addClass('layui-btn-disabled');
+        $row.find('.btn-copy-row').prop('disabled', false);
     }
 
     function loadInviteList() {
@@ -438,7 +454,7 @@ layui.use(['layer', 'jquery'], function(){
                 success: function(res){
                     if (res.status === 'success') {
                         layer.msg('邀请码已作废', {icon: 1});
-                        loadInviteList();
+                        updateInviteRowAsRevoked(code);
                     } else {
                         layer.msg(res.message || '作废失败', {icon: 2});
                     }
