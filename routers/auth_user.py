@@ -503,6 +503,8 @@ def issue_tenant_admin_invite_code(current_user: User, db: Session | None = None
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可生成租户管理员邀请码")
 
     invite_code, payload = _issue_tenant_admin_invite_payload(current_user.username, db=db)
+    if db is not None:
+        db.commit()
     invite_url = f"/tenant/register?invite_code={invite_code}"
     return {
         "status": "success",
@@ -529,7 +531,8 @@ def list_tenant_admin_invite_codes(
     if ROLE_SUPER_ADMIN not in {role.name for role in (current_user.roles or [])}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可查看邀请码历史")
 
-    return {"status": "success", "data": _tenant_admin_invite_list(limit=limit, db=db if hasattr(db, "query") else None)}
+    # 使用独立会话读取，避免当前请求会话里已有事务/隔离级别导致“看不到已提交数据”
+    return {"status": "success", "data": _tenant_admin_invite_list(limit=limit)}
 
 
 @router.post("/admin/tenant_admin/invite_code/revoke", summary="【超管】作废租户管理员邀请码")
@@ -551,6 +554,9 @@ def revoke_tenant_admin_invite_code(
         return {"status": "success", "message": "邀请码已作废", "data": {"invite_code": invite_code, "status": "revoked"}}
 
     _db_mark_tenant_admin_invite_revoked(invite_code, revoked_by=getattr(current_user, "username", "") or None, db=db if hasattr(db, "query") else None)
+    if hasattr(db, "commit"):
+        db.commit()
+    redis_client.delete(_tenant_admin_invite_key(invite_code))
     return {
         "status": "success",
         "message": "邀请码已作废",
@@ -820,6 +826,7 @@ def register_tenant_admin(
     )
     db.add(new_group)
     db.commit()
+    redis_client.delete(_tenant_admin_invite_key(invite_code))
     db.refresh(new_group)
 
     hashed_password = pwd_context.hash(payload.password)

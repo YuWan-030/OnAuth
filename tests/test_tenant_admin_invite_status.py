@@ -88,4 +88,7 @@ def test_tenant_admin_invite_status_marks_revoke_as_revoked(fake_redis, monkeypa
 
     assert result["data"]["status"] == "revoked"
     assert auth_user._tenant_admin_invite_status(code) == "revoked"
+    items = auth_user._tenant_admin_invite_list(limit=10)
+    status_map = {item["invite_code"]: item["status"] for item in items}
+    assert status_map[code] == "revoked"
 

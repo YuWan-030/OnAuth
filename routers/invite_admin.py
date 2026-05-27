@@ -25,7 +25,9 @@ def issue_tenant_admin_invite_code(
     if ROLE_SUPER_ADMIN not in {role.name for role in (current_user.roles or [])}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可生成租户管理员邀请码")
 
-    invite_code, payload = _issue_tenant_admin_invite_payload(current_user.username)
+    invite_code, payload = _issue_tenant_admin_invite_payload(current_user.username, db=db)
+    if hasattr(db, "commit"):
+        db.commit()
     invite_url = f"/tenant/register?invite_code={quote(invite_code, safe='')}"
     return {
         "status": "success",

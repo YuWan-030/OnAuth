@@ -39,7 +39,7 @@ class _FakeRedis:
 def test_issue_tenant_admin_invite_code_returns_tenant_register_url(monkeypatch) -> None:
     fake_redis = _FakeRedis()
     monkeypatch.setattr(invite_admin, "redis_client", fake_redis, raising=False)
-    monkeypatch.setattr(invite_admin, "_issue_tenant_admin_invite_payload", lambda issuer_username: ("CODE123", {"issuer_username": issuer_username, "created_at": "now", "expires_at": "later"}))
+    monkeypatch.setattr(invite_admin, "_issue_tenant_admin_invite_payload", lambda issuer_username, invite_code=None, db=None: ("CODE123", {"issuer_username": issuer_username, "created_at": "now", "expires_at": "later"}))
 
     result = invite_admin.issue_tenant_admin_invite_code(
         current_user=cast(Any, _FakeUser("root", [_FakeRole("super_admin")]))

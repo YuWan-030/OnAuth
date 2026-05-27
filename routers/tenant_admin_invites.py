@@ -64,19 +64,16 @@ def _serialize_record(record: TenantAdminInviteRecord | None, db: Session | None
 
     now = datetime.datetime.now()
     status = str(record.status or "").strip().lower() or "missing"
-    if status == "active":
-        active_key_exists = bool(_safe_redis_call("get", _tenant_admin_invite_key(record.invite_code)))
-        if record.expires_at and record.expires_at <= now:
-            status = "expired"
-        elif not active_key_exists:
-            status = "expired"
-        if status == "expired":
-            record.status = "expired"
-            try:
-                if db is not None:
-                    db.flush()
-            except Exception:
-                pass
+    if status in {"revoked", "used"}:
+        pass
+    elif record.revoked_at is not None:
+        status = "revoked"
+    elif record.used_at is not None:
+        status = "used"
+    elif record.expires_at and record.expires_at <= now:
+        status = "expired"
+    elif not _safe_redis_call("get", _tenant_admin_invite_key(record.invite_code)):
+        status = "expired"
 
     return {
         "invite_code": str(record.invite_code or ""),
@@ -196,7 +193,6 @@ def _tenant_admin_invite_list(limit: int = 20, db: Session | None = None) -> lis
 
 
 def _mark_tenant_admin_invite_used(invite_code: str, used_by: str | None = None, db: Session | None = None) -> None:
-    _safe_redis_call("delete", _tenant_admin_invite_key(invite_code))
     session, owns_session = _resolve_db(db)
     try:
         _ensure_tenant_admin_invite_table_once()
@@ -210,13 +206,13 @@ def _mark_tenant_admin_invite_used(invite_code: str, used_by: str | None = None,
             session.flush()
             if owns_session:
                 session.commit()
+                _safe_redis_call("delete", _tenant_admin_invite_key(invite_code))
     finally:
         if owns_session:
             session.close()
 
 
 def _mark_tenant_admin_invite_revoked(invite_code: str, revoked_by: str | None = None, db: Session | None = None) -> None:
-    _safe_redis_call("delete", _tenant_admin_invite_key(invite_code))
     session, owns_session = _resolve_db(db)
     try:
         _ensure_tenant_admin_invite_table_once()
@@ -230,6 +226,7 @@ def _mark_tenant_admin_invite_revoked(invite_code: str, revoked_by: str | None =
             session.flush()
             if owns_session:
                 session.commit()
+                _safe_redis_call("delete", _tenant_admin_invite_key(invite_code))
     finally:
         if owns_session:
             session.close()
