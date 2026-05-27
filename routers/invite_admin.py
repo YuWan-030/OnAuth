@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from database import User
@@ -18,11 +20,13 @@ def issue_tenant_admin_invite_code(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可生成租户管理员邀请码")
 
     invite_code, payload = _issue_tenant_admin_invite_payload(current_user.username)
+    invite_url = f"/tenant/register?invite_code={quote(invite_code, safe='')}"
     return {
         "status": "success",
         "message": "邀请码已生成",
         "data": {
             "invite_code": invite_code,
+            "invite_url": invite_url,
             "issuer_username": payload["issuer_username"],
             "created_at": payload["created_at"],
             "expires_at": payload["expires_at"],

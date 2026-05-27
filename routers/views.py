@@ -370,6 +370,8 @@ def tenant_root_view(
         return RedirectResponse(url="/index", status_code=status.HTTP_302_FOUND)
 
     group, error_message = _tenant_access_snapshot(user_obj)
+    if not group:
+        return RedirectResponse(url="/tenant/apply", status_code=status.HTTP_302_FOUND)
     if error_message:
         return RedirectResponse(url="/tenant/error", status_code=status.HTTP_302_FOUND)
 
@@ -459,6 +461,11 @@ def index_page_view(
     else:
         user_obj = _load_user_from_session(username, db)
         if _is_tenant_admin(user_obj):
+            group, error_message = _tenant_access_snapshot(user_obj)
+            if not group:
+                return RedirectResponse(url="/tenant/apply", status_code=status.HTTP_302_FOUND)
+            if error_message:
+                return RedirectResponse(url="/tenant/error", status_code=status.HTTP_302_FOUND)
             target_template = "tenant/index.html"
         else:
             target_template = "user/index.html"

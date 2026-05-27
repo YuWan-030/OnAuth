@@ -116,6 +116,18 @@
             margin-bottom: 18px;
         }
 
+        .link-preview {
+            margin: 8px 0 14px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: #fff;
+            border: 1px dashed #cbd5e1;
+            font-size: 12px;
+            line-height: 1.7;
+            color: #475569;
+            word-break: break-all;
+        }
+
         .status-tag {
             display: inline-flex;
             align-items: center;
@@ -203,9 +215,10 @@
                             <input type="text" name="invite_code" id="inviteCode" class="layui-input" placeholder="点击下方按钮生成" readonly>
                         </div>
                     </div>
+                    <div id="inviteLinkPreview" class="link-preview" style="display:none;"></div>
                     <div class="toolbar">
                         <button type="button" class="layui-btn btn-theme" id="btn-generate-invite">生成邀请码</button>
-                        <button type="button" class="layui-btn layui-btn-primary btn-ghost" id="btn-copy-invite" disabled>复制邀请码</button>
+                        <button type="button" class="layui-btn layui-btn-primary btn-ghost" id="btn-copy-invite" disabled>复制邀请链接</button>
                         <button type="button" class="layui-btn layui-btn-primary btn-ghost" id="btn-refresh-list">刷新列表</button>
                     </div>
                 </form>
@@ -234,6 +247,7 @@
 <script>
 layui.use(['layer', 'jquery'], function(){
     var layer = layui.layer, $ = layui.$;
+    var currentInviteLink = '';
 
     function statusHtml(status) {
         var safe = String(status || '').trim().toLowerCase();
@@ -251,6 +265,15 @@ layui.use(['layer', 'jquery'], function(){
         return text || '-';
     }
 
+    function buildInviteLink(code) {
+        var inviteCode = String(code || '').trim();
+        if (!inviteCode) {
+            return '';
+        }
+        var base = (window.location.origin || '').replace(/\/+$/, '');
+        return base + '/tenant/register?invite_code=' + encodeURIComponent(inviteCode);
+    }
+
     function escapeHtml(value) {
         return String(value || '')
             .replace(/&/g, '&amp;')
@@ -261,14 +284,22 @@ layui.use(['layer', 'jquery'], function(){
     }
 
     function setCurrentInvite(data) {
-        $('#inviteCode').val(data.invite_code || '');
-        $('#btn-copy-invite').prop('disabled', !data.invite_code);
+        var inviteCode = String(data.invite_code || '').trim();
+        var inviteLink = String(data.invite_url || buildInviteLink(inviteCode) || '').trim();
+        currentInviteLink = inviteLink;
+        $('#inviteCode').val(inviteCode);
+        $('#btn-copy-invite').prop('disabled', !inviteLink);
+        if (inviteLink) {
+            $('#inviteLinkPreview').show().html('邀请链接：<span style="color:#2563eb;">' + escapeHtml(inviteLink) + '</span>');
+        } else {
+            $('#inviteLinkPreview').hide().empty();
+        }
     }
 
-    function copyInviteCode(code) {
-        var text = String(code || $('#inviteCode').val() || '').trim();
+    function copyInviteLink(code) {
+        var text = String(code || buildInviteLink($('#inviteCode').val()) || '').trim();
         if (!text) {
-            layer.msg('请先生成邀请码', {icon: 2});
+            layer.msg('请先生成邀请链接', {icon: 2});
             return;
         }
 
@@ -278,7 +309,7 @@ layui.use(['layer', 'jquery'], function(){
             $temp[0].select();
             try {
                 document.execCommand('copy');
-                layer.msg('邀请码已复制', {icon: 1});
+                layer.msg('邀请链接已复制', {icon: 1});
             } catch (err) {
                 layer.msg('复制失败，请手动复制', {icon: 2});
             }
@@ -287,7 +318,7 @@ layui.use(['layer', 'jquery'], function(){
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).then(function(){
-                layer.msg('邀请码已复制', {icon: 1});
+                layer.msg('邀请链接已复制', {icon: 1});
             }).catch(fallbackCopy);
             return;
         }
@@ -309,6 +340,7 @@ layui.use(['layer', 'jquery'], function(){
 
         items.forEach(function(item){
             var code = fmtText(item.invite_code);
+            var inviteLink = String(item.invite_url || buildInviteLink(code) || '').trim();
             var row = ''
                 + '<tr>'
                 + '<td><div style="font-weight:600;word-break:break-all;">' + escapeHtml(code) + '</div></td>'
@@ -317,7 +349,7 @@ layui.use(['layer', 'jquery'], function(){
                 + '<td>' + escapeHtml(fmtText(item.expires_at)) + '</td>'
                 + '<td>' + statusHtml(item.status) + '</td>'
                 + '<td class="table-actions">'
-                + '<button type="button" class="layui-btn layui-btn-sm layui-btn-primary btn-copy-row" data-code="' + escapeHtml(code) + '">复制</button>'
+                + '<button type="button" class="layui-btn layui-btn-sm layui-btn-primary btn-copy-row" data-link="' + escapeHtml(inviteLink) + '">复制链接</button>'
                 + '<button type="button" class="layui-btn layui-btn-sm layui-btn-danger btn-revoke-row" data-code="' + escapeHtml(code) + '">作废</button>'
                 + '</td>'
                 + '</tr>';
@@ -377,7 +409,7 @@ layui.use(['layer', 'jquery'], function(){
     });
 
     $('#btn-copy-invite').on('click', function(){
-        copyInviteCode($('#inviteCode').val());
+        copyInviteLink(currentInviteLink || buildInviteLink($('#inviteCode').val()));
     });
 
     $('#btn-refresh-list').on('click', function(){
@@ -385,7 +417,7 @@ layui.use(['layer', 'jquery'], function(){
     });
 
     $('#inviteTableBody').on('click', '.btn-copy-row', function(){
-        copyInviteCode($(this).data('code'));
+        copyInviteLink($(this).data('link'));
     });
 
     $('#inviteTableBody').on('click', '.btn-revoke-row', function(){

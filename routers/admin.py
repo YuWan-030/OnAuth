@@ -1575,6 +1575,11 @@ def review_tenant(
         target.expire_at = expire_at
         owner_user = db.query(User).filter(User.id == target.owner_user_id).first() if target.owner_user_id else None
         ensure_role_changed = _ensure_tenant_admin_role_active(db, owner_user)
+        if owner_user:
+            target.owner_user_id = owner_user.id
+            target.owner = owner_user.username
+            if getattr(owner_user, "group_id", None) != target.id:
+                owner_user.group_id = target.id
     elif action == "reject":
         target.status = "rejected"
         target.is_active = False

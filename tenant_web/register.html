@@ -269,6 +269,16 @@ layui.use(['form', 'layer'], function(){
         window.top.location.href = window.location.href;
     }
 
+    function loadInviteCodeFromQuery() {
+        var params = new URLSearchParams(window.location.search || '');
+        var inviteCode = (params.get('invite_code') || params.get('invite_token') || '').trim();
+        if (inviteCode) {
+            $('input[name="invite_code"]').val(inviteCode);
+        }
+    }
+
+    loadInviteCodeFromQuery();
+
     // 监听租户初始化表单提交
     form.on('submit(doTenantRegister)', function(data){
         const loading = layer.load(2);
