@@ -1,4 +1,6 @@
 import datetime
+import json
+import os
 from sqlalchemy import create_engine, Table, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -123,6 +125,7 @@ class AppCredential(Base):
     scope = Column(String(255), default="read")
     is_active = Column(Boolean, default=True)
     max_devices = Column(Integer, default=1)
+    redirect_uris_json = Column(Text, nullable=True, comment="redirect_uri 白名单 JSON 缓存")
     created_at = Column(DateTime, default=datetime.datetime.now)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
     expire_at = Column(DateTime, nullable=True)
@@ -262,6 +265,52 @@ def init_db():
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN frozen_by_role VARCHAR(32)"))
 
+    credential_columns = {col["name"] for col in inspector.get_columns("app_credentials")}
+    if "redirect_uris_json" not in credential_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE app_credentials ADD COLUMN redirect_uris_json TEXT"))
+
+    try:
+        import redis as redis_lib
+
+        redis_client = redis_lib.Redis(
+            host=os.getenv("REDIS_HOST", "127.0.0.1"),
+            port=int(os.getenv("REDIS_PORT", 6379)),
+            db=0,
+            decode_responses=True,
+            socket_connect_timeout=float(os.getenv("REDIS_CONNECT_TIMEOUT", "0.5")),
+            socket_timeout=float(os.getenv("REDIS_SOCKET_TIMEOUT", "0.5")),
+        )
+
+        def _parse_cached_redirect_uris(raw_value: object) -> list[str]:
+            if raw_value is None:
+                return []
+            text_value = str(raw_value or "").strip()
+            if not text_value:
+                return []
+            try:
+                parsed = json.loads(text_value)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            except Exception:
+                pass
+            return [item.strip() for item in text_value.split(",") if item.strip()]
+
+        with SessionLocal() as db:
+            credentials = db.query(AppCredential).filter(
+                (AppCredential.redirect_uris_json.is_(None)) | (AppCredential.redirect_uris_json == "")
+            ).all()
+            dirty = False
+            for credential in credentials:
+                cached = _parse_cached_redirect_uris(redis_client.get(f"oauth:redirect_uris:{credential.client_id}"))
+                if cached:
+                    credential.redirect_uris_json = json.dumps(cached, ensure_ascii=False)
+                    dirty = True
+            if dirty:
+                db.commit()
+    except Exception:
+        pass
+
 
 def get_db():
     db = SessionLocal()
@@ -339,3 +388,7 @@ class SystemAnnouncement(Base):
     creator_id = Column(Integer, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.datetime.now, index=True)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+init_db()
+

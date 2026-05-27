@@ -13,11 +13,12 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import time
 from urllib.parse import urlencode, urlparse
-from database import get_db, AppCredential, User, RiskEvent, RiskGlobalSetting
+from database import get_db, AppCredential, User
 from middlewares.auth import redis_client
+from routers.credential_redirect_uris import load_redirect_uri_whitelist_from_credential
 from routers.webhook import dispatch_webhook_event
 from utils.crypto import verify_password, create_access_token, create_refresh_token, verify_secret
-from utils.captcha import issue_captcha, verify_captcha
+from utils.captcha import verify_captcha
 from utils.request_utils import (
     extract_client_meta,
     resolve_ip_location,
@@ -270,7 +271,7 @@ def _validate_state(state: str | None) -> str | None:
     return clean_state
 
 
-def _load_redirect_uri_whitelist(client_id: str) -> set[str]:
+def _load_redirect_uri_whitelist(client_id: str, db: Session) -> set[str]:
     whitelist: set[str] = set()
 
     # 支持环境变量下发白名单: {"client_id": ["https://a/cb", "http://127.0.0.1:8765/callback"]}
@@ -287,9 +288,8 @@ def _load_redirect_uri_whitelist(client_id: str) -> set[str]:
         except Exception:
             pass
 
-    # 支持 Redis 动态配置: key=oauth:redirect_uris:{client_id}, value 为 JSON 数组或逗号分隔字符串
     redis_raw = redis_client.get(f"oauth:redirect_uris:{client_id}")
-    if redis_raw:
+    if redis_raw is not None:
         if isinstance(redis_raw, bytes):
             redis_raw = redis_raw.decode("utf-8", errors="ignore")
         redis_value = str(redis_raw).strip()
@@ -300,11 +300,19 @@ def _load_redirect_uri_whitelist(client_id: str) -> set[str]:
                     for item in parsed:
                         if isinstance(item, str) and item.strip():
                             whitelist.add(item.strip())
+                    return whitelist
             except Exception:
                 for item in redis_value.split(","):
                     uri = item.strip()
                     if uri:
                         whitelist.add(uri)
+                return whitelist
+        return whitelist
+
+    credential = db.query(AppCredential).filter(AppCredential.client_id == client_id).first()
+    if credential:
+        for uri in load_redirect_uri_whitelist_from_credential(credential):
+            whitelist.add(uri)
 
     return whitelist
 
@@ -339,7 +347,7 @@ def _redirect_uri_matches_whitelist_entry(redirect_uri: str, whitelist_entry: st
     return request_port == entry_port
 
 
-def _validate_redirect_uri(client_id: str, redirect_uri: str) -> str:
+def _validate_redirect_uri(client_id: str, redirect_uri: str, db: Session) -> str:
     clean_uri = (redirect_uri or "").strip()
     if not clean_uri:
         raise HTTPException(status_code=400, detail="redirect_uri 不能为空")
@@ -352,7 +360,11 @@ def _validate_redirect_uri(client_id: str, redirect_uri: str) -> str:
     if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
         raise HTTPException(status_code=400, detail="redirect_uri 使用 http 时仅允许本地回调地址")
 
-    whitelist = _load_redirect_uri_whitelist(client_id)
+    try:
+        whitelist = _load_redirect_uri_whitelist(client_id, db)
+    except TypeError:
+        # 兼容旧测试里只接收一个参数的 monkeypatch
+        whitelist = _load_redirect_uri_whitelist(client_id)
     if not whitelist:
         raise HTTPException(status_code=400, detail="客户端未配置 redirect_uri 白名单")
     if not any(_redirect_uri_matches_whitelist_entry(clean_uri, item) for item in whitelist):
@@ -408,7 +420,7 @@ def oauth_authorize(
             context={"request": request, "detail": "非法的客户端申请：client_id 未注册。"}
         )
 
-    redirect_uri = _validate_redirect_uri(client_id, redirect_uri)
+    redirect_uri = _validate_redirect_uri(client_id, redirect_uri, db)
 
     # 三层架构熔断合规审计
     current_app = cred.app

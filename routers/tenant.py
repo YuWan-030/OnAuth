@@ -1,5 +1,4 @@
 import datetime
-import json
 import os
 import secrets
 from typing import Any
@@ -10,8 +9,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db, DeveloperGroup, App, AppCredential, AppDevice, User, OperationLog
-from middlewares.auth import redis_client
 from middlewares.rbac import RBACChecker
+from routers.credential_redirect_uris import (
+    clear_redirect_uri_whitelist,
+    load_redirect_uri_whitelist,
+    load_redirect_uri_whitelist_from_credential,
+    set_redirect_uri_whitelist,
+)
 from routers.webhook import dispatch_webhook_event
 from schemas.admin_schema import CredentialStatusInput
 from utils.crypto import generate_random_keys, hash_secret, create_jwt_token
@@ -92,33 +96,12 @@ def _parse_redirect_uri_whitelist_input(raw_value: str | None) -> list[str]:
     return deduped
 
 
-def _load_redirect_uri_whitelist(client_id: str) -> list[str]:
-    redis_raw = redis_client.get(f"oauth:redirect_uris:{client_id}")
-    if not redis_raw:
-        return []
-
-    if isinstance(redis_raw, bytes):
-        redis_raw = redis_raw.decode("utf-8", errors="ignore")
-    redis_value = str(redis_raw).strip()
-    if not redis_value:
-        return []
-
-    try:
-        parsed = json.loads(redis_value)
-        if isinstance(parsed, list):
-            return [str(item).strip() for item in parsed if str(item).strip()]
-    except Exception:
-        pass
-
-    return [item.strip() for item in redis_value.split(",") if item.strip()]
+def _load_redirect_uri_whitelist(client_id: str, db: Session) -> list[str]:
+    return load_redirect_uri_whitelist(db, client_id)
 
 
-def _save_redirect_uri_whitelist(client_id: str, redirect_uris: list[str]) -> None:
-    redis_key = f"oauth:redirect_uris:{client_id}"
-    if redirect_uris:
-        redis_client.set(redis_key, json.dumps(redirect_uris))
-    else:
-        redis_client.delete(redis_key)
+def _save_redirect_uri_whitelist(credential: AppCredential, redirect_uris: list[str]) -> list[str]:
+    return set_redirect_uri_whitelist(credential, redirect_uris)
 
 
 @router.post("/space/toggle", summary="【租户管理员】启用/熔断自己的租户空间")
@@ -433,7 +416,7 @@ def list_tenant_credentials(
                 "credential_name": cred.credential_name,
                 "scope": cred.scope,
                 "max_devices": cred.max_devices,
-                "redirect_uris": _load_redirect_uri_whitelist(cred.client_id),
+                "redirect_uris": load_redirect_uri_whitelist_from_credential(cred),
                 "is_active": cred.is_active,
                 "expire_at": cred.expire_at.strftime("%Y-%m-%d %H:%M:%S") if cred.expire_at else "永久有效",
                 "app_id": int(cred.app.id) if cred.app else None,
@@ -481,8 +464,8 @@ def create_tenant_credential(
         expire_at=expire_time
     )
     db.add(new_credential)
+    _save_redirect_uri_whitelist(new_credential, uri_whitelist)
     db.commit()
-    _save_redirect_uri_whitelist(client_id, uri_whitelist)
 
     license_token = create_jwt_token(client_id=client_id, scope=scope, expire_at=expire_time, token_type="license")
     dispatch_webhook_event(
@@ -505,7 +488,7 @@ def create_tenant_credential(
         "client_id": client_id,
         "client_secret": client_secret,
         "max_devices": max_devices,
-        "redirect_uris": uri_whitelist,
+        "redirect_uris": load_redirect_uri_whitelist_from_credential(new_credential),
         "expire_at": expire_time.strftime("%Y-%m-%d %H:%M:%S"),
         "license_key": license_token
     }
@@ -535,11 +518,12 @@ def update_tenant_credential_config(
     base_time = credential.expire_at if (
             credential.expire_at and credential.expire_at > datetime.datetime.now()) else datetime.datetime.now()
     credential.expire_at = base_time + datetime.timedelta(days=add_days)
-    db.commit()
 
     if redirect_uris is not None:
         uri_whitelist = _parse_redirect_uri_whitelist_input(redirect_uris)
-        _save_redirect_uri_whitelist(client_id, uri_whitelist)
+        _save_redirect_uri_whitelist(credential, uri_whitelist)
+
+    db.commit()
 
     return {
         "status": "success",
@@ -547,7 +531,7 @@ def update_tenant_credential_config(
         "client_id": credential.client_id,
         "scope": credential.scope,
         "max_devices": credential.max_devices,
-        "redirect_uris": _load_redirect_uri_whitelist(client_id),
+        "redirect_uris": load_redirect_uri_whitelist_from_credential(credential),
         "expire_at": credential.expire_at.strftime("%Y-%m-%d %H:%M:%S") if credential.expire_at else "永久有效"
     }
 
@@ -611,9 +595,9 @@ def delete_tenant_credential(
     if not credential:
         raise HTTPException(status_code=404, detail="凭证不存在或不属于当前租户")
 
+    clear_redirect_uri_whitelist(credential)
     db.delete(credential)
     db.commit()
-    _save_redirect_uri_whitelist(client_id, [])
     return {"status": "success", "message": "凭证已删除", "client_id": client_id}
 
 

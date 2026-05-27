@@ -12,6 +12,12 @@ from sqlalchemy.orm import Session
 # 导入你的底层数据库实体与依赖
 from database import get_db, App, AppCredential, DeveloperGroup, User, Role, Permission, OperationLog
 from routers.webhook import dispatch_webhook_event
+from routers.credential_redirect_uris import (
+    clear_redirect_uri_whitelist,
+    load_redirect_uri_whitelist,
+    load_redirect_uri_whitelist_from_credential,
+    set_redirect_uri_whitelist,
+)
 from schemas.PermissionUpdateSchema import UserPermissionUpdateSchema, UserRoleUpdateSchema
 from utils.crypto import generate_random_keys, hash_secret, create_jwt_token
 from utils.app_logo import save_app_logo_upload, ensure_uploaded_logo_reference
@@ -233,33 +239,12 @@ def _parse_redirect_uri_whitelist_input(raw_value: str | None) -> list[str]:
     return deduped
 
 
-def _load_redirect_uri_whitelist(client_id: str) -> list[str]:
-    redis_raw = redis_client.get(f"oauth:redirect_uris:{client_id}")
-    if not redis_raw:
-        return []
-
-    if isinstance(redis_raw, bytes):
-        redis_raw = redis_raw.decode("utf-8", errors="ignore")
-    redis_value = str(redis_raw).strip()
-    if not redis_value:
-        return []
-
-    try:
-        parsed = json.loads(redis_value)
-        if isinstance(parsed, list):
-            return [str(item).strip() for item in parsed if str(item).strip()]
-    except Exception:
-        pass
-
-    return [item.strip() for item in redis_value.split(",") if item.strip()]
+def _load_redirect_uri_whitelist(client_id: str, db: Session) -> list[str]:
+    return load_redirect_uri_whitelist(db, client_id)
 
 
-def _save_redirect_uri_whitelist(client_id: str, redirect_uris: list[str]) -> None:
-    redis_key = f"oauth:redirect_uris:{client_id}"
-    if redirect_uris:
-        redis_client.set(redis_key, json.dumps(redirect_uris))
-    else:
-        redis_client.delete(redis_key)
+def _save_redirect_uri_whitelist(credential: AppCredential, redirect_uris: list[str]) -> list[str]:
+    return set_redirect_uri_whitelist(credential, redirect_uris)
 
 
 # ==================== 🏢 模块一：工作室组织空间资产管控 ====================
@@ -970,7 +955,7 @@ def list_credentials_flat(
             "credential_name": c.credential_name,
             "scope": c.scope,
             "max_devices": c.max_devices,
-            "redirect_uris": _load_redirect_uri_whitelist(c.client_id),
+            "redirect_uris": load_redirect_uri_whitelist_from_credential(c),
             "is_active": c.is_active,
             "expire_at": c.expire_at.strftime("%Y-%m-%d %H:%M:%S") if c.expire_at else "永久有效",
             "app_name": app_name,
@@ -1008,8 +993,8 @@ def create_app_credential(
         expire_at=expire_time
     )
     db.add(new_credential)
+    _save_redirect_uri_whitelist(new_credential, uri_whitelist)
     db.commit()
-    _save_redirect_uri_whitelist(client_id, uri_whitelist)
 
     long_lived_token = create_jwt_token(client_id=client_id, scope=scope, expire_at=expire_time, token_type="license")
     return {
@@ -1017,7 +1002,7 @@ def create_app_credential(
         "client_id": client_id,
         "client_secret": client_secret,
         "max_devices": max_devices,
-        "redirect_uris": uri_whitelist,
+        "redirect_uris": load_redirect_uri_whitelist_from_credential(new_credential),
         "expire_at": expire_time.strftime("%Y-%m-%d %H:%M:%S"),
         "license_key": long_lived_token
     }
@@ -1084,11 +1069,15 @@ def update_credential_config(
     base_time = cred.expire_at if (
                 cred.expire_at and cred.expire_at > datetime.datetime.now()) else datetime.datetime.now()
     cred.expire_at = base_time + datetime.timedelta(days=add_days)
-    db.commit()
     if redirect_uris is not None:
         uri_whitelist = _parse_redirect_uri_whitelist_input(redirect_uris)
-        _save_redirect_uri_whitelist(client_id, uri_whitelist)
-    return {"msg": f"凭证 [{cred.credential_name}] 商业授权配置及延期调整成功！", "max_devices": cred.max_devices}
+        _save_redirect_uri_whitelist(cred, uri_whitelist)
+    db.commit()
+    return {
+        "msg": f"凭证 [{cred.credential_name}] 商业授权配置及延期调整成功！",
+        "max_devices": cred.max_devices,
+        "redirect_uris": load_redirect_uri_whitelist_from_credential(cred),
+    }
 
 
 @router.delete("/credentials/{client_id}", summary="【管理端】物理吊销并剔除商业凭证")
@@ -1100,6 +1089,7 @@ def delete_credential(
     cred = db.query(AppCredential).filter(AppCredential.client_id == client_id).first()
     if not cred:
         raise HTTPException(status_code=404, detail="凭证不存在")
+    clear_redirect_uri_whitelist(cred)
     db.delete(cred)
     db.commit()
     return {"msg": f"凭证 [{cred.credential_name}] 已被管理端物理强制全盘吊销抹除"}
