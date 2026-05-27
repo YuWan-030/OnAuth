@@ -1,0 +1,16 @@
+# 全局默认不检测
+* linguist-detectable=false
+
+# 只把 .py 当作可检测（主语言）
+*.py linguist-detectable=true
+
+# 把这些后缀强行归为 Python（或直接忽略）
+*.html linguist-language=Python
+*.js linguist-language=Python
+*.css linguist-language=Python
+*.md linguist-language=Python
+
+# 若有文件夹可直接整个忽略（推荐）
+docs/* linguist-vendored
+static/* linguist-vendored
+dist/* linguist-vendored
