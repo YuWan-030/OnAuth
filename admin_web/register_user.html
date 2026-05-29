@@ -17,7 +17,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             -webkit-font-smoothing: antialiased;
@@ -31,6 +31,7 @@
             border-radius: 12px;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
             border: 1px solid #ebeef5;
+            margin: 20px 0;
         }
 
         .logo {
@@ -94,23 +95,21 @@
             color: #1d4ed8;
             font-size: 13px;
             line-height: 1.6;
-            text-align: center; /* 让文本默认整体居中 */
+            text-align: center;
         }
 
-        /* ==========================================================================
-           核心新增：独立居中的圆角矩形舱体卡片
-           ========================================================================== */
+        /* 独立居中的圆角矩形舱体卡片 */
         .tenant-capsule {
-            display: block; /* 独立成行 */
+            display: block;
             margin: 10px auto 2px auto;
             padding: 6px 14px;
-            width: fit-content; /* 宽度随文字自适应 */
+            width: fit-content;
             max-width: 90%;
-            background: linear-gradient(135deg, #2563eb, #1d4ed8); /* 沿用主色调渐变，保持视觉一致 */
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
             color: #ffffff !important;
             font-size: 14px;
             font-weight: 600;
-            border-radius: 6px; /* 扁平风格微圆角 */
+            border-radius: 6px;
             box-shadow: 0 4px 10px rgba(37, 99, 235, 0.15);
             letter-spacing: 0.5px;
             overflow: hidden;
@@ -137,7 +136,7 @@
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
         }
 
-        /* 状态打磨：当租户识别码被锁定只读时的视觉提振 */
+        /* 当租户识别码被锁定只读时的视觉提振 */
         .layui-input[readonly] {
             background-color: #f1f5f9 !important;
             border-color: #cbd5e1 !important;
@@ -158,7 +157,7 @@
             pointer-events: none;
         }
 
-        /* 后置锁定图标 */
+        /* 后置锁定图标：默认直接呈现 */
         .suffix-icon {
             position: absolute;
             right: 14px;
@@ -167,7 +166,7 @@
             color: #94a3b8;
             font-size: 14px;
             z-index: 10;
-            display: none;
+            display: block;
         }
 
         /* 核心渐变蓝注册按钮 */
@@ -187,6 +186,16 @@
         }
         .btn-reg-theme:hover { opacity: 0.95; color: #fff !important; }
         .btn-reg-theme:active { transform: scale(0.98); }
+
+        /* 统一的按钮禁用状态样式 */
+        .btn-reg-theme:disabled {
+            background: #cbd5e1 !important;
+            color: #94a3b8 !important;
+            cursor: not-allowed !important;
+            box-shadow: none !important;
+            opacity: 1 !important;
+            transform: none !important;
+        }
 
         /* 底部流转 */
         .link-back {
@@ -235,6 +244,7 @@
                 max-width: 94vw !important;
                 padding: 24px 20px !important;
                 border-radius: 16px !important;
+                margin: 10px 0;
             }
         }
     </style>
@@ -268,6 +278,12 @@
         </div>
 
         <div class="layui-form-item">
+            <label class="sr-only" for="repassword">确认密码</label>
+            <i class="layui-icon layui-icon-password input-icon"></i>
+            <input type="password" name="repassword" id="repassword" placeholder="请再次输入登录密码" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item">
             <label class="sr-only" for="nickname">昵称</label>
             <i class="layui-icon layui-icon-user input-icon"></i>
             <input type="text" name="nickname" id="nickname" placeholder="请输入用户昵称（可选）" class="layui-input" autocomplete="off">
@@ -281,6 +297,7 @@
         </div>
 
         <div class="layui-form-item" style="margin-top: 26px; margin-bottom: 5px;">
+            <!-- 🎯 核心修改：在标签中默认添加了 disabled 属性，初始呈现优雅灰色 -->
             <button type="button" class="layui-btn layui-btn-fluid btn-reg-theme" id="btnRegisterUser" disabled>请先获取邀请链接</button>
         </div>
 
@@ -308,14 +325,12 @@ layui.use(['layer'], function(){
         if (!inviteToken) {
             $('#inviteBanner').show().text('普通用户注册必须通过租户管理员邀请链接进入。');
             $('#groupCode').val('').prop('readonly', true);
-            $('#lockIcon').fadeIn(100);
             setSubmitState(false);
             return;
         }
 
         $('input[name="invite_token"]').val(inviteToken);
         $('#groupCode').prop('readonly', true);
-        $('#lockIcon').fadeIn(200);
         $('#inviteBanner').show().text('正在解析邀请授信链，锁定空间映射中...');
         setSubmitState(false, '邀请链校验中...');
 
@@ -324,23 +339,20 @@ layui.use(['layer'], function(){
                 var data = res.data || {};
                 $('#groupCode').val(data.group_code || '');
 
-                // 🛠️ 核心结构重构：文案与矩形胶囊体分离，强制换行且独立居中包裹
                 var spaceName = data.group_name || '未知租户空间';
                 $('#inviteBanner').show().html(
                     '🔍 检测到受邀认证链，完成注册将自动编入中台舱体：' +
                     '<span class="tenant-capsule">🚀 ' + spaceName + '</span>'
                 );
-                setSubmitState(true, '立即注册并激活凭证');
+                setSubmitState(true, '立即注册并激活凭证'); // 🎯 只有这里成功了才会释放禁用状态
             } else {
-                $('#inviteBanner').show().text(res.message || '邀请链路认证失败，请向租户管理员重新索取注册链接。');
+                $('#inviteBanner').show().text(res.message || '邀请链路链路认证失败，请向租户管理员重新索取注册链接。');
                 $('#groupCode').prop('readonly', true).val('');
-                $('#lockIcon').fadeIn(100);
                 setSubmitState(false);
             }
         }).fail(function(){
             $('#inviteBanner').show().text('邀请凭证已过期或已被撤销，请向租户管理员重新索取注册链接。');
             $('#groupCode').prop('readonly', true).val('');
-            $('#lockIcon').fadeIn(100);
             setSubmitState(false);
         });
     }
@@ -354,17 +366,26 @@ layui.use(['layer'], function(){
             return;
         }
 
-        var fieldData = {
-            username: $('input[name="username"]').val(),
-            password: $('input[name="password"]').val(),
-            nickname: $('input[name="nickname"]').val(),
-            invite_token: inviteToken
-        };
+        var password = $('input[name="password"]').val();
+        var repassword = $('input[name="repassword"]').val();
+        var username = $('input[name="username"]').val();
 
-        if (!fieldData.username || !fieldData.password) {
+        if (!username || !password) {
             layer.msg('请先填写用户名和密码', {icon: 2, shift: 6});
             return;
         }
+
+        if (password !== repassword) {
+            layer.msg('两次输入的密码不一致，请重新输入', {icon: 2, shift: 6});
+            return;
+        }
+
+        var fieldData = {
+            username: username,
+            password: password,
+            nickname: $('input[name="nickname"]').val(),
+            invite_token: inviteToken
+        };
 
         const loading = layer.load(2);
         $.ajax({

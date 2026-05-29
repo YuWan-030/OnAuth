@@ -25,7 +25,7 @@
 
         /* 注册卡片：自适应宽度，为多表单项预留呼吸空间 */
         .reg-container {
-            width: 360px;
+            width: 380px;
             background: #ffffff;
             padding: 40px;
             border-radius: 12px;
@@ -84,14 +84,7 @@
             line-height: 1.7;
         }
 
-        /* 顶部引导与 Banner 观感精细化 */
-        .tip {
-            text-align: center;
-            font-size: 12px;
-            color: #64748b;
-            line-height: 1.7;
-            margin-bottom: 16px;
-        }
+        /* 统一的顶部引导 Banner 基础风格（和普通用户页保持一致） */
         .banner {
             margin-bottom: 20px;
             padding: 12px 16px;
@@ -101,9 +94,10 @@
             color: #1d4ed8;
             font-size: 13px;
             line-height: 1.5;
+            text-align: center;
         }
 
-        /* 表单项容器：相对定位，隔离图标与输入框，防止位置错乱 */
+        /* 表单项容器 */
         .layui-form-item {
             margin-bottom: 20px;
             position: relative;
@@ -111,14 +105,14 @@
         }
 
         /* ==========================================================================
-           输入框与图标精细化加工（绝对对齐规范）
+           输入框与图标精细化加工
            ========================================================================== */
         .layui-input {
             border-radius: 6px !important;
             border-color: #cbd5e1 !important;
             height: 42px;
-            padding-left: 38px !important; /* 精准留出左侧图标区域 */
-            padding-right: 14px !important;
+            padding-left: 38px !important;
+            padding-right: 38px !important; /* 预留右侧锁图标区域 */
             transition: all 0.2s ease-in-out;
             font-size: 14px;
             width: 100%;
@@ -129,7 +123,16 @@
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
         }
 
-        /* 内嵌式输入框前置图标：强制垂直居中，彻底告别位置偏离 */
+        /* 强制邀请码输入框呈现全时只读锁定样式 */
+        .layui-input[readonly] {
+            background-color: #f1f5f9 !important;
+            color: #64748b !important;
+            border-color: #cbd5e1 !important;
+            cursor: not-allowed !important;
+            box-shadow: none !important;
+        }
+
+        /* 内嵌式输入框前置图标 */
         .input-icon {
             position: absolute;
             left: 12px;
@@ -142,8 +145,20 @@
             line-height: 1;
         }
 
+        /* 右侧安全锁图标：默认直接显示 */
+        .suffix-icon {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 14px;
+            z-index: 10;
+            display: block;
+        }
+
         /* ==========================================================================
-           核心渐变蓝动作按钮与底部流转
+           动作按钮与底部流转
            ========================================================================== */
         .btn-reg-theme {
             background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
@@ -161,6 +176,15 @@
         }
         .btn-reg-theme:hover { opacity: 0.95; color: #fff !important; }
         .btn-reg-theme:active { transform: scale(0.98); }
+
+        /* 按钮禁用状态样式 */
+        .btn-reg-theme:disabled {
+            background: #cbd5e1 !important;
+            color: #94a3b8 !important;
+            cursor: not-allowed !important;
+            box-shadow: none !important;
+            opacity: 1 !important;
+        }
 
         .link-back {
             text-align: center;
@@ -216,7 +240,8 @@
             <div class="page-subtitle">此页面用于初始化创建独立的租户舱体空间，并生成该空间的最高权限管理员凭证。</div>
         </div>
     </div>
-    <div class="banner">⚠️ 必须持有系统管理员签发的有效“系统邀请码”方可向下提交流转。</div>
+
+    <div id="regBanner" class="banner"></div>
 
     <form class="layui-form" lay-filter="tenantRegisterForm">
 
@@ -227,7 +252,12 @@
 
         <div class="layui-form-item">
             <i class="layui-icon layui-icon-password input-icon"></i>
-            <input type="password" name="password" lay-verify="required" lay-reqtext="请为管理员设置高强度认证密码" placeholder="请设置登录密码" class="layui-input" autocomplete="off">
+            <input type="password" id="password" name="password" lay-verify="required" lay-reqtext="请为管理员设置高强度认证密码" placeholder="请设置登录密码" class="layui-input" autocomplete="off">
+        </div>
+
+        <div class="layui-form-item">
+            <i class="layui-icon layui-icon-password input-icon"></i>
+            <input type="password" name="repassword" lay-verify="required|confirmPass" lay-reqtext="请再次输入密码以确保输入无误" placeholder="请再次输入登录密码" class="layui-input" autocomplete="off">
         </div>
 
         <div class="layui-form-item">
@@ -247,11 +277,12 @@
 
         <div class="layui-form-item">
             <i class="layui-icon layui-icon-key input-icon"></i>
-            <input type="text" name="invite_code" lay-verify="required" lay-reqtext="请输入系统管理员下发的初始化邀请凭证" placeholder="请输入系统管理员邀请码" class="layui-input" autocomplete="off">
+            <input type="text" id="invite_code" name="invite_code" lay-verify="required" lay-reqtext="请输入系统管理员下发的初始化邀请凭证" placeholder="请先通过邀请链接进入" class="layui-input" autocomplete="off" readonly>
+            <i class="layui-icon layui-icon-lock suffix-icon" id="lockIcon" title="受邀请链路保护，已锁定。"></i>
         </div>
 
         <div class="layui-form-item" style="margin-top: 26px; margin-bottom: 5px;">
-            <button class="layui-btn layui-btn-fluid btn-reg-theme" lay-submit lay-filter="doTenantRegister">提交注册申请并初始化空间</button>
+            <button type="submit" id="btnSubmit" class="layui-btn layui-btn-fluid btn-reg-theme" lay-submit lay-filter="doTenantRegister" disabled>请先获取邀请链接</button>
         </div>
 
         <div class="link-back">
@@ -264,16 +295,34 @@
 layui.use(['form', 'layer'], function(){
     var form = layui.form, layer = layui.layer, $ = layui.$;
 
-    // 🛡️ 边界防御：防 Iframe 跨域嵌套
     if (window !== window.top) {
         window.top.location.href = window.location.href;
     }
 
+    // 自定义密码二次确认规则
+    form.verify({
+        confirmPass: function(value) {
+            var password = $('#password').val();
+            if (value !== password) {
+                return '两次输入的密码不一致，请重新输入';
+            }
+        }
+    });
+
+    // 调整为与普通用户页面一样的克制、理性的冷色系引导提示文案
     function loadInviteCodeFromQuery() {
         var params = new URLSearchParams(window.location.search || '');
         var inviteCode = (params.get('invite_code') || params.get('invite_token') || '').trim();
+
         if (inviteCode) {
-            $('input[name="invite_code"]').val(inviteCode);
+            // 解析成功
+            $('#invite_code').val(inviteCode);
+            $('#btnSubmit').prop('disabled', false).text('提交注册申请并初始化空间');
+            $('#regBanner').text('🔍 已成功挂载系统邀请链，可以提交初始化舱体申请。');
+        } else {
+            // 未检测到参数（直接进入）：对齐普通用户页面的温和提示风格，保持统一的蓝色背景
+            $('#regBanner').text('租户管理员注册必须通过系统管理员签发的有效邀请链接进入。');
+            $('#btnSubmit').prop('disabled', true).text('请先获取邀请链接');
         }
     }
 
