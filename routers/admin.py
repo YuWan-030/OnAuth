@@ -215,7 +215,7 @@ def _parse_expire_at(expire_at_value: str | None) -> datetime.datetime | None:
         raise HTTPException(status_code=400, detail="expire_at 必须是有效的 ISO 8601 时间字符串") from exc
 
 
-def _parse_redirect_uri_whitelist_input(raw_value: str | None) -> list[str]:
+def _parse_redirect_uri_whitelist_input(raw_value: str | None, allow_http_redirect_uri: bool = False) -> list[str]:
     if raw_value is None:
         return []
 
@@ -230,13 +230,24 @@ def _parse_redirect_uri_whitelist_input(raw_value: str | None) -> list[str]:
             raise HTTPException(status_code=400, detail=f"redirect_uri 不合法: {uri}")
         if parsed.fragment:
             raise HTTPException(status_code=400, detail=f"redirect_uri 不允许包含 fragment: {uri}")
-        if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"} and not allow_http_redirect_uri:
             raise HTTPException(status_code=400, detail=f"http redirect_uri 仅允许本地地址: {uri}")
         if uri not in seen:
             seen.add(uri)
             deduped.append(uri)
 
     return deduped
+
+
+def _normalize_bool_flag(value: object) -> bool:
+    return value if isinstance(value, bool) else bool(getattr(value, "default", False))
+
+
+def _parse_redirect_uri_whitelist_for_switch(raw_value: str | None, allow_http_redirect_uri: bool) -> list[str]:
+    try:
+        return _parse_redirect_uri_whitelist_input(raw_value, allow_http_redirect_uri=allow_http_redirect_uri)
+    except TypeError:
+        return _parse_redirect_uri_whitelist_input(raw_value)
 
 
 def _load_redirect_uri_whitelist(client_id: str, db: Session) -> list[str]:
@@ -955,6 +966,7 @@ def list_credentials_flat(
             "credential_name": c.credential_name,
             "scope": c.scope,
             "max_devices": c.max_devices,
+            "allow_http_redirect_uri": getattr(c, "allow_http_redirect_uri", False),
             "redirect_uris": load_redirect_uri_whitelist_from_credential(c),
             "is_active": c.is_active,
             "expire_at": c.expire_at.strftime("%Y-%m-%d %H:%M:%S") if c.expire_at else "永久有效",
@@ -971,6 +983,7 @@ def create_app_credential(
         scope: str = "read",
         max_devices: int = Query(1, ge=1, le=1000, description="当前最多允许几台设备"),
         redirect_uris: str | None = Query(None, description="redirect_uri 白名单，传空字符串可清空"),
+        allow_http_redirect_uri: bool = Query(False, description="allow non-local http redirect_uri"),
         valid_days: int = Query(365),
         current_user: User = Depends(RBACChecker("admin:create")),
         db: Session = Depends(get_db)
@@ -981,7 +994,8 @@ def create_app_credential(
 
     client_id, client_secret = generate_random_keys()
     expire_time = datetime.datetime.now() + datetime.timedelta(days=valid_days)
-    uri_whitelist = _parse_redirect_uri_whitelist_input(redirect_uris)
+    allow_http_redirect_uri = _normalize_bool_flag(allow_http_redirect_uri)
+    uri_whitelist = _parse_redirect_uri_whitelist_for_switch(redirect_uris, allow_http_redirect_uri)
 
     new_credential = AppCredential(
         app_id=app_id,
@@ -990,6 +1004,7 @@ def create_app_credential(
         client_secret_hash=hash_secret(client_secret),
         scope=scope,
         max_devices=max_devices,
+        allow_http_redirect_uri=allow_http_redirect_uri,
         expire_at=expire_time
     )
     db.add(new_credential)
@@ -1002,6 +1017,7 @@ def create_app_credential(
         "client_id": client_id,
         "client_secret": client_secret,
         "max_devices": max_devices,
+        "allow_http_redirect_uri": allow_http_redirect_uri,
         "redirect_uris": load_redirect_uri_whitelist_from_credential(new_credential),
         "expire_at": expire_time.strftime("%Y-%m-%d %H:%M:%S"),
         "license_key": long_lived_token
@@ -1057,6 +1073,7 @@ def update_credential_config(
         add_days: int = Query(...),
         max_devices: int = Query(1, ge=1, le=1000, description="当前最多允许几台设备"),
         redirect_uris: str | None = Query(None, description="redirect_uri 白名单，传空字符串可清空"),
+        allow_http_redirect_uri: bool = Query(False, description="allow non-local http redirect_uri"),
         current_user: User = Depends(RBACChecker("admin:update")),
         db: Session = Depends(get_db)
 ):
@@ -1064,18 +1081,21 @@ def update_credential_config(
     if not cred:
         raise HTTPException(status_code=404, detail="凭证未找到")
 
+    allow_http_redirect_uri = _normalize_bool_flag(allow_http_redirect_uri)
     cred.scope = scope
     cred.max_devices = max_devices
+    cred.allow_http_redirect_uri = allow_http_redirect_uri
     base_time = cred.expire_at if (
                 cred.expire_at and cred.expire_at > datetime.datetime.now()) else datetime.datetime.now()
     cred.expire_at = base_time + datetime.timedelta(days=add_days)
     if redirect_uris is not None:
-        uri_whitelist = _parse_redirect_uri_whitelist_input(redirect_uris)
+        uri_whitelist = _parse_redirect_uri_whitelist_for_switch(redirect_uris, allow_http_redirect_uri)
         _save_redirect_uri_whitelist(cred, uri_whitelist)
     db.commit()
     return {
         "msg": f"凭证 [{cred.credential_name}] 商业授权配置及延期调整成功！",
         "max_devices": cred.max_devices,
+        "allow_http_redirect_uri": cred.allow_http_redirect_uri,
         "redirect_uris": load_redirect_uri_whitelist_from_credential(cred),
     }
 

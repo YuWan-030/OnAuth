@@ -11,10 +11,10 @@ import config
 DATABASE_URL = config.DATABASE_URL
 
 
-connect_args = {"check_same_thread": False}
-# 使用 MySQL 时，connect_args 可以留空或删除，因为它们是 SQLite 特有的参数
-# engine = create_engine(DATABASE_URL)
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+engine_kwargs = {}
+if DATABASE_URL.startswith("sqlite"):
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 Base = declarative_base()
@@ -125,6 +125,7 @@ class AppCredential(Base):
     scope = Column(String(255), default="read")
     is_active = Column(Boolean, default=True)
     max_devices = Column(Integer, default=1)
+    allow_http_redirect_uri = Column(Boolean, default=False)
     redirect_uris_json = Column(Text, nullable=True, comment="redirect_uri 白名单 JSON 缓存")
     created_at = Column(DateTime, default=datetime.datetime.now)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
@@ -266,6 +267,9 @@ def init_db():
             conn.execute(text("ALTER TABLE users ADD COLUMN frozen_by_role VARCHAR(32)"))
 
     credential_columns = {col["name"] for col in inspector.get_columns("app_credentials")}
+    if "allow_http_redirect_uri" not in credential_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE app_credentials ADD COLUMN allow_http_redirect_uri BOOLEAN NOT NULL DEFAULT 0"))
     if "redirect_uris_json" not in credential_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE app_credentials ADD COLUMN redirect_uris_json TEXT"))

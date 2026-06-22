@@ -72,7 +72,7 @@ def _get_tenant_app(db: Session, group_id: int, app_id: int) -> Any:
     return app
 
 
-def _parse_redirect_uri_whitelist_input(raw_value: str | None) -> list[str]:
+def _parse_redirect_uri_whitelist_input(raw_value: str | None, allow_http_redirect_uri: bool = False) -> list[str]:
     if raw_value is None:
         return []
 
@@ -87,13 +87,24 @@ def _parse_redirect_uri_whitelist_input(raw_value: str | None) -> list[str]:
             raise HTTPException(status_code=400, detail=f"redirect_uri 不合法: {uri}")
         if parsed.fragment:
             raise HTTPException(status_code=400, detail=f"redirect_uri 不允许包含 fragment: {uri}")
-        if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"} and not allow_http_redirect_uri:
             raise HTTPException(status_code=400, detail=f"http redirect_uri 仅允许本地地址: {uri}")
         if uri not in seen:
             seen.add(uri)
             deduped.append(uri)
 
     return deduped
+
+
+def _normalize_bool_flag(value: object) -> bool:
+    return value if isinstance(value, bool) else bool(getattr(value, "default", False))
+
+
+def _parse_redirect_uri_whitelist_for_switch(raw_value: str | None, allow_http_redirect_uri: bool) -> list[str]:
+    try:
+        return _parse_redirect_uri_whitelist_input(raw_value, allow_http_redirect_uri=allow_http_redirect_uri)
+    except TypeError:
+        return _parse_redirect_uri_whitelist_input(raw_value)
 
 
 def _load_redirect_uri_whitelist(client_id: str, db: Session) -> list[str]:
@@ -416,6 +427,7 @@ def list_tenant_credentials(
                 "credential_name": cred.credential_name,
                 "scope": cred.scope,
                 "max_devices": cred.max_devices,
+                "allow_http_redirect_uri": getattr(cred, "allow_http_redirect_uri", False),
                 "redirect_uris": load_redirect_uri_whitelist_from_credential(cred),
                 "is_active": cred.is_active,
                 "expire_at": cred.expire_at.strftime("%Y-%m-%d %H:%M:%S") if cred.expire_at else "永久有效",
@@ -434,6 +446,7 @@ def create_tenant_credential(
         scope: str = Form("read"),
         max_devices: int = Form(1, ge=1, le=1000),
         redirect_uris: str | None = Form(None),
+        allow_http_redirect_uri: bool = Form(False),
         valid_days: int = Form(365, ge=1, le=3650),
         current_user: User = Depends(RBACChecker("tenant:credential:create")),
         db: Session = Depends(get_db)
@@ -452,7 +465,8 @@ def create_tenant_credential(
     client_id, client_secret = generate_random_keys()
     expire_time = datetime.datetime.now() + datetime.timedelta(days=valid_days)
     app_pk = int(getattr(app, "id"))
-    uri_whitelist = _parse_redirect_uri_whitelist_input(redirect_uris)
+    allow_http_redirect_uri = _normalize_bool_flag(allow_http_redirect_uri)
+    uri_whitelist = _parse_redirect_uri_whitelist_for_switch(redirect_uris, allow_http_redirect_uri)
 
     new_credential = AppCredential(
         app_id=app_pk,
@@ -461,6 +475,7 @@ def create_tenant_credential(
         client_secret_hash=hash_secret(client_secret),
         scope=scope,
         max_devices=max_devices,
+        allow_http_redirect_uri=allow_http_redirect_uri,
         expire_at=expire_time
     )
     db.add(new_credential)
@@ -488,6 +503,7 @@ def create_tenant_credential(
         "client_id": client_id,
         "client_secret": client_secret,
         "max_devices": max_devices,
+        "allow_http_redirect_uri": allow_http_redirect_uri,
         "redirect_uris": load_redirect_uri_whitelist_from_credential(new_credential),
         "expire_at": expire_time.strftime("%Y-%m-%d %H:%M:%S"),
         "license_key": license_token
@@ -502,6 +518,7 @@ def update_tenant_credential_config(
         add_days: int = Form(..., ge=0, le=3650),
         max_devices: int = Form(1, ge=1, le=1000),
         redirect_uris: str | None = Form(None),
+        allow_http_redirect_uri: bool = Form(False),
         current_user: User = Depends(RBACChecker("tenant:credential:create")),
         db: Session = Depends(get_db)
 ):
@@ -513,14 +530,16 @@ def update_tenant_credential_config(
     if not credential:
         raise HTTPException(status_code=404, detail="凭证不存在或不属于当前租户")
 
+    allow_http_redirect_uri = _normalize_bool_flag(allow_http_redirect_uri)
     credential.scope = scope
     credential.max_devices = max_devices
+    credential.allow_http_redirect_uri = allow_http_redirect_uri
     base_time = credential.expire_at if (
             credential.expire_at and credential.expire_at > datetime.datetime.now()) else datetime.datetime.now()
     credential.expire_at = base_time + datetime.timedelta(days=add_days)
 
     if redirect_uris is not None:
-        uri_whitelist = _parse_redirect_uri_whitelist_input(redirect_uris)
+        uri_whitelist = _parse_redirect_uri_whitelist_for_switch(redirect_uris, allow_http_redirect_uri)
         _save_redirect_uri_whitelist(credential, uri_whitelist)
 
     db.commit()
@@ -531,6 +550,7 @@ def update_tenant_credential_config(
         "client_id": credential.client_id,
         "scope": credential.scope,
         "max_devices": credential.max_devices,
+        "allow_http_redirect_uri": credential.allow_http_redirect_uri,
         "redirect_uris": load_redirect_uri_whitelist_from_credential(credential),
         "expire_at": credential.expire_at.strftime("%Y-%m-%d %H:%M:%S") if credential.expire_at else "永久有效"
     }

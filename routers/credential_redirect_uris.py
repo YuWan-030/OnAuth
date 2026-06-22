@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import redis
 from typing import Iterable
 
 from sqlalchemy.orm import Session
@@ -69,7 +70,10 @@ def load_redirect_uri_whitelist(db: Session, client_id: str) -> list[str]:
     if credential:
         return load_redirect_uri_whitelist_from_credential(credential)
 
-    cached_values = _decode_redirect_uris(redis_client.get(_cache_key(clean_client_id)))
+    try:
+        cached_values = _decode_redirect_uris(redis_client.get(_cache_key(clean_client_id)))
+    except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError):
+        cached_values = []
     if cached_values:
         _sync_redirect_uri_cache(clean_client_id, cached_values)
     return cached_values
@@ -85,7 +89,10 @@ def load_redirect_uri_whitelist_from_credential(credential: AppCredential) -> li
         _sync_redirect_uri_cache(clean_client_id, stored_values)
         return stored_values
 
-    cached_values = _decode_redirect_uris(redis_client.get(_cache_key(clean_client_id)))
+    try:
+        cached_values = _decode_redirect_uris(redis_client.get(_cache_key(clean_client_id)))
+    except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError):
+        cached_values = []
     if cached_values:
         _sync_redirect_uri_cache(clean_client_id, cached_values)
     return cached_values

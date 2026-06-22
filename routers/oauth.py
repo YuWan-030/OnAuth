@@ -13,12 +13,13 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import time
 from urllib.parse import urlencode, urlparse
-from database import get_db, AppCredential, User
+from database import get_db, App, AppCredential, User
 from middlewares.auth import redis_client
 from routers.credential_redirect_uris import load_redirect_uri_whitelist_from_credential
 from routers.webhook import dispatch_webhook_event
 from utils.crypto import verify_password, create_access_token, create_refresh_token, verify_secret
 from utils.captcha import verify_captcha
+from utils.role_constants import ROLE_SUPER_ADMIN
 from utils.request_utils import (
     extract_client_meta,
     resolve_ip_location,
@@ -258,6 +259,39 @@ def _normalize_optional_pkce(code_challenge: str | None, code_challenge_method: 
     return _validate_pkce_challenge(challenge), method
 
 
+def _is_super_admin(user: User | None) -> bool:
+    return bool(user and any(getattr(role, "name", None) == ROLE_SUPER_ADMIN for role in (getattr(user, "roles", []) or [])))
+
+
+def _credential_group_id(credential: AppCredential) -> int | None:
+    app = getattr(credential, "app", None)
+    group_id = getattr(app, "group_id", None)
+    if group_id is None:
+        return None
+    try:
+        return int(group_id)
+    except (TypeError, ValueError):
+        return None
+
+
+def _require_same_group(current_user: User | None, credential: AppCredential) -> None:
+    if _is_super_admin(current_user):
+        return
+    if not current_user or getattr(current_user, "group_id", None) is None:
+        raise HTTPException(status_code=403, detail="安全拦截：当前账户未绑定空间，无法访问该应用")
+    cred_group_id = _credential_group_id(credential)
+    try:
+        user_group_id = int(getattr(current_user, "group_id", None))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=403, detail="安全拦截：当前账户空间信息无效")
+    if cred_group_id is None or user_group_id != cred_group_id:
+        raise HTTPException(status_code=403, detail="安全拦截：当前账户无权访问其他空间的应用")
+
+
+def _credential_allows_http_redirect_uri(credential: AppCredential | None) -> bool:
+    return bool(credential and getattr(credential, "allow_http_redirect_uri", False))
+
+
 def _validate_state(state: str | None) -> str | None:
     if state is None:
         return None
@@ -309,7 +343,7 @@ def _load_redirect_uri_whitelist(client_id: str, db: Session) -> set[str]:
                 return whitelist
         return whitelist
 
-    credential = db.query(AppCredential).filter(AppCredential.client_id == client_id).first()
+    credential = db.query(AppCredential).join(App, AppCredential.app_id == App.id).filter(AppCredential.client_id == client_id).first()
     if credential:
         for uri in load_redirect_uri_whitelist_from_credential(credential):
             whitelist.add(uri)
@@ -358,7 +392,9 @@ def _validate_redirect_uri(client_id: str, redirect_uri: str, db: Session) -> st
     if parsed.fragment:
         raise HTTPException(status_code=400, detail="redirect_uri 不允许包含 URL fragment")
     if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
-        raise HTTPException(status_code=400, detail="redirect_uri 使用 http 时仅允许本地回调地址")
+        credential = db.query(AppCredential).join(App, AppCredential.app_id == App.id).filter(AppCredential.client_id == client_id).first()
+        if not _credential_allows_http_redirect_uri(credential):
+            raise HTTPException(status_code=400, detail="redirect_uri 使用 http 时仅允许本地回调地址，或为该凭证开启 HTTP 兼容开关")
 
     try:
         whitelist = _load_redirect_uri_whitelist(client_id, db)
@@ -412,7 +448,7 @@ def oauth_authorize(
     normalized_state = _validate_state(state)
     pkce_challenge, pkce_method = _normalize_optional_pkce(code_challenge, code_challenge_method)
 
-    cred = db.query(AppCredential).filter(AppCredential.client_id == client_id).first()
+    cred = db.query(AppCredential).join(App, AppCredential.app_id == App.id).filter(AppCredential.client_id == client_id).first()
     if not cred:
         return templates.TemplateResponse(
             request=request,
@@ -454,6 +490,9 @@ def oauth_authorize(
             context={"request": request, "detail": session_blocked_detail},
             status_code=403,
         )
+
+    if session_user:
+        _require_same_group(session_user, cred)
 
     user_logged_in = session_user.username if session_user else None
 
@@ -610,7 +649,7 @@ def consent_submit(
         session_id: str = Form(..., description="接收从上一步 HTML 隐藏表单里提交上来的会话ID"),
         db: Session = Depends(get_db)
 ):
-    cred = db.query(AppCredential).filter(AppCredential.client_id == client_id).first()
+    cred = db.query(AppCredential).join(App, AppCredential.app_id == App.id).filter(AppCredential.client_id == client_id).first()
     if not cred:
         raise HTTPException(status_code=400, detail="非法客户端：client_id 未注册")
 
@@ -642,6 +681,7 @@ def consent_submit(
 
     if not session_user:
         raise HTTPException(status_code=401, detail="会话已过期，请重新登录")
+    _require_same_group(session_user, cred)
 
     pkce_challenge, pkce_method = _normalize_optional_pkce(code_challenge, code_challenge_method)
 
