@@ -68,6 +68,7 @@ def test_list_my_sessions_returns_current_session_first(monkeypatch) -> None:
     assert result["status"] == "success"
     assert result["count"] == 3
     assert result["data"][0]["token_id"] == "sess_current"
+    assert result["data"][0]["ip"] == "127.0.0.1"
     assert result["data"][0]["is_current"] is True
     assert result["data"][1]["token_id"] == "sess_other"
 

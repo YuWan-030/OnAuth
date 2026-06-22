@@ -10,6 +10,51 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from template_env import templates
 
 
+FIELD_LABELS = {
+    "username": "用户名",
+    "password": "密码",
+    "repassword": "确认密码",
+    "nickname": "昵称",
+    "group_name": "租户空间名称",
+    "group_description": "租户空间说明",
+    "group_code": "租户空间识别码",
+    "invite_code": "邀请码",
+    "invite_token": "邀请链接令牌",
+    "client_id": "Client ID",
+    "redirect_uri": "回调地址",
+}
+
+
+def _field_label(loc: object) -> str:
+    if isinstance(loc, (list, tuple)) and loc:
+        field = str(loc[-1])
+    else:
+        field = str(loc or "")
+    return FIELD_LABELS.get(field, field or "参数")
+
+
+def _translate_validation_error(error: dict) -> str:
+    field = _field_label(error.get("loc"))
+    err_type = str(error.get("type") or "")
+    msg = str(error.get("msg") or "格式不合法")
+    ctx = error.get("ctx") if isinstance(error.get("ctx"), dict) else {}
+
+    min_length = ctx.get("min_length")
+    max_length = ctx.get("max_length")
+    if err_type.endswith("string_too_short") or "at least" in msg:
+        return f"{field}至少需要 {min_length or ''} 个字符".replace("  ", " ").strip()
+    if err_type.endswith("string_too_long") or "at most" in msg:
+        return f"{field}最多允许 {max_length or ''} 个字符".replace("  ", " ").strip()
+    if err_type.endswith("missing") or "Field required" in msg:
+        return f"{field}不能为空"
+    if err_type.endswith("int_parsing"):
+        return f"{field}必须是整数"
+    if err_type.endswith("bool_parsing"):
+        return f"{field}必须是布尔值"
+
+    return f"{field}: {msg}"
+
+
 async def handle_error_response(request: Request, status_code: int, detail: str):
     accept_header = request.headers.get("accept", "")
     requested_with = request.headers.get("x-requested-with", "")
@@ -39,7 +84,7 @@ async def handle_error_response(request: Request, status_code: int, detail: str)
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
-    msg = f"参数校验失败: {errors[0]['loc'][-1]} - {errors[0]['msg']}" if errors else "参数校验失败"
+    msg = "参数校验失败: " + "；".join(_translate_validation_error(error) for error in errors[:3]) if errors else "参数校验失败"
     return await handle_error_response(request, 400, msg)
 
 

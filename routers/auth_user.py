@@ -1701,11 +1701,13 @@ def _normalize_filter_text(value: str | None) -> str:
 def _build_session_item(session_id: str, meta: dict[str, str], current_token: str | None) -> dict[str, object]:
     browser = str(meta.get("browser") or "")
     os_name = str(meta.get("os") or "")
+    ip_value = str(meta.get("ip") or "-")
     device_type = _resolve_device_type_from_meta(meta)
     location = str(meta.get("location") or "")
     login_time = str(meta.get("login_time") or "")
     return {
         "token_id": session_id,
+        "ip": ip_value,
         "browser": browser,
         "device": os_name or device_type,
         "device_type": device_type,

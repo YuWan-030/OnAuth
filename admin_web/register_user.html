@@ -319,6 +319,38 @@ layui.use(['layer'], function(){
         $('#btnRegisterUser').prop('disabled', !enabled).text(label || (enabled ? '立即注册并激活凭证' : '请先获取邀请链接'));
     }
 
+    function extractErrorMessage(xhr, fallback) {
+        var res = xhr && xhr.responseJSON ? xhr.responseJSON : null;
+        if (!res) {
+            return fallback;
+        }
+        var fieldLabels = {
+            username: '用户名',
+            password: '密码',
+            nickname: '昵称',
+            invite_token: '邀请链接令牌'
+        };
+        function translateError(err) {
+            var rawLoc = Array.isArray(err.loc) ? err.loc.filter(function(item){ return item !== 'body'; }).pop() : '';
+            var loc = fieldLabels[rawLoc] || rawLoc || '参数';
+            var msg = err.msg || '格式不合法';
+            if (err.type === 'string_too_short' || msg.indexOf('at least') !== -1) {
+                return loc + '至少需要 ' + ((err.ctx && err.ctx.min_length) || '') + ' 个字符';
+            }
+            if (err.type === 'string_too_long' || msg.indexOf('at most') !== -1) {
+                return loc + '最多允许 ' + ((err.ctx && err.ctx.max_length) || '') + ' 个字符';
+            }
+            if (err.type === 'missing' || msg.indexOf('Field required') !== -1) {
+                return loc + '不能为空';
+            }
+            return loc + ': ' + msg;
+        }
+        if (Array.isArray(res.detail)) {
+            return res.detail.map(translateError).join('；');
+        }
+        return res.detail || res.message || fallback;
+    }
+
     function loadInviteInfo() {
         var params = new URLSearchParams(window.location.search || '');
         var inviteToken = params.get('invite_token') || '';
@@ -405,7 +437,7 @@ layui.use(['layer'], function(){
             },
             error: function(xhr){
                 layer.close(loading);
-                layer.msg(xhr.responseJSON?.detail || '注册请求遭遇拒绝', {icon: 2, shift: 6});
+                layer.msg(extractErrorMessage(xhr, '注册请求遭遇拒绝'), {icon: 2, shift: 6});
             }
         });
         return false;

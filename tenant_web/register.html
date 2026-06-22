@@ -309,6 +309,40 @@ layui.use(['form', 'layer'], function(){
         }
     });
 
+    function extractErrorMessage(xhr, fallback) {
+        var res = xhr && xhr.responseJSON ? xhr.responseJSON : null;
+        if (!res) {
+            return fallback;
+        }
+        var fieldLabels = {
+            username: '用户名',
+            password: '密码',
+            nickname: '昵称',
+            group_name: '租户空间名称',
+            group_description: '租户空间说明',
+            invite_code: '邀请码'
+        };
+        function translateError(err) {
+            var rawLoc = Array.isArray(err.loc) ? err.loc.filter(function(item){ return item !== 'body'; }).pop() : '';
+            var loc = fieldLabels[rawLoc] || rawLoc || '参数';
+            var msg = err.msg || '格式不合法';
+            if (err.type === 'string_too_short' || msg.indexOf('at least') !== -1) {
+                return loc + '至少需要 ' + ((err.ctx && err.ctx.min_length) || '') + ' 个字符';
+            }
+            if (err.type === 'string_too_long' || msg.indexOf('at most') !== -1) {
+                return loc + '最多允许 ' + ((err.ctx && err.ctx.max_length) || '') + ' 个字符';
+            }
+            if (err.type === 'missing' || msg.indexOf('Field required') !== -1) {
+                return loc + '不能为空';
+            }
+            return loc + ': ' + msg;
+        }
+        if (Array.isArray(res.detail)) {
+            return res.detail.map(translateError).join('；');
+        }
+        return res.detail || res.message || fallback;
+    }
+
     // 调整为与普通用户页面一样的克制、理性的冷色系引导提示文案
     function loadInviteCodeFromQuery() {
         var params = new URLSearchParams(window.location.search || '');
@@ -357,8 +391,7 @@ layui.use(['form', 'layer'], function(){
             },
             error: function(xhr){
                 layer.close(loading);
-                var errMsg = xhr.responseJSON?.detail || xhr.responseJSON?.message || '网络空间创建遭遇分布式网格拒绝';
-                layer.msg(errMsg, {icon: 2, shift: 6});
+                layer.msg(extractErrorMessage(xhr, '网络空间创建遭遇分布式网格拒绝'), {icon: 2, shift: 6});
             }
         });
         return false;
